@@ -701,8 +701,8 @@ export default function AdminPanel({
 
         {/* Center Auth Gate (admin/login.html) */}
         <div className="max-w-md w-full mx-auto my-12 bg-white text-stone-900 border-4 border-[#141414] p-8 shadow-[10px_10px_0px_0px_rgba(185,28,28,1)] text-center animate-scale-up">
-          <div className="w-14 h-14 bg-red-100 border-2 border-red-700 flex items-center justify-center mx-auto mb-4">
-            <Shield className="w-7 h-7 text-red-700" />
+          <div className="w-16 h-16 bg-white border-2 border-red-700 p-2 flex items-center justify-center mx-auto mb-4 shadow-[3px_3px_0px_0px_rgba(185,28,28,1)]">
+            <img src="/favicom.png" alt="WZZM" className="w-full h-full object-contain" />
           </div>
 
           <h3 className="font-editorial text-2xl font-bold text-stone-950 mb-2">
@@ -800,8 +800,8 @@ export default function AdminPanel({
       <header className="bg-[#141414] text-white border-b-4 border-[#B91C1C] py-3 px-4 sm:px-6">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 bg-red-700 border border-white/20 flex items-center justify-center shrink-0">
-              <Crown className="w-5 h-5 text-amber-300" />
+            <div className="w-9 h-9 bg-white border border-stone-800 flex items-center justify-center shrink-0 p-1">
+              <img src="/favicom.png" alt="WZZM" className="w-full h-full object-contain" />
             </div>
             <div>
               <div className="flex items-center gap-2">

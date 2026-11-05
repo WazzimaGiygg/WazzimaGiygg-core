@@ -492,7 +492,8 @@ export default function App() {
       {/* ============================================ */}
       <header className="bg-[#141414] text-[#E5E5E5] text-[11px] font-mono border-b border-[#262626] py-1.5 px-4 tracking-wider">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5">
+            <img src="/favicom.png" alt="Emblema WZZM" className="w-4 h-4 object-contain shrink-0" />
             <span className="bg-[#D97706] text-black font-bold px-1.5 py-0.5 text-[9px] uppercase tracking-widest">
               DIÁRIO OFICIAL
             </span>
@@ -644,6 +645,13 @@ export default function App() {
 
           <div className="border-t border-b border-[#141414] py-1 my-2">
             <div className="border-t border-b border-[#141414] py-3">
+              <div className="flex items-center justify-center mb-2">
+                <img
+                  src="/favicom.png"
+                  alt="WazzimaGiygg Emblem"
+                  className="w-12 h-12 object-contain drop-shadow-sm"
+                />
+              </div>
               <h1 className="text-4xl sm:text-6xl md:text-7xl lg:text-8xl font-black font-editorial tracking-tight uppercase leading-none text-[#141414]">
                 WAZZIMA<span className="text-[#B91C1C]">GIYGG</span>
               </h1>
