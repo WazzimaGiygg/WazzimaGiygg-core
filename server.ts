@@ -104,6 +104,17 @@ const DATA_CACHE = {
 // API ROUTES
 // ============================================
 
+// Route for ferramentasadministrativas.html
+app.get(['/admin/ferramentasadministrativas.html', '/ferramentasadministrativas.html'], (_req: Request, res: Response) => {
+  const filePath = path.resolve(__dirname, 'public/admin/ferramentasadministrativas.html');
+  if (fs.existsSync(filePath)) {
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.sendFile(filePath);
+  } else {
+    res.status(404).send('Página de ferramentas administrativas não encontrada.');
+  }
+});
+
 // 1. Health & Status
 app.get('/api/health', (_req: Request, res: Response) => {
   res.json({

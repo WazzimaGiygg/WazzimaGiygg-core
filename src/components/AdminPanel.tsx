@@ -28,9 +28,18 @@ import {
   Activity,
   Database,
   ArrowLeft,
-  X
+  X,
+  Code,
+  Copy,
+  Check,
+  Send,
+  Bell,
+  Layers,
+  Globe,
+  FileCode
 } from "lucide-react";
 import { signInWithPopup } from "firebase/auth";
+import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 
 import {
   auth,
@@ -45,8 +54,14 @@ import {
   updateUserTeacherStatus,
   deleteUserFromFirestore,
   deleteArticleFromFirestore,
-  registerAuditLog
+  registerAuditLog,
+  db
 } from "../firebase";
+import {
+  FERRAMENTAS_LIST,
+  FERRAMENTAS_ADMINISTRATIVAS_SOURCE,
+  FerramentaItem
+} from "../data/ferramentasSource";
 
 interface AdminPanelProps {
   currentUser: any;
@@ -105,6 +120,29 @@ export default function AdminPanel({
 
   // System Audit Logs (checkuser)
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
+
+  // Ferramentas Administrativas & view-source State
+  const [isViewSourceModalOpen, setIsViewSourceModalOpen] = useState(false);
+  const [sourceCopied, setSourceCopied] = useState(false);
+  const [ferramentasSearch, setFerramentasSearch] = useState("");
+  const [selectedFerramentaCategory, setSelectedFerramentaCategory] = useState("all");
+
+  // Inserir Notificação para Usuário (checkuser/notificacao/) State
+  const [isSendNotifModalOpen, setIsSendNotifModalOpen] = useState(false);
+  const [isSendingNotif, setIsSendingNotif] = useState(false);
+  const [notifForm, setNotifForm] = useState({
+    userId: "all",
+    title: "",
+    message: "",
+    type: "info" as "info" | "warning" | "alert"
+  });
+
+  // Adicionar HTML Flutuante (htmlcreator/) State
+  const [isHtmlFloatingModalOpen, setIsHtmlFloatingModalOpen] = useState(false);
+  const [floatingHtmlInput, setFloatingHtmlInput] = useState(
+    `<div style="background: #141414; color: #fff; padding: 12px 18px; border-left: 4px solid #b91c1c; font-family: monospace; font-size: 13px;">\n  <strong>[COMUNICADO OFICIAL WZZM]</strong> Bem-vindo ao acervo digital da WazzimaGiygg.\n</div>`
+  );
+  const [isFloatingActive, setIsFloatingActive] = useState(false);
 
   // Load Data for Admin Core
   const loadAdminData = async () => {
@@ -512,6 +550,123 @@ export default function AdminPanel({
     }
     return list;
   }, [adminArticles, selectedCollectionFilter, articleSearchTerm]);
+
+  // Ferramentas categories & filtering
+  const ferramentaCategories = useMemo(() => {
+    const cats = new Set<string>();
+    FERRAMENTAS_LIST.forEach((f) => cats.add(f.category));
+    return ["all", ...Array.from(cats)];
+  }, []);
+
+  const filteredFerramentas = useMemo(() => {
+    let list = FERRAMENTAS_LIST;
+    if (selectedFerramentaCategory !== "all") {
+      list = list.filter((f) => f.category === selectedFerramentaCategory);
+    }
+    if (ferramentasSearch.trim()) {
+      const q = ferramentasSearch.toLowerCase();
+      list = list.filter(
+        (f) =>
+          f.label.toLowerCase().includes(q) ||
+          f.href.toLowerCase().includes(q) ||
+          f.category.toLowerCase().includes(q)
+      );
+    }
+    return list;
+  }, [ferramentasSearch, selectedFerramentaCategory]);
+
+  const handleCopySource = async () => {
+    try {
+      await navigator.clipboard.writeText(FERRAMENTAS_ADMINISTRATIVAS_SOURCE);
+      setSourceCopied(true);
+      setTimeout(() => setSourceCopied(false), 2200);
+      showToast("Código-fonte copiado para a área de transferência!");
+    } catch {
+      showToast("Não foi possível copiar automaticamente.", true);
+    }
+  };
+
+  const handleSendNotification = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!notifForm.title.trim() || !notifForm.message.trim()) {
+      showToast("Preencha o título e a mensagem da notificação.", true);
+      return;
+    }
+
+    setIsSendingNotif(true);
+    try {
+      await addDoc(collection(db, "notifications"), {
+        userId: notifForm.userId,
+        title: notifForm.title.trim(),
+        message: notifForm.message.trim(),
+        type: notifForm.type,
+        senderEmail: currentUser?.email || "burocrata@wazzimagiygg.com",
+        read: false,
+        createdAt: serverTimestamp()
+      });
+      showToast("Notificação administrativa transmitida com sucesso!");
+      setNotifForm({ userId: "all", title: "", message: "", type: "info" });
+      setIsSendNotifModalOpen(false);
+      registerAuditLog(currentUser?.uid || "admin", "burocrata_send_notification", {
+        target: notifForm.userId,
+        title: notifForm.title
+      });
+    } catch (err: any) {
+      console.error("Erro ao enviar notificação:", err);
+      showToast("Falha ao registrar notificação: " + err.message, true);
+    } finally {
+      setIsSendingNotif(false);
+    }
+  };
+
+  const handleFerramentaAction = (item: FerramentaItem) => {
+    if (item.action === "cadastrar_professor") {
+      setNewUserForm({
+        name: "",
+        email: "",
+        isAdmin: false,
+        isTeacher: true,
+        isBanned: false
+      });
+      setIsAddUserModalOpen(true);
+      return;
+    }
+    if (item.action === "usuarios") {
+      setAdminTab("usuarios");
+      return;
+    }
+    if (item.action === "artigos") {
+      setAdminTab("artigos");
+      return;
+    }
+    if (item.action === "tickets") {
+      setAdminTab("tickets");
+      return;
+    }
+    if (item.action === "checkuser") {
+      setAdminTab("checkuser");
+      return;
+    }
+    if (item.action === "notificacao") {
+      setIsSendNotifModalOpen(true);
+      return;
+    }
+    if (item.action === "html_creator") {
+      setIsHtmlFloatingModalOpen(true);
+      return;
+    }
+    if (item.action === "custos") {
+      setAdminTab("sancoes");
+      showToast(`Módulo "${item.label}" carregado.`);
+      return;
+    }
+    if (item.isExternal || item.href.startsWith("http")) {
+      window.open(item.href, "_blank", "noopener,noreferrer");
+      return;
+    }
+    // Default open in standalone admin viewer
+    window.open(`/admin/${item.href.replace(/^\//, "")}`, "_blank");
+  };
 
   // ============================================
   // ACCESS GUARD (SE NÃO FOR ADMIN/BUROCRATA)
@@ -1192,40 +1347,136 @@ export default function AdminPanel({
           </div>
         )}
 
-        {/* SUB-VIEW 7: FERRAMENTAS ADMINISTRATIVAS */}
+        {/* SUB-VIEW 7: FERRAMENTAS ADMINISTRATIVAS & VIEW-SOURCE */}
         {adminTab === "ferramentas" && (
-          <div className="bg-white border-2 border-[#141414] p-6 shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] space-y-4">
-            <div className="border-b-2 border-[#141414] pb-4">
-              <h3 className="font-editorial text-2xl font-bold text-[#141414]">
-                Suíte de Ferramentas Administrativas (`admin/ferramentasadministrativas.html`)
-              </h3>
-              <p className="font-mono text-xs text-stone-600 mt-1">
-                Utilitários de suporte ao Burocrata e gerenciamento de infraestrutura.
-              </p>
+          <div className="bg-white border-2 border-[#141414] p-6 shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] space-y-6">
+            {/* Header & Source Trigger */}
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b-2 border-[#141414] pb-5">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <h3 className="font-editorial text-2xl font-bold text-[#141414]">
+                    Menu de Ferramentas Administrativas
+                  </h3>
+                  <span className="bg-red-700 text-white font-mono text-[9px] font-bold px-2 py-0.5 uppercase tracking-wider">
+                    24 Ferramentas Ativas
+                  </span>
+                </div>
+                <p className="font-mono text-xs text-stone-600">
+                  Diretório: <code className="text-red-700 font-bold">admin/ferramentasadministrativas.html</code> • Totalmente integrado à administração WZZM
+                </p>
+              </div>
+
+              {/* View-Source & Standalone Page Actions */}
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={() => setIsViewSourceModalOpen(true)}
+                  className="bg-[#0F0F12] hover:bg-black text-amber-400 border border-stone-800 px-3.5 py-2 font-mono text-xs font-bold uppercase tracking-wider flex items-center gap-2 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] cursor-pointer transition-all active:translate-x-0.5 active:translate-y-0.5"
+                  title="Abrir o visualizador de código-fonte exato"
+                >
+                  <Code className="w-4 h-4 text-amber-400" />
+                  <span>view-source:ferramentasadministrativas.html</span>
+                </button>
+
+                <a
+                  href="/admin/ferramentasadministrativas.html"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="paper-button bg-white text-stone-900 hover:bg-stone-100 px-3.5 py-2 font-mono text-xs font-bold uppercase tracking-wider flex items-center gap-2 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] cursor-pointer"
+                  title="Abrir o arquivo HTML estático em nova aba"
+                >
+                  <ExternalLink className="w-3.5 h-3.5 text-stone-700" />
+                  <span>Abrir Página Estática</span>
+                </a>
+              </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 font-mono text-xs">
-              {[
-                { title: "Cadastrar Professor / Docente", desc: "admintools/cadastrarprofessor.html", tab: "usuarios" },
-                { title: "Gerenciador de Artigos & Notícias", desc: "admintools/editordeartigos.html", tab: "artigos" },
-                { title: "Ouvidoria & Solicitações de Exclusão", desc: "admintools/solicitacaodeexclusao", tab: "tickets" },
-                { title: "Auditoria Forense (checkuser)", desc: "admin/checkuser/", tab: "checkuser" },
-                { title: "Tabela de Cidades Sancionadas", desc: "admin/cidadessancionadas/", tab: "sancoes" },
-                { title: "Status do Firestore & Storage", desc: "Firebase projectId: wzzm-ce3fc", tab: "dashboard" }
-              ].map((tool, idx) => (
+            {/* Quick Tools Controls & Search */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+              <div className="relative flex-1 max-w-md">
+                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
+                <input
+                  type="text"
+                  placeholder="Pesquisar entre as 24 ferramentas administrativas..."
+                  value={ferramentasSearch}
+                  onChange={(e) => setFerramentasSearch(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2 text-xs font-mono bg-[#F8F7F4] border border-[#141414] focus:outline-none"
+                />
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-[11px] text-stone-500 uppercase font-bold shrink-0">
+                  Categoria:
+                </span>
+                <select
+                  value={selectedFerramentaCategory}
+                  onChange={(e) => setSelectedFerramentaCategory(e.target.value)}
+                  className="p-2 border border-[#141414] font-mono text-xs bg-[#F8F7F4] focus:outline-none"
+                >
+                  <option value="all">Todas as Categorias ({FERRAMENTAS_LIST.length})</option>
+                  {ferramentaCategories
+                    .filter((c) => c !== "all")
+                    .map((cat) => (
+                      <option key={cat} value={cat}>
+                        {cat}
+                      </option>
+                    ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Grid of 24 Cards Matching the Original admin/ferramentasadministrativas.html */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 pt-2">
+              {filteredFerramentas.map((tool, idx) => (
                 <div
                   key={idx}
-                  onClick={() => setAdminTab(tool.tab as any)}
-                  className="p-4 border border-[#141414] bg-[#F8F7F4] hover:bg-amber-50 cursor-pointer flex items-center justify-between shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]"
+                  onClick={() => handleFerramentaAction(tool)}
+                  className="group relative bg-[#ffffff] border border-[#d6d3d1] hover:border-[#141414] p-4 flex flex-col justify-between transition-all duration-200 hover:-translate-y-1 hover:shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] cursor-pointer overflow-hidden"
                 >
+                  {/* Subtle hover gradient inspired by original CSS */}
+                  <div className="absolute inset-0 bg-gradient-to-r from-blue-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
+
                   <div>
-                    <h4 className="font-bold text-stone-900">{tool.title}</h4>
-                    <span className="text-[10px] text-stone-500">{tool.desc}</span>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="font-mono text-[9px] font-bold uppercase tracking-wider bg-stone-100 text-stone-700 group-hover:bg-amber-100 group-hover:text-amber-900 border border-stone-200 px-1.5 py-0.5">
+                        {tool.category}
+                      </span>
+                      {tool.isExternal ? (
+                        <span className="font-mono text-[9px] text-blue-600 font-bold flex items-center gap-0.5">
+                          Externo <ExternalLink className="w-2.5 h-2.5" />
+                        </span>
+                      ) : (
+                        <span className="font-mono text-[9px] text-emerald-700 font-bold">
+                          Integrado WZZM
+                        </span>
+                      )}
+                    </div>
+
+                    <h4 className="font-editorial text-base font-bold text-stone-900 group-hover:text-red-700 transition-colors leading-snug">
+                      {tool.label}
+                    </h4>
+
+                    <p className="font-mono text-[10px] text-stone-500 truncate mt-1">
+                      {tool.href}
+                    </p>
                   </div>
-                  <ExternalLink className="w-4 h-4 text-stone-600" />
+
+                  <div className="mt-4 pt-2.5 border-t border-stone-100 flex items-center justify-between text-xs font-mono">
+                    <span className="text-[10px] text-stone-500 group-hover:text-stone-900 font-bold uppercase">
+                      {tool.action ? `Executar: ${tool.action}` : "Acessar Módulo"}
+                    </span>
+                    <span className="text-[#0d6efd] font-bold text-base transition-transform group-hover:translate-x-1.5">
+                      ➔
+                    </span>
+                  </div>
                 </div>
               ))}
             </div>
+
+            {filteredFerramentas.length === 0 && (
+              <div className="p-8 text-center font-mono text-xs text-stone-500 border border-dashed border-stone-300">
+                Nenhuma ferramenta administrativa encontrada com os termos informados.
+              </div>
+            )}
           </div>
         )}
       </main>
@@ -1361,6 +1612,312 @@ export default function AdminPanel({
               >
                 {banModalUser.isBanned ? "Confirmar Desbloqueio" : "Aplicar Bloqueio Imediato"}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* MODAL: VIEW-SOURCE DO ARQUIVO FERRAMENTASADMINISTRATIVAS */}
+      {/* view-source:https://wazzimagiygg.com/admin/ferramentasadministrativas.html */}
+      {/* ======================================================== */}
+      {isViewSourceModalOpen && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-2 sm:p-6 animate-fade-in">
+          <div className="bg-[#1e1e1e] text-[#d4d4d4] border-2 border-[#333] shadow-[0px_20px_50px_rgba(0,0,0,0.8)] max-w-5xl w-full h-[90vh] flex flex-col font-mono text-xs overflow-hidden rounded-md">
+            {/* View-Source Browser Chrome Topbar */}
+            <div className="bg-[#2d2d2d] px-4 py-2.5 border-b border-[#3e3e42] flex items-center justify-between gap-3 shrink-0">
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5 mr-2">
+                  <div className="w-3 h-3 rounded-full bg-[#ff5f56]" />
+                  <div className="w-3 h-3 rounded-full bg-[#ffbd2e]" />
+                  <div className="w-3 h-3 rounded-full bg-[#27c93f]" />
+                </div>
+                <Code className="w-4 h-4 text-amber-400" />
+                <span className="font-bold text-stone-200 text-xs hidden sm:inline">
+                  Código-Fonte Original
+                </span>
+              </div>
+
+              {/* Omnibox / URL Field */}
+              <div className="flex-1 max-w-2xl bg-[#1e1e1e] border border-[#444] rounded px-3 py-1 flex items-center gap-2 text-stone-300 text-[11px] truncate select-all">
+                <Lock className="w-3 h-3 text-emerald-400 shrink-0" />
+                <span className="text-amber-400 font-bold shrink-0">view-source:</span>
+                <span className="truncate">https://wazzimagiygg.com/admin/ferramentasadministrativas.html</span>
+              </div>
+
+              {/* Actions */}
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  onClick={handleCopySource}
+                  className="flex items-center gap-1.5 bg-[#3e3e42] hover:bg-[#505054] text-white px-2.5 py-1 rounded text-[11px] transition-colors cursor-pointer border border-[#555]"
+                  title="Copiar todo o código-fonte"
+                >
+                  {sourceCopied ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-400" />
+                      <span className="text-emerald-400 font-bold">Copiado!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5" />
+                      <span>Copiar</span>
+                    </>
+                  )}
+                </button>
+
+                <a
+                  href="/admin/ferramentasadministrativas.html"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="hidden md:flex items-center gap-1 bg-[#3e3e42] hover:bg-[#505054] text-stone-300 hover:text-white px-2.5 py-1 rounded text-[11px] transition-colors cursor-pointer border border-[#555]"
+                  title="Abrir em nova aba"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span>Renderizado</span>
+                </a>
+
+                <button
+                  onClick={() => setIsViewSourceModalOpen(false)}
+                  className="text-stone-400 hover:text-white p-1 hover:bg-[#3e3e42] rounded transition-colors cursor-pointer"
+                  title="Fechar visualizador"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Code Content Area with Line Numbers */}
+            <div className="flex-1 overflow-auto flex bg-[#1e1e1e] font-mono text-[12px] leading-relaxed selection:bg-[#264f78]">
+              {/* Code display */}
+              <div className="flex-1 p-4 overflow-x-auto whitespace-pre font-mono text-stone-200">
+                {FERRAMENTAS_ADMINISTRATIVAS_SOURCE.split("\n").map((line, idx) => (
+                  <div key={idx} className="flex hover:bg-[#282828] py-0.5">
+                    <span className="w-12 text-right pr-4 text-stone-500 select-none text-[11px] shrink-0 border-r border-[#333] mr-4">
+                      {idx + 1}
+                    </span>
+                    <span className="text-stone-200 flex-1">{line}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Footer status bar */}
+            <div className="bg-[#007acc] text-white px-4 py-1.5 text-[10px] flex items-center justify-between font-mono shrink-0">
+              <div className="flex items-center gap-3">
+                <span>HTML • UTF-8</span>
+                <span>{FERRAMENTAS_ADMINISTRATIVAS_SOURCE.split("\n").length} linhas</span>
+                <span>{FERRAMENTAS_ADMINISTRATIVAS_SOURCE.length} caracteres</span>
+              </div>
+              <span>Fonte: wazzimagiygg.com/admin/ferramentasadministrativas.html</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* MODAL: INSERIR NOTIFICAÇÃO (checkuser/notificacao/) */}
+      {/* ======================================================== */}
+      {isSendNotifModalOpen && (
+        <div className="fixed inset-0 bg-stone-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white border-4 border-[#141414] shadow-[10px_10px_0px_0px_rgba(20,20,20,1)] max-w-lg w-full p-6 text-left font-mono text-xs">
+            <div className="flex items-center justify-between border-b-2 border-[#141414] pb-3 mb-4">
+              <div className="flex items-center gap-2">
+                <Bell className="w-4 h-4 text-red-700" />
+                <h3 className="font-bold text-sm uppercase">
+                  Inserir Notificação para Usuário (`checkuser/notificacao/`)
+                </h3>
+              </div>
+              <button
+                onClick={() => setIsSendNotifModalOpen(false)}
+                className="text-stone-500 hover:text-black cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-stone-600 mb-4 font-serif text-xs">
+              Transmita comunicados operacionais, alertas de conformidade ou mensagens diretas que aparecerão no sininho de notificações do usuário em tempo real.
+            </p>
+
+            <form onSubmit={handleSendNotification} className="space-y-3">
+              <div>
+                <label className="block uppercase font-bold text-[10px] mb-1">
+                  Destinatário:
+                </label>
+                <select
+                  value={notifForm.userId}
+                  onChange={(e) => setNotifForm({ ...notifForm, userId: e.target.value })}
+                  className="w-full p-2 border border-[#141414] bg-[#F8F7F4] focus:outline-none"
+                >
+                  <option value="all">📢 Todos os Usuários Cadastrados (Global)</option>
+                  {usersList.map((u) => (
+                    <option key={u.uid} value={u.uid}>
+                      {u.name} ({u.email || u.uid})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block uppercase font-bold text-[10px] mb-1">
+                  Nível de Urgência:
+                </label>
+                <div className="flex items-center gap-3">
+                  {[
+                    { id: "info", label: "Informativo" },
+                    { id: "warning", label: "Aviso de Moderação" },
+                    { id: "alert", label: "Alerta Crítico / Sanção" }
+                  ].map((lvl) => (
+                    <label key={lvl.id} className="flex items-center gap-1.5 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="notifType"
+                        value={lvl.id}
+                        checked={notifForm.type === lvl.id}
+                        onChange={() => setNotifForm({ ...notifForm, type: lvl.id as any })}
+                      />
+                      <span>{lvl.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block uppercase font-bold text-[10px] mb-1">
+                  Título da Notificação:
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Ex: Atualização dos Termos de Uso / Novo Artigo Publicado"
+                  value={notifForm.title}
+                  onChange={(e) => setNotifForm({ ...notifForm, title: e.target.value })}
+                  className="w-full p-2 border border-[#141414] bg-[#F8F7F4] focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block uppercase font-bold text-[10px] mb-1">
+                  Conteúdo da Mensagem:
+                </label>
+                <textarea
+                  rows={4}
+                  required
+                  placeholder="Descreva a mensagem a ser recebida pelo destinatário..."
+                  value={notifForm.message}
+                  onChange={(e) => setNotifForm({ ...notifForm, message: e.target.value })}
+                  className="w-full p-2 border border-[#141414] bg-[#F8F7F4] focus:outline-none font-sans text-xs"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t">
+                <button
+                  type="button"
+                  onClick={() => setIsSendNotifModalOpen(false)}
+                  className="paper-button-secondary px-3 py-1.5 font-bold uppercase"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSendingNotif}
+                  className="bg-red-700 hover:bg-red-800 text-white px-4 py-1.5 font-bold uppercase tracking-wider flex items-center gap-2 cursor-pointer shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] disabled:opacity-50"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>{isSendingNotif ? "Enviando..." : "Transmitir Notificação"}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* MODAL: ADICIONAR HTML FLUTUANTE (htmlcreator/) */}
+      {/* ======================================================== */}
+      {isHtmlFloatingModalOpen && (
+        <div className="fixed inset-0 bg-stone-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white border-4 border-[#141414] shadow-[10px_10px_0px_0px_rgba(20,20,20,1)] max-w-xl w-full p-6 text-left font-mono text-xs">
+            <div className="flex items-center justify-between border-b-2 border-[#141414] pb-3 mb-4">
+              <div className="flex items-center gap-2">
+                <Layers className="w-4 h-4 text-red-700" />
+                <h3 className="font-bold text-sm uppercase">
+                  Adicionar HTML Flutuante (`admin/htmlcreator/`)
+                </h3>
+              </div>
+              <button
+                onClick={() => setIsHtmlFloatingModalOpen(false)}
+                className="text-stone-500 hover:text-black cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-stone-600 mb-3 font-serif text-xs">
+              Insira snippets HTML/CSS personalizados para avisos flutuantes, banners de manutenção ou cabeçalhos especiais no portal WZZM.
+            </p>
+
+            <div className="space-y-3">
+              <div>
+                <label className="block uppercase font-bold text-[10px] mb-1">
+                  Código HTML / CSS:
+                </label>
+                <textarea
+                  rows={5}
+                  value={floatingHtmlInput}
+                  onChange={(e) => setFloatingHtmlInput(e.target.value)}
+                  className="w-full p-2.5 border border-[#141414] bg-[#F8F7F4] font-mono text-xs focus:outline-none"
+                />
+              </div>
+
+              {/* Live Preview Area */}
+              <div>
+                <label className="block uppercase font-bold text-[10px] mb-1 text-stone-500">
+                  Pré-visualização ao Vivo:
+                </label>
+                <div
+                  className="p-3 border border-dashed border-stone-400 bg-stone-50 min-h-[60px]"
+                  dangerouslySetInnerHTML={{ __html: floatingHtmlInput }}
+                />
+              </div>
+
+              <div className="flex items-center justify-between pt-3 border-t">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={isFloatingActive}
+                    onChange={(e) => {
+                      setIsFloatingActive(e.target.checked);
+                      showToast(
+                        e.target.checked
+                          ? "Banner flutuante ativado temporariamente nesta sessão."
+                          : "Banner flutuante desativado."
+                      );
+                    }}
+                  />
+                  <span className="font-bold">Ativar flutuante na interface</span>
+                </label>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsHtmlFloatingModalOpen(false)}
+                    className="paper-button-secondary px-3 py-1.5 font-bold uppercase"
+                  >
+                    Fechar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      showToast("Configuração de HTML Flutuante salva com sucesso!");
+                      setIsHtmlFloatingModalOpen(false);
+                    }}
+                    className="paper-button px-4 py-1.5 font-bold uppercase tracking-wider cursor-pointer"
+                  >
+                    Aplicar Configuração
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
