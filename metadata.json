@@ -1,0 +1,6 @@
+{
+  "name": "WazzimaGiygg - Portal Oficial & Base de Conhecimento",
+  "description": "Portal editorial e base de conhecimento colaborativo WazzimaGiygg, com acervo acadêmico, notícias, WNPX, e integração com banco de dados em tempo real.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

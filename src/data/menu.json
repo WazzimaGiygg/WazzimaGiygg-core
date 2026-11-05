@@ -1,0 +1,46 @@
+[
+
+    {
+        "label": "Mudanças Recentes",
+        "href": "./wikinotpedia/",
+        "requiresAuth": true
+    },
+
+    {
+        "label": "Procurar artigo WNPX",
+        "href": "simplearticles/",
+        "requiresAuth": true
+    },
+    {
+        "label": "Chat Online interno",
+        "href": "chat/",
+        "requiresAuth": true
+    },
+
+  
+    {
+        "label": "Upload de Imagem",
+        "href": "uploadimagem/",
+        "requiresAuth": true
+    },
+    
+    {
+        "label": "Upload PDF",
+        "href": "uploadpdf.html",
+        "requiresAuth": true
+    },
+
+        {
+        "label": "Hub de Aplicativos",
+        "href": "forumapplication/",
+        "requiresAuth": true
+    },
+
+    {
+        "label": "Ferramentas adicionais",
+        "href": "menu.html",
+        "requiresAuth": true
+    }
+
+    
+]

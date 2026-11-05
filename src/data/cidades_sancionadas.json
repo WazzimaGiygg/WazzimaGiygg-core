@@ -1,0 +1,30 @@
+{
+  "cidades_sancionadas": [
+
+    {
+      "cidade": "Santa Bárbara D'Oeste",
+      "moderador": "Chronus"
+    },
+    {
+      "cidade": "Santa Fé do Sul",
+      "moderador": "Teste de verificação"
+    },
+    
+    {
+      "cidade": "Johannesburg", 
+      "moderador": "Rui Gabriel Correia"
+    },
+    {
+      "cidade": "Montreal",
+      "moderador": "Edmond Dantès (Gean Victor)"
+    },
+    {
+      "cidade": "Rubinéia",
+      "moderador": "IP em Observação"
+    },
+    {
+      "cidade": "Germany", 
+      "moderador": "Johannnes89"
+    }
+  ]
+}

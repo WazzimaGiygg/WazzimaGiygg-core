@@ -1,0 +1,134 @@
+{
+  "page_title": "Atenção: A página solicitada não existe.",
+  "sections": [
+    {
+      "title": "Atenção: A página solicitada não existe.",
+      "content": [
+        "O erro **404 Not Found** (Página Não Encontrada) é, sem dúvida, um dos códigos de status HTTP mais comuns e reconhecíveis que os usuários da internet encontram. Ele faz parte da classe de erros **4xx (Erros do Cliente)**, o que significa que o problema é percebido como sendo do lado do navegador ou da solicitação feita pelo usuário, e não do servidor em si."
+      ]
+    },
+    {
+      "title": "O que significa?",
+      "content": [
+        "Quando você tenta acessar uma página da web, seu navegador envia uma solicitação a um servidor. O erro 404 ocorre quando:",
+        {
+          "type": "list",
+          "items": [
+            "**O navegador consegue se conectar ao servidor.** Isso é importante: o servidor está funcionando e acessível.",
+            "**O servidor, no entanto, não consegue encontrar o recurso (página, imagem, arquivo) solicitado pelo navegador.**"
+          ]
+        },
+        "Em outras palavras, o servidor está \"online\" e respondendo, mas ele não tem o que você está procurando no endereço que você forneceu."
+      ]
+    },
+    {
+      "title": "Causas Comuns do Erro 404",
+      "content": [
+        {
+          "type": "list",
+          "items": [
+            "**URL incorreta (erro de digitação):** Esta é a causa mais frequente. O usuário digitou o endereço da web (URL) errado na barra de endereços do navegador.",
+            "**Página movida ou deletada:** O conteúdo da página que você está tentando acessar foi removido do servidor ou teve seu endereço (URL) alterado, e não há um redirecionamento configurado para o novo local.",
+            "**Link quebrado ou \"morto\":** Um link em outro site, ou até mesmo dentro do próprio site, aponta para uma página que não existe mais ou cuja URL mudou.",
+            "**Problemas de DNS:** Em alguns casos, configurações incorretas do DNS podem levar o navegador a procurar a página no lugar errado, resultando em um 404.",
+            "**Erro de cache do navegador:** Seu navegador pode ter armazenado uma versão antiga da página no cache que agora não existe mais.",
+            "**Problemas com o arquivo .htaccess:** Em servidores Apache, um arquivo `.htaccess` mal configurado pode causar redirecionamentos incorretos ou impedir o acesso a certos arquivos, resultando em 404s.",
+            "**Arquivo ausente:** Pode ser que um arquivo essencial para a página (como uma imagem, um arquivo CSS ou JavaScript) não esteja mais disponível no servidor, gerando um 404 para aquele recurso específico, mesmo que a página principal carregue parcialmente.",
+            "**Vírus ou malware:** Embora menos comum, softwares maliciosos podem interferir na navegação, causando redirecionamentos para páginas inexistentes ou impedindo o acesso correto."
+          ]
+        }
+      ]
+    },
+    {
+      "title": "O que acontece quando um 404 ocorre?",
+      "content": [
+        "Geralmente, o navegador exibe uma mensagem de erro indicando que a página não foi encontrada. Muitos sites personalizam suas páginas de erro 404 para torná-las mais amigáveis, com um design que combina com o restante do site e, muitas vezes, oferecendo opções como um campo de busca, links para a página inicial ou outras seções populares, ou até mesmo um toque de humor para tentar diminuir a frustração do usuário."
+      ]
+    },
+    {
+      "title": "Impacto e Soluções",
+      "content": [
+        "Para usuários:",
+        {
+          "type": "list",
+          "items": [
+            "**Verifique a URL:** A primeira coisa a fazer é revisar se você digitou o endereço corretamente.",
+            "**Atualize a página:** Às vezes, é um erro temporário de carregamento.",
+            "**Limpe o cache e os cookies do navegador:** Isso pode resolver problemas de páginas em cache.",
+            "**Tente novamente mais tarde:** O site pode estar passando por manutenção ou instabilidade temporária.",
+            "**Use um mecanismo de busca:** Tente pesquisar o conteúdo desejado no Google ou em outro motor de busca."
+          ]
+        },
+        "Para proprietários de sites:",
+        {
+          "type": "list",
+          "items": [
+            "**Redirecionamentos 301:** Se uma página foi movida permanentemente, implemente um redirecionamento 301 (Moved Permanently) do URL antigo para o novo. Isso é crucial para a experiência do usuário e para o SEO.",
+            "**Verifique links quebrados:** Utilize ferramentas para identificar e corrigir links internos e externos que apontam para páginas inexistentes.",
+            "**Páginas 404 personalizadas:** Crie uma página 404 amigável e útil para guiar os usuários de volta ao seu site.",
+            "**Monitore erros 404:** Use ferramentas de análise de web (como Google Search Console) para identificar quais URLs estão gerando erros 404 no seu site, o que pode indicar problemas a serem corrigidos."
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Classes de Códigos HTTP",
+      "content": [
+        "Esses códigos são agrupados em classes:",
+        {
+          "type": "list",
+          "items": [
+            "**1xx (Informativas):** Indicam que a solicitação foi recebida e o processo continua.",
+            "**2xx (Sucesso):** A ação foi recebida, compreendida e aceita com sucesso.",
+            "**3xx (Redirecionamento):** O cliente precisa tomar alguma ação adicional para completar a solicitação.",
+            "**4xx (Erros do Cliente):** Indicam que a solicitação contém sintaxe incorreta ou não pode ser atendida, sendo o erro do lado do cliente.",
+            "**5xx (Erros do Servidor):** Indicam que o servidor falhou ao cumprir uma solicitação aparentemente válida."
+          ]
+        },
+        "Aqui estão alguns dos erros mais comuns, além do 404:",
+        "**Erros do Cliente (4xx):**",
+        {
+          "type": "list",
+          "items": [
+            "**400 Bad Request (Requisição Inválida):** O servidor não consegue processar a solicitação devido a um erro percebido do cliente (por exemplo, sintaxe da solicitação malformada, enquadramento de mensagem de solicitação inválida).",
+            "**401 Unauthorized (Não Autorizado):** O cliente não tem credenciais de autenticação válidas para o recurso solicitado. O servidor pode responder com este erro se o usuário tentar acessar uma página que exige login e não está logado.",
+            "**403 Forbidden (Proibido):** O cliente não tem permissão de acesso ao conteúdo. Ao contrário do 401, a identidade do cliente é conhecida pelo servidor, mas ele se recusa a fornecer o recurso solicitado (por exemplo, tentativa de acessar uma pasta restrita).",
+            "**405 Method Not Allowed (Método Não Permitido):** O método HTTP usado na solicitação (GET, POST, PUT, DELETE, etc.) não é permitido para o recurso identificado pela URL.",
+            "**408 Request Timeout (Tempo Limite da Requisição):** O servidor esgotou o tempo de espera pela requisição completa do cliente.",
+            "**409 Conflict (Conflito):** A requisição não pôde ser completada devido a um conflito com o estado atual do recurso (por exemplo, tentar atualizar um arquivo que foi modificado por outra pessoa).",
+            "**410 Gone (Recurso Removido):** Indica que o recurso solicitado não está mais disponível no servidor e que essa condição provavelmente é permanente. É semelhante ao 404, mas com a indicação de que o recurso foi intencionalmente removido.",
+            "**413 Payload Too Large (Carga Útil Muito Grande):** A requisição do cliente é maior do que o servidor está disposto ou consegue processar.",
+            "**414 URI Too Long (URI Muito Longa):** A URI (Uniform Resource Identifier) solicitada pelo cliente é muito longa para o servidor processar.",
+            "**415 Unsupported Media Type (Tipo de Mídia Não Suportado):** O servidor não suporta o formato da mídia da requisição.",
+            "**429 Too Many Requests (Muitas Requisições):** O cliente enviou muitas requisições em um determinado período de tempo (limitação de taxa)."
+          ]
+        },
+        "**Erros do Servidor (5xx):**",
+        {
+          "type": "list",
+          "items": [
+            "**500 Internal Server Error (Erro Interno do Servidor):** Um erro genérico que indica que o servidor encontrou uma condição inesperada que o impediu de atender à solicitação. É um dos erros mais comuns do lado do servidor e pode ter várias causas (erros de código, configuração incorreta, etc.).",
+            "**501 Not Implemented (Não Implementado):** O servidor não suporta a funcionalidade necessária para atender à solicitação.",
+            "**502 Bad Gateway (Gateway Inválido):** O servidor, ao atuar como um gateway ou proxy, recebeu uma resposta inválida do servidor upstream.",
+            "**503 Service Unavailable (Serviço Indisponível):** O servidor não está apto a lidar com a solicitação no momento, geralmente devido a sobrecarga ou manutenção do servidor. É temporário.",
+            "**504 Gateway Timeout (Tempo Limite do Gateway):** O servidor, ao atuar como um gateway ou proxy, não recebeu uma resposta a tempo do servidor upstream.",
+            "**505 HTTP Version Not Supported (Versão HTTP Não Suportada):** O servidor não suporta a versão do protocolo HTTP usada na requisição."
+          ]
+        },
+        "Além dos códigos HTTP, podem ocorrer outros tipos de erros no navegador, como:",
+        {
+          "type": "list",
+          "items": [
+            "**Erros de Conexão de Rede:** O navegador não consegue estabelecer uma conexão com o servidor. Isso pode ser devido a problemas com a internet do usuário, firewall, ou o servidor estar offline.",
+            "**Erros de DNS:** O navegador não consegue resolver o nome do domínio (URL) em um endereço IP. Isso pode ser causado por problemas com o provedor de DNS do usuário ou com o servidor DNS do site.",
+            "**Erros de Certificado SSL/TLS:** Quando o navegador detecta um problema com o certificado de segurança do site (HTTPS), como um certificado expirado ou inválido.",
+            "**Conteúdo Misto (Mixed Content):** Ocorre quando uma página HTTPS tenta carregar recursos (imagens, scripts, CSS) de fontes HTTP, o que pode gerar avisos de segurança no navegador.",
+            "**Erros de JavaScript:** Falhas na execução de scripts JavaScript podem impedir o carregamento correto da página ou de funcionalidades interativas.",
+            "**Erros de Carregamento de Recurso (Imagens, CSS, etc.):** Um arquivo de imagem, folha de estilo (CSS) ou script não pôde ser carregado, resultando em um layout quebrado ou funcionalidades ausentes."
+          ]
+        },
+        "Entre em contato com a WZZM para solicitar informações sobre este erro. O e-mail de contato é nukephoenixdeveloper@gmail.com"
+      ]
+    }
+  ]
+}

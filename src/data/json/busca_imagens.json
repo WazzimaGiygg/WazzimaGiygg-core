@@ -1,0 +1,40 @@
+{
+  "materias": {
+    "1": {
+      "titulo": "1. Por Conteúdo Visual",
+      "descricao": "Pessoas / Retratos, Animais, Paisagens / Natureza, Objetos, Arquitetura, Cenas urbanas, Abstrato / Arte digital",
+      "link": "./imagens/conteudo-visual/",
+      "categoria": "Opções de Busca de Imagens"
+    },
+    "2": {
+      "titulo": "2. Por Tema ou Contexto",
+      "descricao": "Saúde / Medicina, Moda, Alimentação, Educação, Tecnologia, Esportes, Eventos / Datas comemorativas",
+      "link": "./imagens/tema-contexto/",
+      "categoria": "Opções de Busca de Imagens"
+    },
+    "3": {
+      "titulo": "3. Por Tipo de Arquivo ou Técnica",
+      "descricao": "Fotografias, Ilustrações, Renderizações 3D, Capturas de tela, Gráficos vetoriais",
+      "link": "./imagens/tipo-arquivo/",
+      "categoria": "Opções de Busca de Imagens"
+    },
+    "4": {
+      "titulo": "4. Por Formato ou Resolução",
+      "descricao": "Imagens quadradas, paisagem, retrato, Alta resolução (HD, 4K, etc.), Miniaturas / thumbnails",
+      "link": "./imagens/formato-resolucao/",
+      "categoria": "Opções de Busca de Imagens"
+    },
+    "5": {
+      "titulo": "5. Por Função ou Uso",
+      "descricao": "Ícones, Backgrounds / Papéis de parede, Texturas / Padrões, Imagens para redes sociais, Banners / Slides",
+      "link": "./imagens/funcao-uso/",
+      "categoria": "Opções de Busca de Imagens"
+    },
+    "6": {
+      "titulo": "6. Por Metadados Técnicos",
+      "descricao": "Por data de criação, Por câmera usada, Por localização geográfica (com geotags)",
+      "link": "./imagens/metadados-tecnicos/",
+      "categoria": "Opções de Busca de Imagens"
+    }
+  }
+}

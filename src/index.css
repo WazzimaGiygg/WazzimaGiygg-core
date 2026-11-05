@@ -1,0 +1,86 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    background-color: #F8F7F4;
+    color: #171717;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1, h2, h3, h4, .font-editorial {
+    font-family: 'Playfair Display', Georgia, serif;
+  }
+
+  .font-instrument {
+    font-family: 'Instrument Serif', Georgia, serif;
+  }
+
+  .font-cinzel {
+    font-family: 'Cinzel', serif;
+  }
+
+  .font-mono-tag {
+    font-family: 'JetBrains Mono', monospace;
+  }
+}
+
+/* Custom editorial border styles */
+.border-double-thick {
+  border-bottom: 3px double #1F2937;
+}
+
+.paper-card {
+  background: #FFFFFF;
+  border: 1px solid #141414;
+  box-shadow: 4px 4px 0px 0px rgba(20, 20, 20, 1);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.paper-card:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: 6px 6px 0px 0px rgba(20, 20, 20, 1);
+}
+
+.paper-button {
+  background: #141414;
+  color: #F8F7F4;
+  border: 1px solid #141414;
+  box-shadow: 2px 2px 0px 0px rgba(20, 20, 20, 1);
+  transition: all 0.15s ease;
+}
+
+.paper-button:hover {
+  background: #EBEAE8;
+  color: #141414;
+  box-shadow: 3px 3px 0px 0px rgba(20, 20, 20, 1);
+}
+
+.paper-button-secondary {
+  background: #FFFFFF;
+  color: #141414;
+  border: 1px solid #141414;
+  box-shadow: 2px 2px 0px 0px rgba(20, 20, 20, 1);
+  transition: all 0.15s ease;
+}
+
+.paper-button-secondary:hover {
+  background: #F2F0EB;
+  box-shadow: 3px 3px 0px 0px rgba(20, 20, 20, 1);
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #EBE8E1;
+}
+::-webkit-scrollbar-thumb {
+  background: #8C827A;
+  border-radius: 0px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #5A524C;
+}

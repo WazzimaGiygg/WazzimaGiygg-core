@@ -1,0 +1,40 @@
+{
+  "materias": {
+    "1": {
+      "titulo": "1. Animais",
+      "descricao": "Animais",
+      "link": "./animais.html",
+      "categoria": "Opções de Busca de Imagens"
+    },
+    "2": {
+      "titulo": "2. Pessoas",
+      "descricao": "Pessoas",
+      "link": "./pessoas.html",
+      "categoria": "Opções de Busca de Imagens"
+    },
+    "3": {
+      "titulo": "3. Medicina",
+      "descricao": "Medicina",
+      "link": "./medicina.html",
+      "categoria": "Opções de Busca de Imagens"
+    },
+    "4": {
+      "titulo": "4. Modaso",
+      "descricao": "Modas",
+      "link": "./modas.html",
+      "categoria": "Opções de Busca de Imagens"
+    },
+    "5": {
+      "titulo": "5. Texturas",
+      "descricao": "Ícones, Backgrounds / Papéis de parede, Texturas / Padrões, Imagens para redes sociais, Banners / Slides",
+      "link": "./texturas.html",
+      "categoria": "Opções de Busca de Imagens"
+    },
+    "6": {
+      "titulo": "6. Por Metadados Técnicos",
+      "descricao": "Por data de criação, Por câmera usada, Por localização geográfica (com geotags)",
+      "link": "./imagens/metadados.html",
+      "categoria": "Opções de Busca de Imagens"
+    }
+  }
+}

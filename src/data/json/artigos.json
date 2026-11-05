@@ -1,0 +1,200 @@
+{
+  "materias": {
+    "metodologiaCientifica": {
+      "titulo": "Metodologia Científica",
+      "descricao": "Princípios e métodos da pesquisa científica.",
+      "link": "./paginas/metodologiacientifica.html",
+      "categoria": "📘 Artigos Científicos e Produção Acadêmica",
+      "acesso": "publico"
+    },
+    "tecnicasDePesquisa": {
+      "titulo": "Técnicas de Pesquisa",
+      "descricao": "Instrumentos para coleta de dados: entrevistas, observação etc.",
+      "link": "./paginas/tecnicasdepesquisa.html",
+      "categoria": "📘 Artigos Científicos e Produção Acadêmica",
+      "acesso": "publico"
+    },
+    "leituraProducaoTextosAcademicos": {
+      "titulo": "Leitura e Produção de Textos Acadêmicos",
+      "descricao": "Habilidades de leitura crítica e escrita acadêmica.",
+      "link": "./paginas/leituraeproducaodetextosacdemicos.html",
+      "categoria": "📘 Artigos Científicos e Produção Acadêmica",
+      "acesso": "publico"
+    },
+    "redacaoCientifica": {
+      "titulo": "Redação Científica",
+      "descricao": "Normas e estilos de escrita para a comunicação eficaz de resultados de pesquisa.",
+      "link": "./paginas/redacao_cientifica.html",
+      "categoria": "📘 Artigos Científicos e Produção Acadêmica",
+      "acesso": "publico"
+    },
+    "comunicacaoCientifica": {
+      "titulo": "Comunicação Científica",
+      "descricao": "Estratégias de apresentação e divulgação de pesquisas.",
+      "link": "./paginas/comunicacao_cientifica.html",
+      "categoria": "📘 Artigos Científicos e Produção Acadêmica",
+      "acesso": "publico"
+    },
+    "eticaNaPesquisa": {
+      "titulo": "Ética na Pesquisa",
+      "descricao": "Princípios éticos e regulamentações na condução de pesquisa.",
+      "link": "./paginas/etica_na_pesquisa.html",
+      "categoria": "📘 Artigos Científicos e Produção Acadêmica",
+      "acesso": "publico"
+    },
+    "introducaoPesquisaCientifica": {
+      "titulo": "Introdução à Pesquisa Científica",
+      "descricao": "Fundamentos da pesquisa, tipos, etapas e elaboração de projetos.",
+      "link": "./paginas/introducao_a_pesquisa_cientifica.html",
+      "categoria": "📘 Artigos Científicos e Produção Acadêmica",
+      "acesso": "publico"
+    },
+    "tcc": {
+      "titulo": "Trabalho de Conclusão de Curso (TCC)",
+      "descricao": "Orientação e desenvolvimento de projeto de pesquisa individual.",
+      "link": "./paginas/tcc.html",
+      "categoria": "📘 Artigos Científicos e Produção Acadêmica",
+      "acesso": "publico"
+    },
+    "projetoDePesquisa": {
+      "titulo": "Projeto de Pesquisa",
+      "descricao": "Elaboração de plano detalhado para investigação científica.",
+      "link": "./paginas/projeto_de_pesquisa.html",
+      "categoria": "📘 Artigos Científicos e Produção Acadêmica",
+      "acesso": "publico"
+    },
+    "publicacaoCientifica": {
+      "titulo": "Publicação Científica e Revisão por Pares",
+      "descricao": "Processo de submissão, avaliação e publicação de artigos.",
+      "link": "./paginas/publicacao_cientifica.html",
+      "categoria": "📘 Artigos Científicos e Produção Acadêmica",
+      "acesso": "publico"
+    },
+    "estatisticaBasica": {
+      "titulo": "Estatística Básica",
+      "descricao": "Conceitos de estatística descritiva e inferencial.",
+      "link": "./paginas/estatistica_basica.html",
+      "categoria": "📊 Variáveis e Análise de Dados",
+      "acesso": "publico"
+    },
+    "bioestatistica": {
+      "titulo": "Bioestatística (em cursos da saúde)",
+      "descricao": "Aplicação de métodos estatísticos em pesquisas na área da saúde.",
+      "link": "./paginas/bioestatistica.html",
+      "categoria": "📊 Variáveis e Análise de Dados",
+      "acesso": "publico"
+    },
+    "estatisticaAplicada": {
+      "titulo": "Estatística Aplicada à Pesquisa",
+      "descricao": "Utilização de técnicas estatísticas para analisar dados de pesquisa.",
+      "link": "./paginas/estatistica_aplicada.html",
+      "categoria": "📊 Variáveis e Análise de Dados",
+      "acesso": "publico"
+    },
+    "metodosQuantitativos": {
+      "titulo": "Métodos Quantitativos",
+      "descricao": "Abordagens de pesquisa com dados numéricos e análise estatística.",
+      "link": "./paginas/metodos_quantitativos.html",
+      "categoria": "📊 Variáveis e Análise de Dados",
+      "acesso": "publico"
+    },
+    "metodosQualitativos": {
+      "titulo": "Métodos Qualitativos",
+      "descricao": "Abordagens de pesquisa com dados não numéricos.",
+      "link": "./paginas/metodos_qualitativos.html",
+      "categoria": "📊 Variáveis e Análise de Dados",
+      "acesso": "publico"
+    },
+    "psicometria": {
+      "titulo": "Psicometria (em psicologia e educação)",
+      "descricao": "Teoria e métodos de construção e aplicação de instrumentos de medida.",
+      "link": "./paginas/psicometria.html",
+      "categoria": "📊 Variáveis e Análise de Dados",
+      "acesso": "publico"
+    },
+    "econometria": {
+      "titulo": "Econometria (em economia e ciências sociais)",
+      "descricao": "Análise de dados econômicos com métodos estatísticos e matemáticos.",
+      "link": "./paginas/econometria.html",
+      "categoria": "📊 Variáveis e Análise de Dados",
+      "acesso": "publico"
+    },
+    "analiseDeDados": {
+      "titulo": "Análise de Dados",
+      "descricao": "Processo de organização, limpeza, transformação e interpretação de dados.",
+      "link": "./paginas/analise_de_dados.html",
+      "categoria": "📊 Variáveis e Análise de Dados",
+      "acesso": "publico"
+    },
+    "inferenciaEstatistica": {
+      "titulo": "Inferência Estatística",
+      "descricao": "Utilização de amostras para generalizações sobre populações.",
+      "link": "./paginas/inferencia_estatistica.html",
+      "categoria": "📊 Variáveis e Análise de Dados",
+      "acesso": "publico"
+    },
+    "planejamentoDeExperimentos": {
+      "titulo": "Planejamento de Experimentos",
+      "descricao": "Princípios e técnicas para planejamento de experimentos controlados.",
+      "link": "./paginas/planejamento_de_experimentos.html",
+      "categoria": "📊 Variáveis e Análise de Dados",
+      "acesso": "publico"
+    },
+    "designDePesquisa": {
+      "titulo": "Design de Pesquisa",
+      "descricao": "Estrutura geral de um estudo de pesquisa.",
+      "link": "./paginas/design_de_pesquisa.html",
+      "categoria": "📚 Outras Matérias Relacionadas",
+      "acesso": "publico"
+    },
+    "seminariosDePesquisa": {
+      "titulo": "Seminários de Pesquisa",
+      "descricao": "Discussão aprofundada de tópicos específicos de pesquisa.",
+      "link": "./paginas/seminarios_de_pesquisa.html",
+      "categoria": "📚 Outras Matérias Relacionadas",
+      "acesso": "publico"
+    },
+    "pesquisaOperacional": {
+      "titulo": "Pesquisa Operacional",
+      "descricao": "Aplicação de métodos analíticos para otimizar a tomada de decisões.",
+      "link": "./paginas/pesquisa_operacional.html",
+      "categoria": "📚 Outras Matérias Relacionadas",
+      "acesso": "publico"
+    },
+    "pesquisaEmCienciasSociais": {
+      "titulo": "Pesquisa em Ciências Sociais",
+      "descricao": "Métodos e técnicas para o estudo de fenômenos sociais.",
+      "link": "./paginas/pesquisa_em_ciencias_sociais.html",
+      "categoria": "📚 Outras Matérias Relacionadas",
+      "acesso": "publico"
+    },
+    "metodologiaDaPesquisaGeral": {
+      "titulo": "Metodologia da Pesquisa em Educação / Saúde / Administração etc.",
+      "descricao": "Aplicação da pesquisa científica em contextos específicos.",
+      "link": "./paginas/metodologia_da_pesquisa.html",
+      "categoria": "📚 Outras Matérias Relacionadas",
+      "acesso": "publico"
+    },
+    "logicaEArgumentacao": {
+      "titulo": "Lógica e Argumentação",
+      "descricao": "Princípios do raciocínio válido e construção de argumentos.",
+      "link": "./paginas/logica_e_argumentacao.html",
+      "categoria": "📚 Outras Matérias Relacionadas",
+      "acesso": "publico"
+    },
+    "tecnicasDeAmostragem": {
+      "titulo": "Técnicas de Amostragem",
+      "descricao": "Métodos para selecionar parte representativa de uma população.",
+      "link": "./paginas/tecnicas_de_amostragem.html",
+      "categoria": "📚 Outras Matérias Relacionadas",
+      "acesso": "publico"
+    },
+    "artigosGeradosAutomaticamente": {
+      "titulo": "Artigos Gerados Automaticamente",
+      "descricao": "Artigos Gerados Automaticamente para a saúde mental.",
+      "link": "./paginas/outroartigosoficialwzzm/artigosdesaudementalgerados.html",
+      "categoria": "📚 Outras Matérias Relacionadas",
+      "acesso": "publico"
+    }
+  }
+}
