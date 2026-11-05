@@ -64,7 +64,40 @@ const DATA_CACHE = {
       criadoEm: new Date().toISOString()
     }
   ],
-  auditLogs: [] as any[]
+  auditLogs: [] as any[],
+  users: [
+    {
+      uid: 'usr_burocrata_01',
+      name: 'Burocrata-Chefe WZZM',
+      email: 'admin@wazzimagiygg.com',
+      isAdmin: true,
+      isBanned: false,
+      isTeacher: true,
+      createdAt: '2025-05-01T12:00:00.000Z',
+      lastLoginAt: new Date().toISOString()
+    },
+    {
+      uid: 'usr_editor_02',
+      name: 'Professor & Editor Acadêmico',
+      email: 'docente@wazzimagiygg.com',
+      isAdmin: false,
+      isBanned: false,
+      isTeacher: true,
+      createdAt: '2025-06-15T14:30:00.000Z',
+      lastLoginAt: new Date().toISOString()
+    },
+    {
+      uid: 'usr_infrator_03',
+      name: 'IP Vândalo em Observação',
+      email: 'vandal@proxy.net',
+      isAdmin: false,
+      isBanned: true,
+      banReason: 'Tentativa de alteração maliciosa de dados de mobilidade',
+      isTeacher: false,
+      createdAt: '2025-08-20T09:15:00.000Z',
+      lastLoginAt: '2025-09-01T10:00:00.000Z'
+    }
+  ]
 };
 
 // ============================================
@@ -348,6 +381,189 @@ app.get('/api/stats', (_req: Request, res: Response) => {
     systemUptime: Math.floor(process.uptime()),
     timestamp: new Date().toISOString()
   });
+});
+
+// ============================================
+// 12. BUROCRATA & ADMIN CORE API (admin/)
+// ============================================
+
+// List users for admin dashboard
+app.get('/api/admin/users', (_req: Request, res: Response) => {
+  res.json({
+    total: DATA_CACHE.users.length,
+    users: DATA_CACHE.users
+  });
+});
+
+// Add new user administratively
+app.post('/api/admin/users', (req: Request, res: Response) => {
+  const { name, email, isAdmin, isTeacher, isBanned } = req.body;
+  if (!email) {
+    res.status(400).json({ error: 'E-mail é obrigatório.' });
+    return;
+  }
+
+  const newUser = {
+    uid: `usr_${Date.now().toString(36)}`,
+    name: name || 'Novo Usuário',
+    email,
+    isAdmin: !!isAdmin,
+    isTeacher: !!isTeacher,
+    isBanned: !!isBanned,
+    createdAt: new Date().toISOString(),
+    lastLoginAt: new Date().toISOString()
+  };
+
+  DATA_CACHE.users.unshift(newUser);
+  res.status(201).json({ success: true, user: newUser });
+});
+
+// Toggle Admin role
+app.put('/api/admin/users/:uid/toggle-admin', (req: Request, res: Response) => {
+  const { uid } = req.params;
+  const { isAdmin } = req.body;
+  const user = DATA_CACHE.users.find((u) => u.uid === uid);
+  if (user) {
+    user.isAdmin = typeof isAdmin === 'boolean' ? isAdmin : !user.isAdmin;
+    res.json({ success: true, user });
+  } else {
+    // If not found in cache, register into cache
+    const newUser = {
+      uid,
+      name: 'Usuário do Sistema',
+      email: `${uid}@user.local`,
+      isAdmin: typeof isAdmin === 'boolean' ? isAdmin : true,
+      isTeacher: false,
+      isBanned: false,
+      createdAt: new Date().toISOString(),
+      lastLoginAt: new Date().toISOString()
+    };
+    DATA_CACHE.users.unshift(newUser);
+    res.json({ success: true, user: newUser });
+  }
+});
+
+// Toggle Ban status
+app.put('/api/admin/users/:uid/toggle-ban', (req: Request, res: Response) => {
+  const { uid } = req.params;
+  const { isBanned, banReason } = req.body;
+  const user = DATA_CACHE.users.find((u) => u.uid === uid);
+  if (user) {
+    user.isBanned = typeof isBanned === 'boolean' ? isBanned : !user.isBanned;
+    if (user.isBanned) {
+      (user as any).banReason = banReason || 'Violação das Políticas do Portal';
+    } else {
+      delete (user as any).banReason;
+    }
+    res.json({ success: true, user });
+  } else {
+    res.status(404).json({ error: 'Usuário não encontrado.' });
+  }
+});
+
+// Toggle Teacher / Docente role
+app.put('/api/admin/users/:uid/toggle-teacher', (req: Request, res: Response) => {
+  const { uid } = req.params;
+  const { isTeacher } = req.body;
+  const user = DATA_CACHE.users.find((u) => u.uid === uid);
+  if (user) {
+    user.isTeacher = typeof isTeacher === 'boolean' ? isTeacher : !user.isTeacher;
+    res.json({ success: true, user });
+  } else {
+    res.status(404).json({ error: 'Usuário não encontrado.' });
+  }
+});
+
+// Delete user record
+app.delete('/api/admin/users/:uid', (req: Request, res: Response) => {
+  const { uid } = req.params;
+  const index = DATA_CACHE.users.findIndex((u) => u.uid === uid);
+  if (index !== -1) {
+    DATA_CACHE.users.splice(index, 1);
+    res.json({ success: true, message: 'Usuário excluído com sucesso.' });
+  } else {
+    res.status(404).json({ error: 'Usuário não encontrado.' });
+  }
+});
+
+// Delete article administratively
+app.delete('/api/admin/articles/:id', (req: Request, res: Response) => {
+  const { id } = req.params;
+  // If it is in noticias
+  if (id.startsWith('news_')) {
+    const idx = parseInt(id.replace('news_', ''), 10) - 1;
+    if (idx >= 0 && idx < DATA_CACHE.noticias.length) {
+      DATA_CACHE.noticias.splice(idx, 1);
+    }
+  }
+  res.json({ success: true, message: `Artigo ${id} removido pelo Burocrata.` });
+});
+
+// Update ticket status
+app.put('/api/tickets/:id', (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { status } = req.body;
+  const ticket = DATA_CACHE.tickets.find((t) => t.id === id);
+  if (ticket) {
+    ticket.status = status || 'Concluído';
+    res.json({ success: true, ticket });
+  } else {
+    res.status(404).json({ error: 'Ticket não encontrado.' });
+  }
+});
+
+// Add / Delete sanctioned city
+app.post('/api/admin/sanctions', (req: Request, res: Response) => {
+  const { cidade, moderador } = req.body;
+  if (!cidade || !moderador) {
+    res.status(400).json({ error: 'Cidade e moderador são obrigatórios.' });
+    return;
+  }
+  DATA_CACHE.cidadesSancionadas.cidades_sancionadas.unshift({ cidade, moderador });
+  res.status(201).json({ success: true, data: DATA_CACHE.cidadesSancionadas });
+});
+
+app.delete('/api/admin/sanctions/:index', (req: Request, res: Response) => {
+  const idx = parseInt(req.params.index, 10);
+  if (!isNaN(idx) && idx >= 0 && idx < DATA_CACHE.cidadesSancionadas.cidades_sancionadas.length) {
+    DATA_CACHE.cidadesSancionadas.cidades_sancionadas.splice(idx, 1);
+    res.json({ success: true, data: DATA_CACHE.cidadesSancionadas });
+  } else {
+    res.status(400).json({ error: 'Índice inválido.' });
+  }
+});
+
+// Elevate account with Burocrata Master Key / PIN
+app.post('/api/admin/elevate', (req: Request, res: Response) => {
+  const { uid, email, passkey } = req.body;
+  const validKeys = ['wzzm2026', 'burocrata', 'burocrata-wzzm', 'admin123', 'wazzimagiygg'];
+
+  if (validKeys.includes(passkey?.toLowerCase().trim())) {
+    // Elevate in users cache
+    let existing = DATA_CACHE.users.find((u) => u.uid === uid || u.email === email);
+    if (existing) {
+      existing.isAdmin = true;
+    } else {
+      DATA_CACHE.users.unshift({
+        uid: uid || `admin_${Date.now()}`,
+        name: 'Burocrata Autorizado',
+        email: email || 'burocrata@wazzimagiygg.com',
+        isAdmin: true,
+        isTeacher: true,
+        isBanned: false,
+        createdAt: new Date().toISOString(),
+        lastLoginAt: new Date().toISOString()
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Acesso de Burocrata concedido com sucesso.',
+      isAdmin: true
+    });
+  } else {
+    res.status(401).json({ error: 'Chave de segurança de Burocrata incorreta.' });
+  }
 });
 
 // ============================================

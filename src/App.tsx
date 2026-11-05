@@ -37,7 +37,9 @@ import {
   Sliders,
   ExternalLink,
   ChevronRight,
-  Info
+  Info,
+  Crown,
+  Shield
 } from "lucide-react";
 
 import {
@@ -57,6 +59,7 @@ import {
   UserNotification
 } from "./firebase";
 import { stripHtmlToPlainText } from "./utils/text";
+import AdminPanel from "./components/AdminPanel";
 
 export default function App() {
   // Authentication & Role States
@@ -64,6 +67,7 @@ export default function App() {
   const [isGuestUser, setIsGuestUser] = useState(false);
   const [isBanned, setIsBanned] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isAdminPanelOpen, setIsAdminPanelOpen] = useState(false);
   const [banReason] = useState("Violação dos Termos ou Conta sob Moderação");
 
   // Navigation & Content States
@@ -571,6 +575,22 @@ export default function App() {
 
             <span className="text-stone-700">|</span>
 
+            {/* Burocrata / Admin Access Button */}
+            <button
+              onClick={() => setIsAdminPanelOpen(true)}
+              className={`flex items-center gap-1.5 px-2 py-0.5 text-[10px] font-mono font-bold uppercase tracking-wider transition-all cursor-pointer border ${
+                isAdmin
+                  ? "bg-red-700 text-white border-red-500 hover:bg-red-600 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]"
+                  : "bg-stone-800 text-amber-300 border-stone-700 hover:bg-stone-700"
+              }`}
+              title="Acesso exclusivo da administração (burocrata)"
+            >
+              <Crown className="w-3 h-3 text-amber-400" />
+              <span>{isAdmin ? "PAINEL BUROCRATA" : "ACESSO BUROCRATA"}</span>
+            </button>
+
+            <span className="text-stone-700">|</span>
+
             {/* Auth Indicator */}
             {user ? (
               <div className="flex items-center gap-2">
@@ -694,6 +714,16 @@ export default function App() {
                 </button>
               );
             })}
+
+            {/* Direct Burocrata Admin Tab */}
+            <button
+              onClick={() => setIsAdminPanelOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-2 text-xs font-mono font-bold uppercase tracking-wider whitespace-nowrap bg-red-800 hover:bg-red-700 text-white border border-red-950 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] cursor-pointer"
+              title="Acesso exclusivo da administração (burocrata)"
+            >
+              <Crown className="w-3.5 h-3.5 text-amber-300" />
+              <span>Burocrata (Admin)</span>
+            </button>
           </div>
         </div>
       </nav>
@@ -1635,6 +1665,14 @@ export default function App() {
               Ouvidoria
             </button>
             <span className="text-stone-700">•</span>
+            <button
+              onClick={() => setIsAdminPanelOpen(true)}
+              className="text-red-400 hover:text-red-300 font-bold flex items-center gap-1 cursor-pointer"
+            >
+              <Crown className="w-3 h-3 text-amber-400" />
+              <span>Área do Burocrata</span>
+            </button>
+            <span className="text-stone-700">•</span>
             <a
               href="https://wazzimagiygg.com/donate/"
               target="_blank"
@@ -1651,6 +1689,24 @@ export default function App() {
           </div>
         </div>
       </footer>
+
+      {/* 12. BUROCRATA ADMIN FULL ACCESS PANEL */}
+      {isAdminPanelOpen && (
+        <AdminPanel
+          currentUser={user}
+          isAdmin={isAdmin}
+          onClose={() => setIsAdminPanelOpen(false)}
+          onElevateSuccess={(_res) => {
+            setIsAdmin(true);
+            setUser((prev: any) => ({
+              ...(prev || { uid: `admin_${Date.now()}`, name: "Burocrata Autorizado" }),
+              isAdmin: true
+            }));
+            showToast("Privilégios de Burocrata ativos com sucesso!");
+          }}
+          showToast={showToast}
+        />
+      )}
     </div>
   );
 }

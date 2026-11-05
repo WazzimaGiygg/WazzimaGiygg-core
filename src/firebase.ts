@@ -9,6 +9,7 @@ import {
   collection, 
   getDocs, 
   addDoc,
+  deleteDoc,
   query, 
   orderBy, 
   increment,
@@ -337,3 +338,155 @@ export async function registerAuditLog(userUid: string, action: string, details?
     // ignore
   }
 }
+
+// ============================================
+// BUROCRATA & ADMIN OPERATIONS
+// ============================================
+
+export async function listAllUsersFromFirestore(): Promise<AppUser[]> {
+  // First attempt: Firestore users collection
+  try {
+    const snapshot = await getDocs(collection(db, "users"));
+    const usersList: AppUser[] = [];
+    snapshot.forEach((docSnap) => {
+      const d = docSnap.data();
+      usersList.push({
+        uid: docSnap.id,
+        email: d.email || "",
+        name: d.name || d.displayName || "Usuário",
+        profilePictureUrl: d.profilePictureUrl || "",
+        isAdmin: !!d.isAdmin,
+        isBanned: !!(d.isBanned || d.isBan),
+        isTeacher: !!(d.isTeacher || d.isTeatcher),
+        createdAt: d.createdAt?.toDate ? d.createdAt.toDate().toISOString() : d.createdAt,
+        lastLoginAt: d.lastLoginAt?.toDate ? d.lastLoginAt.toDate().toISOString() : d.lastLoginAt
+      });
+    });
+    if (usersList.length > 0) return usersList;
+  } catch (err) {
+    console.warn("Firestore list users failed, fallback to backend:", err);
+  }
+
+  // Fallback: Backend API
+  try {
+    const res = await fetch("/api/admin/users");
+    if (res.ok) {
+      const data = await res.json();
+      return data.users || [];
+    }
+  } catch (apiErr) {
+    console.warn("Backend admin users API error:", apiErr);
+  }
+
+  return [];
+}
+
+export async function updateUserAdminStatus(uid: string, isAdmin: boolean): Promise<boolean> {
+  try {
+    await updateDoc(doc(db, "users", uid), { isAdmin });
+    await updateDoc(doc(db, "usuários", uid), { isAdmin }).catch(() => {});
+  } catch (err) {
+    console.warn("Firestore updateUserAdminStatus error:", err);
+  }
+
+  // Also sync with backend API
+  try {
+    await fetch(`/api/admin/users/${encodeURIComponent(uid)}/toggle-admin`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ isAdmin })
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function updateUserBanStatus(uid: string, isBanned: boolean, banReason?: string): Promise<boolean> {
+  const payload = {
+    isBanned,
+    isBan: isBanned,
+    banReason: isBanned ? (banReason || "Violação das Políticas do Portal") : null,
+    bannedAt: isBanned ? serverTimestamp() : null
+  };
+
+  try {
+    await updateDoc(doc(db, "users", uid), payload);
+    await updateDoc(doc(db, "usuários", uid), payload).catch(() => {});
+  } catch (err) {
+    console.warn("Firestore updateUserBanStatus error:", err);
+  }
+
+  try {
+    await fetch(`/api/admin/users/${encodeURIComponent(uid)}/toggle-ban`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ isBanned, banReason })
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function updateUserTeacherStatus(uid: string, isTeacher: boolean): Promise<boolean> {
+  const payload = {
+    isTeacher,
+    isTeatcher: isTeacher
+  };
+
+  try {
+    await updateDoc(doc(db, "users", uid), payload);
+    await updateDoc(doc(db, "usuários", uid), payload).catch(() => {});
+  } catch (err) {
+    console.warn("Firestore updateUserTeacherStatus error:", err);
+  }
+
+  try {
+    await fetch(`/api/admin/users/${encodeURIComponent(uid)}/toggle-teacher`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ isTeacher })
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function deleteUserFromFirestore(uid: string): Promise<boolean> {
+  try {
+    await deleteDoc(doc(db, "users", uid));
+    await deleteDoc(doc(db, "usuários", uid)).catch(() => {});
+  } catch (err) {
+    console.warn("Firestore deleteUser error:", err);
+  }
+
+  try {
+    await fetch(`/api/admin/users/${encodeURIComponent(uid)}`, {
+      method: "DELETE"
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function deleteArticleFromFirestore(collectionName: string, id: string): Promise<boolean> {
+  try {
+    await deleteDoc(doc(db, collectionName, id));
+    await deleteDoc(doc(db, "artigos", id)).catch(() => {});
+  } catch (err) {
+    console.warn("Firestore deleteArticle error:", err);
+  }
+
+  try {
+    await fetch(`/api/admin/articles/${encodeURIComponent(id)}?collection=${encodeURIComponent(collectionName)}`, {
+      method: "DELETE"
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
