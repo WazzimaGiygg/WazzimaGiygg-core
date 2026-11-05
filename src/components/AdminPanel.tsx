@@ -62,6 +62,7 @@ import {
   FERRAMENTAS_ADMINISTRATIVAS_SOURCE,
   FerramentaItem
 } from "../data/ferramentasSource";
+import FerramentasHub from "./FerramentasHub";
 
 interface AdminPanelProps {
   currentUser: any;
@@ -124,6 +125,7 @@ export default function AdminPanel({
   // Ferramentas Administrativas & view-source State
   const [isViewSourceModalOpen, setIsViewSourceModalOpen] = useState(false);
   const [sourceCopied, setSourceCopied] = useState(false);
+  const [selectedToolHref, setSelectedToolHref] = useState<string | null>(null);
   const [ferramentasSearch, setFerramentasSearch] = useState("");
   const [selectedFerramentaCategory, setSelectedFerramentaCategory] = useState("all");
 
@@ -1347,137 +1349,21 @@ export default function AdminPanel({
           </div>
         )}
 
-        {/* SUB-VIEW 7: FERRAMENTAS ADMINISTRATIVAS & VIEW-SOURCE */}
+        {/* SUB-VIEW 7: FERRAMENTAS ADMINISTRATIVAS (24 MÓDULOS INCORPORADOS) */}
         {adminTab === "ferramentas" && (
-          <div className="bg-white border-2 border-[#141414] p-6 shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] space-y-6">
-            {/* Header & Source Trigger */}
-            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b-2 border-[#141414] pb-5">
-              <div>
-                <div className="flex items-center gap-2 mb-1">
-                  <h3 className="font-editorial text-2xl font-bold text-[#141414]">
-                    Menu de Ferramentas Administrativas
-                  </h3>
-                  <span className="bg-red-700 text-white font-mono text-[9px] font-bold px-2 py-0.5 uppercase tracking-wider">
-                    24 Ferramentas Ativas
-                  </span>
-                </div>
-                <p className="font-mono text-xs text-stone-600">
-                  Diretório: <code className="text-red-700 font-bold">admin/ferramentasadministrativas.html</code> • Totalmente integrado à administração WZZM
-                </p>
-              </div>
-
-              {/* View-Source & Standalone Page Actions */}
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  onClick={() => setIsViewSourceModalOpen(true)}
-                  className="bg-[#0F0F12] hover:bg-black text-amber-400 border border-stone-800 px-3.5 py-2 font-mono text-xs font-bold uppercase tracking-wider flex items-center gap-2 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] cursor-pointer transition-all active:translate-x-0.5 active:translate-y-0.5"
-                  title="Abrir o visualizador de código-fonte exato"
-                >
-                  <Code className="w-4 h-4 text-amber-400" />
-                  <span>view-source:ferramentasadministrativas.html</span>
-                </button>
-
-                <a
-                  href="/admin/ferramentasadministrativas.html"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="paper-button bg-white text-stone-900 hover:bg-stone-100 px-3.5 py-2 font-mono text-xs font-bold uppercase tracking-wider flex items-center gap-2 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] cursor-pointer"
-                  title="Abrir o arquivo HTML estático em nova aba"
-                >
-                  <ExternalLink className="w-3.5 h-3.5 text-stone-700" />
-                  <span>Abrir Página Estática</span>
-                </a>
-              </div>
-            </div>
-
-            {/* Quick Tools Controls & Search */}
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-              <div className="relative flex-1 max-w-md">
-                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
-                <input
-                  type="text"
-                  placeholder="Pesquisar entre as 24 ferramentas administrativas..."
-                  value={ferramentasSearch}
-                  onChange={(e) => setFerramentasSearch(e.target.value)}
-                  className="w-full pl-9 pr-4 py-2 text-xs font-mono bg-[#F8F7F4] border border-[#141414] focus:outline-none"
-                />
-              </div>
-
-              <div className="flex items-center gap-2">
-                <span className="font-mono text-[11px] text-stone-500 uppercase font-bold shrink-0">
-                  Categoria:
-                </span>
-                <select
-                  value={selectedFerramentaCategory}
-                  onChange={(e) => setSelectedFerramentaCategory(e.target.value)}
-                  className="p-2 border border-[#141414] font-mono text-xs bg-[#F8F7F4] focus:outline-none"
-                >
-                  <option value="all">Todas as Categorias ({FERRAMENTAS_LIST.length})</option>
-                  {ferramentaCategories
-                    .filter((c) => c !== "all")
-                    .map((cat) => (
-                      <option key={cat} value={cat}>
-                        {cat}
-                      </option>
-                    ))}
-                </select>
-              </div>
-            </div>
-
-            {/* Grid of 24 Cards Matching the Original admin/ferramentasadministrativas.html */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 pt-2">
-              {filteredFerramentas.map((tool, idx) => (
-                <div
-                  key={idx}
-                  onClick={() => handleFerramentaAction(tool)}
-                  className="group relative bg-[#ffffff] border border-[#d6d3d1] hover:border-[#141414] p-4 flex flex-col justify-between transition-all duration-200 hover:-translate-y-1 hover:shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] cursor-pointer overflow-hidden"
-                >
-                  {/* Subtle hover gradient inspired by original CSS */}
-                  <div className="absolute inset-0 bg-gradient-to-r from-blue-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
-
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="font-mono text-[9px] font-bold uppercase tracking-wider bg-stone-100 text-stone-700 group-hover:bg-amber-100 group-hover:text-amber-900 border border-stone-200 px-1.5 py-0.5">
-                        {tool.category}
-                      </span>
-                      {tool.isExternal ? (
-                        <span className="font-mono text-[9px] text-blue-600 font-bold flex items-center gap-0.5">
-                          Externo <ExternalLink className="w-2.5 h-2.5" />
-                        </span>
-                      ) : (
-                        <span className="font-mono text-[9px] text-emerald-700 font-bold">
-                          Integrado WZZM
-                        </span>
-                      )}
-                    </div>
-
-                    <h4 className="font-editorial text-base font-bold text-stone-900 group-hover:text-red-700 transition-colors leading-snug">
-                      {tool.label}
-                    </h4>
-
-                    <p className="font-mono text-[10px] text-stone-500 truncate mt-1">
-                      {tool.href}
-                    </p>
-                  </div>
-
-                  <div className="mt-4 pt-2.5 border-t border-stone-100 flex items-center justify-between text-xs font-mono">
-                    <span className="text-[10px] text-stone-500 group-hover:text-stone-900 font-bold uppercase">
-                      {tool.action ? `Executar: ${tool.action}` : "Acessar Módulo"}
-                    </span>
-                    <span className="text-[#0d6efd] font-bold text-base transition-transform group-hover:translate-x-1.5">
-                      ➔
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {filteredFerramentas.length === 0 && (
-              <div className="p-8 text-center font-mono text-xs text-stone-500 border border-dashed border-stone-300">
-                Nenhuma ferramenta administrativa encontrada com os termos informados.
-              </div>
-            )}
-          </div>
+          <FerramentasHub
+            currentUser={currentUser}
+            usersList={usersList}
+            adminArticles={adminArticles}
+            ticketsList={ticketsList}
+            sanctionsList={sanctionsList}
+            auditLogs={auditLogs}
+            showToast={showToast}
+            onOpenViewSource={() => setIsViewSourceModalOpen(true)}
+            onNavigateTab={(tab) => setAdminTab(tab as any)}
+            selectedToolHref={selectedToolHref}
+            onSelectToolHref={(href) => setSelectedToolHref(href)}
+          />
         )}
       </main>
 

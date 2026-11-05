@@ -65,6 +65,120 @@ const DATA_CACHE = {
     }
   ],
   auditLogs: [] as any[],
+  costs: [
+    {
+      id: "cst-001",
+      descricao: "Instância Cloud Run & Node.js Server",
+      categoria: "Infraestrutura",
+      valor: 45.80,
+      data: "2026-11-01",
+      comprovanteUrl: "https://cloud.google.com",
+      responsavel: "Burocrata-Chefe",
+      status: "Pago"
+    },
+    {
+      id: "cst-002",
+      descricao: "Certificados SSL & DNS Anycast wazzimagiygg.com",
+      categoria: "Domínio & DNS",
+      valor: 89.00,
+      data: "2026-10-15",
+      comprovanteUrl: "https://registro.br",
+      responsavel: "Burocrata-Chefe",
+      status: "Pago"
+    },
+    {
+      id: "cst-003",
+      descricao: "Armazenamento Firestore & Regras de Segurança (wzzm-ce3fc)",
+      categoria: "Servidor & Banco",
+      valor: 19.50,
+      data: "2026-11-03",
+      comprovanteUrl: "https://console.firebase.google.com",
+      responsavel: "Infraestrutura WZZM",
+      status: "Pago"
+    }
+  ],
+  redirects: [
+    {
+      id: "red-01",
+      slug: "forum",
+      urlDestino: "https://wazzimagiygg.com/forum/",
+      titulo: "Fórum da Comunidade MASPIA",
+      comAviso: false,
+      totalCliques: 1420,
+      criadoEm: "2026-01-10",
+      criadoPor: "admin@wazzimagiygg.com",
+      ativo: true
+    },
+    {
+      id: "red-02",
+      slug: "acervo",
+      urlDestino: "https://wazzimagiygg.com/wiki/",
+      titulo: "Acesso Rápido ao Acervo Wiki Zero",
+      comAviso: false,
+      totalCliques: 890,
+      criadoEm: "2026-02-14",
+      criadoPor: "admin@wazzimagiygg.com",
+      ativo: true
+    }
+  ],
+  forumTopics: [
+    {
+      id: "top-101",
+      titulo: "[COMUNICADO] Diretrizes Editoriais e Conformidade com o Marco Civil",
+      categoria: "Regulamento",
+      autor: "Burocrata-Chefe",
+      autorEmail: "admin@wazzimagiygg.com",
+      respostas: 18,
+      fixado: true,
+      fechado: true,
+      denunciado: false,
+      dataCriacao: "2026-02-01"
+    },
+    {
+      id: "top-102",
+      titulo: "Metodologia de Revisão de Artigos na Seção Acadêmica",
+      categoria: "Debates Acadêmicos",
+      autor: "Prof. Dr. Oliveira",
+      autorEmail: "docente@wazzimagiygg.com",
+      respostas: 34,
+      fixado: false,
+      fechado: false,
+      denunciado: false,
+      dataCriacao: "2026-03-12"
+    }
+  ],
+  surveys: [
+    {
+      id: "surv-01",
+      titulo: "Avaliação do Novo Mecanismo de Busca em TypeScript",
+      tipo: "Pesquisa Acadêmica",
+      descricao: "Coleta de opiniões dos leitores sobre a velocidade e precisão da pesquisa de artigos.",
+      respostasOuStatus: "84 respostas coletadas (96% aprovação)",
+      data: "2026-10-28",
+      prioridade: "Média"
+    },
+    {
+      id: "surv-02",
+      titulo: "Denúncia anônima de violação de direitos autorais em ensaio didático",
+      tipo: "Denúncia Investigativa",
+      descricao: "Relato de trecho duplicado sem citação adequada do autor original na coleção Matéria de Ensaio.",
+      respostasOuStatus: "Em Investigação pelo Burocrata",
+      data: "2026-11-02",
+      prioridade: "Alta"
+    }
+  ],
+  blogPosts: [
+    {
+      id: "blog-01",
+      titulo: "Reestruturação Completa da Plataforma WazzimaGiygg em TypeScript",
+      resumo: "Migração da arquitetura técnica com integração unificada ao Firestore e máxima segurança.",
+      conteudo: "Hoje concluímos a modernização da infraestrutura do portal WazzimaGiygg, garantindo que todas as 5 coleções e o acervo histórico permaneçam 100% íntegros com performance otimizada.",
+      autor: "Gabinete do Burocrata",
+      data: "2026-11-05",
+      publicado: true,
+      tags: ["Tecnologia", "TypeScript", "Atualização"]
+    }
+  ],
   users: [
     {
       uid: 'usr_burocrata_01',
@@ -575,6 +689,240 @@ app.post('/api/admin/elevate', (req: Request, res: Response) => {
   } else {
     res.status(401).json({ error: 'Chave de segurança de Burocrata incorreta.' });
   }
+});
+
+// ============================================
+// ADMIN TOOLS SUITE APIS (24 FERRAMENTAS)
+// ============================================
+
+// 1. Costs API (administrarcustos, listadecustosavancada, listagemdecustos)
+app.get('/api/admin/costs', (_req: Request, res: Response) => {
+  res.json({ success: true, costs: DATA_CACHE.costs });
+});
+
+app.post('/api/admin/costs', (req: Request, res: Response) => {
+  const { descricao, categoria, valor, data, comprovanteUrl, responsavel, status } = req.body;
+  if (!descricao || valor === undefined) {
+    res.status(400).json({ error: 'Descrição e valor são obrigatórios.' });
+    return;
+  }
+  const newCost = {
+    id: `cst-${Date.now().toString().slice(-4)}`,
+    descricao,
+    categoria: categoria || 'Infraestrutura',
+    valor: parseFloat(valor) || 0,
+    data: data || new Date().toISOString().split('T')[0],
+    comprovanteUrl: comprovanteUrl || '',
+    responsavel: responsavel || 'Burocrata',
+    status: status || 'Pago'
+  };
+  DATA_CACHE.costs.unshift(newCost);
+  res.status(201).json({ success: true, cost: newCost });
+});
+
+app.delete('/api/admin/costs/:id', (req: Request, res: Response) => {
+  const { id } = req.params;
+  DATA_CACHE.costs = DATA_CACHE.costs.filter((c) => c.id !== id);
+  res.json({ success: true, message: `Custo ${id} removido com sucesso.` });
+});
+
+// 2. Redirects API (redirecionador, admintools/redirecionador)
+app.get('/api/admin/redirects', (_req: Request, res: Response) => {
+  res.json({ success: true, redirects: DATA_CACHE.redirects });
+});
+
+app.post('/api/admin/redirects', (req: Request, res: Response) => {
+  const { slug, urlDestino, titulo, comAviso } = req.body;
+  if (!slug || !urlDestino) {
+    res.status(400).json({ error: 'Slug e URL destino são obrigatórios.' });
+    return;
+  }
+  const cleanSlug = slug.replace(/^\/+/, '').toLowerCase().trim();
+  const newRedirect = {
+    id: `red-${Date.now().toString().slice(-4)}`,
+    slug: cleanSlug,
+    urlDestino: urlDestino.trim(),
+    titulo: titulo?.trim() || cleanSlug,
+    comAviso: Boolean(comAviso),
+    totalCliques: 0,
+    criadoEm: new Date().toISOString().split('T')[0],
+    criadoPor: 'burocrata@wazzimagiygg.com',
+    ativo: true
+  };
+  DATA_CACHE.redirects.unshift(newRedirect);
+  res.status(201).json({ success: true, redirect: newRedirect });
+});
+
+app.delete('/api/admin/redirects/:id', (req: Request, res: Response) => {
+  const { id } = req.params;
+  DATA_CACHE.redirects = DATA_CACHE.redirects.filter((r) => r.id !== id);
+  res.json({ success: true, message: `Redirecionador ${id} excluído.` });
+});
+
+// Outbound redirect execution route: /r/:slug
+app.get('/r/:slug', (req: Request, res: Response) => {
+  const slug = req.params.slug.toLowerCase().trim();
+  const redirect = DATA_CACHE.redirects.find((r) => r.slug === slug && r.ativo);
+  if (!redirect) {
+    res.status(404).send(`
+      <!DOCTYPE html><html><body style="font-family: monospace; padding: 2rem; background: #0f0f12; color: #fff;">
+        <h2>[WZZM] Redirecionamento não encontrado</h2>
+        <p>O slug solicitado "/r/${slug}" não está registrado ou foi desativado.</p>
+        <a href="/" style="color: #f59e0b;">← Voltar ao Portal</a>
+      </body></html>
+    `);
+    return;
+  }
+  redirect.totalCliques += 1;
+  if (redirect.comAviso) {
+    res.send(`
+      <!DOCTYPE html><html><head><meta charset="UTF-8"><title>Aviso de Redirecionamento - WZZM</title></head>
+      <body style="font-family: sans-serif; background: #f4f3f0; color: #141414; padding: 2rem; max-width: 600px; margin: 40px auto; border: 4px solid #141414; box-shadow: 8px 8px 0px #b91c1c;">
+        <h2 style="font-family: serif; color: #b91c1c; text-transform: uppercase;">Aviso de Segurança — Link Externo</h2>
+        <p>Você está prestes a sair do ambiente seguro da WazzimaGiygg para acessar:</p>
+        <div style="background: #e5e5e5; padding: 10px; font-family: monospace; word-break: break-all; margin: 15px 0;">${redirect.urlDestino}</div>
+        <p style="font-size: 13px; color: #666;">A WZZM não se responsabiliza pelo conteúdo de sites externos.</p>
+        <div style="margin-top: 20px;">
+          <a href="${redirect.urlDestino}" style="background: #141414; color: #fff; padding: 10px 20px; text-decoration: none; font-weight: bold; font-family: monospace; display: inline-block;">PROSSEGUIR PARA O SITE ➔</a>
+          <a href="/" style="margin-left: 15px; color: #666; font-size: 13px;">Cancelar e voltar</a>
+        </div>
+      </body></html>
+    `);
+    return;
+  }
+  res.redirect(redirect.urlDestino);
+});
+
+// 3. Forum Topics API (gerenciarforum)
+app.get('/api/admin/forum', (_req: Request, res: Response) => {
+  res.json({ success: true, topics: DATA_CACHE.forumTopics });
+});
+
+app.post('/api/admin/forum', (req: Request, res: Response) => {
+  const { titulo, categoria, autor } = req.body;
+  if (!titulo) {
+    res.status(400).json({ error: 'Título do tópico é obrigatório.' });
+    return;
+  }
+  const newTopic = {
+    id: `top-${Date.now().toString().slice(-4)}`,
+    titulo: titulo.trim(),
+    categoria: categoria || 'Geral',
+    autor: autor || 'Burocrata-Chefe',
+    autorEmail: 'admin@wazzimagiygg.com',
+    respostas: 0,
+    fixado: false,
+    fechado: false,
+    denunciado: false,
+    dataCriacao: new Date().toISOString().split('T')[0]
+  };
+  DATA_CACHE.forumTopics.unshift(newTopic);
+  res.status(201).json({ success: true, topic: newTopic });
+});
+
+app.put('/api/admin/forum/:id/toggle', (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { action } = req.body;
+  const topic = DATA_CACHE.forumTopics.find((t) => t.id === id);
+  if (!topic) {
+    res.status(404).json({ error: 'Tópico não encontrado.' });
+    return;
+  }
+  if (action === 'pin') topic.fixado = !topic.fixado;
+  if (action === 'lock') topic.fechado = !topic.fechado;
+  if (action === 'dismiss_report') topic.denunciado = false;
+  res.json({ success: true, topic });
+});
+
+app.delete('/api/admin/forum/:id', (req: Request, res: Response) => {
+  const { id } = req.params;
+  DATA_CACHE.forumTopics = DATA_CACHE.forumTopics.filter((t) => t.id !== id);
+  res.json({ success: true, message: `Tópico ${id} excluído com sucesso.` });
+});
+
+// 4. Surveys and Reports API (pesquisas)
+app.get('/api/admin/surveys', (_req: Request, res: Response) => {
+  res.json({ success: true, surveys: DATA_CACHE.surveys });
+});
+
+app.post('/api/admin/surveys', (req: Request, res: Response) => {
+  const { titulo, tipo, descricao, prioridade } = req.body;
+  if (!titulo) {
+    res.status(400).json({ error: 'Título é obrigatório.' });
+    return;
+  }
+  const newSurvey = {
+    id: `surv-${Date.now().toString().slice(-4)}`,
+    titulo: titulo.trim(),
+    tipo: tipo || 'Pesquisa Acadêmica',
+    descricao: descricao?.trim() || '',
+    respostasOuStatus: 'Recém criada • Em andamento',
+    data: new Date().toISOString().split('T')[0],
+    prioridade: prioridade || 'Média'
+  };
+  DATA_CACHE.surveys.unshift(newSurvey);
+  res.status(201).json({ success: true, survey: newSurvey });
+});
+
+// 5. Blog Posts API (blog/admin)
+app.get('/api/admin/blog', (_req: Request, res: Response) => {
+  res.json({ success: true, posts: DATA_CACHE.blogPosts });
+});
+
+app.post('/api/admin/blog', (req: Request, res: Response) => {
+  const { titulo, resumo, conteudo, tags } = req.body;
+  if (!titulo || !conteudo) {
+    res.status(400).json({ error: 'Título e conteúdo são obrigatórios.' });
+    return;
+  }
+  const newPost = {
+    id: `blog-${Date.now().toString().slice(-4)}`,
+    titulo: titulo.trim(),
+    resumo: resumo?.trim() || '',
+    conteudo: conteudo.trim(),
+    autor: 'Gabinete do Burocrata',
+    data: new Date().toISOString().split('T')[0],
+    publicado: true,
+    tags: Array.isArray(tags) ? tags : ['Editorial', 'Burocrata']
+  };
+  DATA_CACHE.blogPosts.unshift(newPost);
+  res.status(201).json({ success: true, post: newPost });
+});
+
+// 6. Pages Directory Sitemap API (buscadelistadepaginas)
+app.get('/api/admin/pages', (_req: Request, res: Response) => {
+  res.json({
+    success: true,
+    pages: [
+      { url: '/', titulo: 'Portal Principal — Edição Digital WazzimaGiygg', setor: 'Geral', tipo: 'Página Pública', status: 'Ativo' },
+      { url: '/admin/login.html', titulo: 'Autenticação Google do Burocrata', setor: 'Administração', tipo: 'Módulo Administrativo', status: 'Restrito Burocrata' },
+      { url: '/admin/ferramentasadministrativas.html', titulo: 'Menu de 24 Ferramentas Administrativas', setor: 'Administração', tipo: 'Módulo Administrativo', status: 'Restrito Burocrata' },
+      { url: '/api/articles', titulo: 'API Catálogo Global de Artigos', setor: 'API', tipo: 'API REST', status: 'Ativo' },
+      { url: '/api/news', titulo: 'API Notícias do Diário Oficial', setor: 'API', tipo: 'API REST', status: 'Ativo' },
+      { url: '/api/tickets', titulo: 'API Tickets e Ouvidoria LGPD', setor: 'Ouvidoria', tipo: 'API REST', status: 'Ativo' },
+      { url: '/api/sanctions', titulo: 'API Tabela de Cidades Sancionadas', setor: 'Forense', tipo: 'API REST', status: 'Ativo' },
+      { url: '/api/health', titulo: 'API Diagnóstico de Conexão Firestore', setor: 'Infraestrutura', tipo: 'API REST', status: 'Ativo' },
+      { url: '/colecoes/wikiworldweb', titulo: 'Coleção WikiWorldWeb', setor: 'Acervo', tipo: 'Página Pública', status: 'Ativo' },
+      { url: '/colecoes/materiadeensaio', titulo: 'Coleção Matéria de Ensaio', setor: 'Acervo', tipo: 'Página Pública', status: 'Ativo' },
+      { url: '/colecoes/academico', titulo: 'Coleção Acadêmico', setor: 'Acervo', tipo: 'Página Pública', status: 'Ativo' },
+      { url: '/colecoes/materia', titulo: 'Coleção Matérias Didáticas', setor: 'Acervo', tipo: 'Página Pública', status: 'Ativo' },
+      { url: '/colecoes/uwgbooks', titulo: 'Coleção UWG Books', setor: 'Acervo', tipo: 'Página Pública', status: 'Ativo' }
+    ]
+  });
+});
+
+// Legacy route compatibility handlers for admin pages
+app.get([
+  '/admin/detalhes_cliente*',
+  '/admin/administrarcustos*',
+  '/admin/listadecustosavancada*',
+  '/admin/htmlcreator*',
+  '/admin/redirecionador*',
+  '/admin/admintools/*',
+  '/admin/checkuser/*',
+  '/admin/wiki/*'
+], (_req: Request, res: Response) => {
+  res.redirect('/admin/ferramentasadministrativas.html');
 });
 
 // ============================================
