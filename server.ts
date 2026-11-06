@@ -38,6 +38,23 @@ function loadJsonFile<T>(relativePath: string, fallback: T): T {
   return fallback;
 }
 
+export interface ServerDeletionRequest {
+  id: string;
+  name: string;
+  email: string;
+  phone?: string;
+  reason: string;
+  dataTypes: string[];
+  status: string;
+  requestDate: string;
+  ipAddress?: string;
+  processedBy?: string | null;
+  completedAt?: string | null;
+  rejectedAt?: string | null;
+  rejectionReason?: string | null;
+  certificateId?: string | null;
+}
+
 // In-memory data store for high performance and fallback cache
 const DATA_CACHE = {
   menu: loadJsonFile<any[]>('src/data/menu.json', []),
@@ -179,15 +196,56 @@ const DATA_CACHE = {
       tags: ["Tecnologia", "TypeScript", "Atualização"]
     }
   ],
+  deletionRequests: [
+    {
+      id: "LGPD-REQ-9841",
+      name: "Carlos Eduardo Silva",
+      email: "carlos.silva@exemplo.com.br",
+      phone: "+55 (11) 98765-4321",
+      reason: "Revogação de consentimento com base no Art. 18 da LGPD. Solicito exclusão de cadastros e comentários antigos.",
+      dataTypes: ["Dados Cadastrais", "Comentários no Fórum", "Histórico de Sessão"],
+      status: "pending",
+      requestDate: "2026-11-04T14:20:00.000Z",
+      ipAddress: "177.136.24.112",
+      processedBy: null,
+      completedAt: null
+    },
+    {
+      id: "LGPD-REQ-9832",
+      name: "Mariana Costa Leite",
+      email: "mariana.leite@usp.br",
+      phone: "+55 (19) 99123-5566",
+      reason: "Encerramento de vínculo acadêmico e anonimização de perfil em conformidade com a LGPD.",
+      dataTypes: ["Perfil de Usuário", "Registros de Acesso"],
+      status: "processing",
+      requestDate: "2026-11-03T09:15:00.000Z",
+      ipAddress: "200.144.12.89",
+      processedBy: "pedrohenriquecardonaperes@gmail.com"
+    },
+    {
+      id: "LGPD-REQ-9810",
+      name: "João Batista Rocha",
+      email: "j.rocha@advocacia.net",
+      phone: "+55 (61) 98111-2233",
+      reason: "Exclusão integral de dados pessoais.",
+      dataTypes: ["Dados Cadastrais"],
+      status: "completed",
+      requestDate: "2026-10-28T16:45:00.000Z",
+      ipAddress: "189.40.110.5",
+      processedBy: "pedrohenriquecardonaperes@gmail.com",
+      completedAt: "2026-10-29T11:00:00.000Z",
+      certificateId: "LGPD-CERT-984210"
+    }
+  ],
   users: [
     {
-      uid: 'usr_burocrata_01',
-      name: 'Burocrata-Chefe WZZM',
-      email: 'admin@wazzimagiygg.com',
+      uid: 'usr_pedro_cardona_official',
+      name: 'Pedro Henrique Cardona Peres',
+      email: 'pedrohenriquecardonaperes@gmail.com',
       isAdmin: true,
       isBanned: false,
       isTeacher: true,
-      createdAt: '2025-05-01T12:00:00.000Z',
+      createdAt: '2025-01-01T00:00:00.000Z',
       lastLoginAt: new Date().toISOString()
     },
     {
@@ -906,12 +964,53 @@ app.get('/api/admin/pages', (_req: Request, res: Response) => {
       { url: '/colecoes/materiadeensaio', titulo: 'Coleção Matéria de Ensaio', setor: 'Acervo', tipo: 'Página Pública', status: 'Ativo' },
       { url: '/colecoes/academico', titulo: 'Coleção Acadêmico', setor: 'Acervo', tipo: 'Página Pública', status: 'Ativo' },
       { url: '/colecoes/materia', titulo: 'Coleção Matérias Didáticas', setor: 'Acervo', tipo: 'Página Pública', status: 'Ativo' },
-      { url: '/colecoes/uwgbooks', titulo: 'Coleção UWG Books', setor: 'Acervo', tipo: 'Página Pública', status: 'Ativo' }
+      { url: '/colecoes/uwgbooks', titulo: 'Coleção UWG Books', setor: 'Acervo', tipo: 'Página Pública', status: 'Ativo' },
+      { url: '/admin/admintools/solicitacaodeexlusao/', titulo: 'Painel LGPD — Solicitação de Exclusão de Dados', setor: 'Administração', tipo: 'Módulo Administrativo', status: 'Restrito Burocrata' }
     ]
   });
 });
 
-// Legacy route compatibility handlers for admin pages
+// 7. LGPD Deletion Requests API (solicitacaodeexlusao)
+app.get('/api/admin/deletion-requests', (_req: Request, res: Response) => {
+  res.json({ success: true, requests: DATA_CACHE.deletionRequests });
+});
+
+app.put('/api/admin/deletion-requests/:id', (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { status, adminEmail, rejectionReason, certificateId } = req.body;
+  const item = (DATA_CACHE.deletionRequests as ServerDeletionRequest[]).find((r) => r.id === id);
+  if (!item) {
+    res.status(404).json({ error: 'Solicitação não encontrada.' });
+    return;
+  }
+  item.status = status || item.status;
+  item.processedBy = adminEmail || 'pedrohenriquecardonaperes@gmail.com';
+  if (status === 'completed') {
+    item.completedAt = new Date().toISOString();
+    item.certificateId = certificateId || `LGPD-CERT-${Date.now().toString().slice(-6)}`;
+  } else if (status === 'rejected') {
+    item.rejectedAt = new Date().toISOString();
+    item.rejectionReason = rejectionReason || 'Fundamentação legal da guarda obrigatória (Marco Civil Art. 15).';
+  }
+  res.json({ success: true, request: item });
+});
+
+// Route handler for LGPD Solicitacao de Exclusao (HTML Standalone)
+app.get([
+  '/admin/admintools/solicitacaodeexlusao',
+  '/admin/admintools/solicitacaodeexlusao/*',
+  '/admintools/solicitacaodeexlusao*',
+  '/solicitacaodeexlusao*'
+], (_req: Request, res: Response) => {
+  const filePath = path.resolve(__dirname, 'public/admin/admintools/solicitacaodeexlusao/index.html');
+  if (fs.existsSync(filePath)) {
+    res.sendFile(filePath);
+    return;
+  }
+  res.redirect('/admin/ferramentasadministrativas.html');
+});
+
+// Legacy route compatibility handlers for other admin pages
 app.get([
   '/admin/detalhes_cliente*',
   '/admin/administrarcustos*',

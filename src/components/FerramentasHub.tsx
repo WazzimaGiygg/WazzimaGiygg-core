@@ -485,7 +485,13 @@ export default function FerramentasHub({
           {filteredTools.map((tool, idx) => (
             <div
               key={idx}
-              onClick={() => onSelectToolHref(tool.href)}
+              onClick={() => {
+                if (tool.href.includes("solicitacaodeexlusao") || tool.label.toLowerCase().includes("exclus")) {
+                  onNavigateTab("exclusao");
+                  return;
+                }
+                onSelectToolHref(tool.href);
+              }}
               className="group relative bg-[#ffffff] border border-[#d6d3d1] hover:border-[#141414] p-4 flex flex-col justify-between transition-all duration-200 hover:-translate-y-1 hover:shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] cursor-pointer overflow-hidden"
             >
               {/* Subtle hover gradient inspired by original CSS */}

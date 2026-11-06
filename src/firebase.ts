@@ -77,20 +77,60 @@ export interface AppUser {
 }
 
 // ============================================
+// EMERGENCY CORRECTION: EXCLUSIVE BUROCRATA AUTHORIZATION
+// Only pedrohenriquecardonaperes@gmail.com is authorized to make edits,
+// access the Burocrata page, and administer the WZZM portal.
+// ============================================
+export const AUTHORIZED_BUROCRATA_EMAIL = "pedrohenriquecardonaperes@gmail.com";
+
+export function isAuthorizedBurocrata(email?: string | null): boolean {
+  if (!email) return false;
+  return email.toLowerCase().trim() === AUTHORIZED_BUROCRATA_EMAIL.toLowerCase().trim();
+}
+
+export interface DeletionRequest {
+  id: string;
+  name: string;
+  email: string;
+  phone?: string;
+  cpf?: string;
+  reason: string;
+  dataTypes?: string[];
+  status: 'pending' | 'processing' | 'completed' | 'rejected';
+  requestDate: any;
+  ipAddress?: string;
+  processedBy?: string | null;
+  completedAt?: any;
+  rejectedAt?: any;
+  rejectionReason?: string | null;
+  certificateId?: string | null;
+  // PT-BR Aliases for UI components
+  protocolo: string;
+  nomeCompleto: string;
+  motivo?: string;
+  tipoDado?: string;
+  dataSolicitacao: any;
+  observacoes?: string;
+  certificadoExclusao?: string;
+  dataConclusao?: any;
+}
+
+// ============================================
 // REGISTRATION & USER PROFILE
 // ============================================
 export async function registerUser(user: User | { uid: string; displayName?: string; email?: string; photoURL?: string }, isGuest = false) {
   const uid = user.uid;
+  const isBurocrata = isAuthorizedBurocrata(user.email);
   const userData = {
     uid: uid,
     email: user.email || (isGuest ? `${uid}@guest.local` : ""),
     name: user.displayName || (isGuest ? "Convidado (24h)" : "Usuário"),
     profilePictureUrl: ('photoURL' in user ? user.photoURL : "") || "",
-    isAdmin: false,
+    isAdmin: isBurocrata,
     isBan: false,
     isBanned: false,
-    isTeacher: false,
-    isTeatcher: false,
+    isTeacher: isBurocrata,
+    isTeatcher: isBurocrata,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
     lastLoginAt: serverTimestamp()
@@ -120,12 +160,20 @@ export async function checkIfUserIsBanned(uid: string): Promise<boolean> {
   return false;
 }
 
-export async function checkIfUserIsAdmin(uid: string): Promise<boolean> {
+export async function checkIfUserIsAdmin(uid: string, email?: string | null): Promise<boolean> {
+  // Primary check: email must be the official Burocrata email
+  if (email && isAuthorizedBurocrata(email)) {
+    return true;
+  }
   try {
     const userDoc = await getDoc(doc(db, "users", uid));
     if (userDoc.exists()) {
       const data = userDoc.data();
-      return data.isAdmin === true;
+      // Only pedrohenriquecardonaperes@gmail.com can hold admin privileges
+      if (isAuthorizedBurocrata(data.email)) {
+        return true;
+      }
+      return false;
     }
   } catch (error) {
     console.warn("Could not check user admin status:", error);
@@ -447,6 +495,122 @@ export async function updateUserTeacherStatus(uid: string, isTeacher: boolean): 
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ isTeacher })
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// ============================================
+// LGPD SOLICITAÇÃO DE EXCLUSÃO DE DADOS
+// wazzimagiygg.com/admin/admintools/solicitacaodeexlusao/
+// ============================================
+
+export async function listDeletionRequests(): Promise<DeletionRequest[]> {
+  try {
+    const q = query(collection(db, "deletion_requests"), orderBy("requestDate", "desc"));
+    const snapshot = await getDocs(q);
+    const requests: DeletionRequest[] = [];
+    snapshot.forEach((docSnap) => {
+      const d = docSnap.data();
+      const reqDate = d.requestDate?.toDate ? d.requestDate.toDate().toISOString() : (d.requestDate || new Date().toISOString());
+      requests.push({
+        id: docSnap.id,
+        name: d.name || d.nomeCompleto || "Titular Anônimo",
+        email: d.email || "",
+        phone: d.phone || "",
+        cpf: d.cpf || "",
+        reason: d.reason || d.motivo || "Exercício de direito LGPD Art. 18",
+        dataTypes: d.dataTypes || ["Contas", "Comentários", "Histórico"],
+        status: d.status || "pending",
+        requestDate: reqDate,
+        ipAddress: d.ipAddress || "189.40.xxx.xxx",
+        processedBy: d.processedBy,
+        completedAt: d.completedAt?.toDate ? d.completedAt.toDate().toISOString() : d.completedAt,
+        rejectedAt: d.rejectedAt?.toDate ? d.rejectedAt.toDate().toISOString() : d.rejectedAt,
+        rejectionReason: d.rejectionReason || d.observacoes,
+        certificateId: d.certificateId || d.certificadoExclusao,
+        // Aliases
+        protocolo: d.protocolo || docSnap.id,
+        nomeCompleto: d.nomeCompleto || d.name || "Titular Anônimo",
+        motivo: d.motivo || d.reason || "Exercício de direito LGPD Art. 18",
+        tipoDado: d.tipoDado || (Array.isArray(d.dataTypes) ? d.dataTypes.join(", ") : "Expurgo Geral"),
+        dataSolicitacao: reqDate,
+        observacoes: d.observacoes || d.rejectionReason || "",
+        certificadoExclusao: d.certificadoExclusao || d.certificateId || ""
+      });
+    });
+    if (requests.length > 0) return requests;
+  } catch (err) {
+    console.warn("Could not load deletion_requests from Firestore:", err);
+  }
+
+  // Fallback to backend API
+  try {
+    const res = await fetch("/api/admin/deletion-requests");
+    if (res.ok) {
+      const data = await res.json();
+      return (data.requests || []).map((r: any) => ({
+        ...r,
+        protocolo: r.protocolo || r.id,
+        nomeCompleto: r.nomeCompleto || r.name || "Titular Anônimo",
+        motivo: r.motivo || r.reason || "",
+        tipoDado: r.tipoDado || (Array.isArray(r.dataTypes) ? r.dataTypes.join(", ") : "Expurgo Geral"),
+        dataSolicitacao: r.dataSolicitacao || r.requestDate || new Date().toISOString(),
+        observacoes: r.observacoes || r.rejectionReason || "",
+        certificadoExclusao: r.certificadoExclusao || r.certificateId || ""
+      }));
+    }
+  } catch (apiErr) {
+    console.warn("Backend deletion-requests error:", apiErr);
+  }
+
+  return [];
+}
+
+export async function updateDeletionRequestStatus(
+  id: string,
+  status: 'pending' | 'processing' | 'completed' | 'rejected',
+  notesOrReason?: string,
+  adminEmail?: string,
+  certificateId?: string
+): Promise<boolean> {
+  const admin = adminEmail || AUTHORIZED_BUROCRATA_EMAIL;
+  const updatePayload: any = {
+    status,
+    processedBy: admin,
+    updatedAt: serverTimestamp()
+  };
+  if (status === 'completed') {
+    updatePayload.completedAt = serverTimestamp();
+    updatePayload.certificateId = certificateId || `LGPD-CERT-${Date.now().toString().slice(-6)}`;
+    updatePayload.certificadoExclusao = updatePayload.certificateId;
+  } else if (status === 'rejected') {
+    updatePayload.rejectedAt = serverTimestamp();
+    updatePayload.rejectionReason = notesOrReason || "Fundamentação legal da guarda obrigatória (Marco Civil Art. 15).";
+    updatePayload.observacoes = updatePayload.rejectionReason;
+  }
+  if (notesOrReason) {
+    updatePayload.observacoes = notesOrReason;
+  }
+
+  try {
+    await updateDoc(doc(db, "deletion_requests", id), updatePayload);
+  } catch (err) {
+    console.warn("Firestore update deletion request error:", err);
+  }
+
+  try {
+    await fetch(`/api/admin/deletion-requests/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        status,
+        adminEmail: admin,
+        rejectionReason: notesOrReason,
+        certificateId: updatePayload.certificateId
+      })
     });
     return true;
   } catch {

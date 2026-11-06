@@ -56,7 +56,9 @@ import {
   markAllNotificationsAsRead,
   registerAuditLog,
   Article,
-  UserNotification
+  UserNotification,
+  AUTHORIZED_BUROCRATA_EMAIL,
+  isAuthorizedBurocrata
 } from "./firebase";
 import { stripHtmlToPlainText } from "./utils/text";
 import AdminPanel from "./components/AdminPanel";
@@ -232,10 +234,10 @@ export default function App() {
         // Register profile into Firestore 'users' & 'usuários'
         await registerUser(currentUser, false);
 
-        // Check ban & admin roles
+        // Check ban & admin roles (strictly checks AUTHORIZED_BUROCRATA_EMAIL)
         const banned = await checkIfUserIsBanned(currentUser.uid);
         setIsBanned(banned);
-        const admin = await checkIfUserIsAdmin(currentUser.uid);
+        const admin = await checkIfUserIsAdmin(currentUser.uid, currentUser.email);
         setIsAdmin(admin);
       } else {
         const storedGuest = getStoredGuestUser();
@@ -674,7 +676,13 @@ export default function App() {
               </span>
               <span>•</span>
               <button
-                onClick={() => setIsCreateModalOpen(true)}
+                onClick={() => {
+                  if (!user || !isAuthorizedBurocrata(user.email)) {
+                    showToast("🚨 Correção emergencial: Somente o usuário com o e-mail pedrohenriquecardonaperes@gmail.com pode fazer alterações e edições.", true);
+                    return;
+                  }
+                  setIsCreateModalOpen(true);
+                }}
                 className="bg-[#141414] text-white hover:bg-stone-800 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 cursor-pointer"
               >
                 <PlusCircle className="w-3 h-3 text-amber-400" />
@@ -861,7 +869,13 @@ export default function App() {
                   Seja o primeiro colaborador a publicar um novo documento nesta seção usando o botão "Publicar Artigo".
                 </p>
                 <button
-                  onClick={() => setIsCreateModalOpen(true)}
+                  onClick={() => {
+                    if (!user || !isAuthorizedBurocrata(user.email)) {
+                      showToast("🚨 Correção emergencial: Somente o usuário com o e-mail pedrohenriquecardonaperes@gmail.com pode fazer alterações e edições.", true);
+                      return;
+                    }
+                    setIsCreateModalOpen(true);
+                  }}
                   className="mt-5 paper-button px-4 py-2 font-mono text-xs font-bold uppercase tracking-wider cursor-pointer inline-flex items-center gap-2"
                 >
                   <PlusCircle className="w-4 h-4 text-amber-400" />
@@ -1397,6 +1411,10 @@ export default function App() {
             <form
               onSubmit={async (e) => {
                 e.preventDefault();
+                if (!user || !isAuthorizedBurocrata(user.email)) {
+                  showToast("🚨 Correção emergencial: Somente o usuário oficial pedrohenriquecardonaperes@gmail.com pode fazer alterações e edições.", true);
+                  return;
+                }
                 const formData = new FormData(e.currentTarget);
                 const titulo = formData.get("titulo") as string;
                 const colecao = formData.get("colecao") as string;

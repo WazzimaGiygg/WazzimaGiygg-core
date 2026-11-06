@@ -55,7 +55,12 @@ import {
   deleteUserFromFirestore,
   deleteArticleFromFirestore,
   registerAuditLog,
-  db
+  db,
+  AUTHORIZED_BUROCRATA_EMAIL,
+  isAuthorizedBurocrata,
+  DeletionRequest,
+  listDeletionRequests,
+  updateDeletionRequestStatus
 } from "../firebase";
 import {
   FERRAMENTAS_LIST,
@@ -81,8 +86,17 @@ export default function AdminPanel({
 }: AdminPanelProps) {
   // Navigation inside Admin Core
   const [adminTab, setAdminTab] = useState<
-    "dashboard" | "usuarios" | "artigos" | "tickets" | "sancoes" | "checkuser" | "ferramentas"
+    "dashboard" | "usuarios" | "artigos" | "tickets" | "sancoes" | "checkuser" | "ferramentas" | "exclusao"
   >("dashboard");
+
+  // Solicitacao de Exclusao LGPD State (admin/admintools/solicitacaodeexlusao/)
+  const [deletionRequestsList, setDeletionRequestsList] = useState<DeletionRequest[]>([]);
+  const [isLoadingDeletionRequests, setIsLoadingDeletionRequests] = useState(false);
+  const [deletionSearchTerm, setDeletionSearchTerm] = useState("");
+  const [deletionStatusFilter, setDeletionStatusFilter] = useState<string>("all");
+  const [selectedDeletionRequest, setSelectedDeletionRequest] = useState<DeletionRequest | null>(null);
+  const [deletionProcessingNotes, setDeletionProcessingNotes] = useState("");
+  const [isProcessingDeletion, setIsProcessingDeletion] = useState(false);
 
   // Authentication & Elevation Form State
   const [passkeyInput, setPasskeyInput] = useState("");
@@ -177,7 +191,15 @@ export default function AdminPanel({
         setSanctionsList(data.cidades_sancionadas || []);
       }
 
-      // 5. Fetch Audit Logs
+      // 5. Fetch Deletion Requests (LGPD solicitacaodeexlusao)
+      try {
+        const delRequests = await listDeletionRequests();
+        setDeletionRequestsList(delRequests);
+      } catch (delErr) {
+        console.warn("Could not load deletion requests:", delErr);
+      }
+
+      // 6. Fetch Audit Logs
       const healthRes = await fetch("/api/health");
       if (healthRes.ok) {
         setAuditLogs([
@@ -214,6 +236,10 @@ export default function AdminPanel({
   // Elevation Handler (Chave Mestra de Burocrata)
   const handleElevateAccount = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
+    if (!currentUser?.email || !isAuthorizedBurocrata(currentUser.email)) {
+      showToast("🚨 Correção emergencial: Somente pedrohenriquecardonaperes@gmail.com pode acessar a administração.", true);
+      return;
+    }
     if (!passkeyInput.trim()) {
       showToast("Informe a chave de acesso do burocrata.", true);
       return;
@@ -226,7 +252,7 @@ export default function AdminPanel({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           uid: currentUser?.uid || `admin_${Date.now()}`,
-          email: currentUser?.email || "burocrata@wazzimagiygg.com",
+          email: currentUser?.email || AUTHORIZED_BUROCRATA_EMAIL,
           passkey: passkeyInput.trim()
         })
       });
@@ -260,6 +286,12 @@ export default function AdminPanel({
     try {
       const result = await signInWithPopup(auth, googleProvider);
       const googleUser = result.user;
+
+      if (!googleUser.email || !isAuthorizedBurocrata(googleUser.email)) {
+        showToast("🚨 Correção emergencial: Somente pedrohenriquecardonaperes@gmail.com possui autorização de Burocrata.", true);
+        await auth.signOut();
+        return;
+      }
 
       // 1. Cadastra/atualiza o usuário nas coleções 'users' e 'usuários'
       await registerUser(googleUser, false);
@@ -301,6 +333,11 @@ export default function AdminPanel({
   const handleAuthorizeCurrentGoogleUser = async () => {
     if (!currentUser || currentUser.isGuest) {
       handleGoogleAdminLogin();
+      return;
+    }
+
+    if (!currentUser.email || !isAuthorizedBurocrata(currentUser.email)) {
+      showToast("🚨 Correção emergencial: Somente pedrohenriquecardonaperes@gmail.com possui permissão de Burocrata.", true);
       return;
     }
 
@@ -645,6 +682,10 @@ export default function AdminPanel({
       setAdminTab("tickets");
       return;
     }
+    if (item.href.includes("solicitacaodeexlusao")) {
+      setAdminTab("exclusao");
+      return;
+    }
     if (item.action === "checkuser") {
       setAdminTab("checkuser");
       return;
@@ -671,9 +712,9 @@ export default function AdminPanel({
   };
 
   // ============================================
-  // ACCESS GUARD (SE NÃO FOR ADMIN/BUROCRATA)
+  // ACCESS GUARD (SE NÃO FOR ADMIN/BUROCRATA OU SE NÃO FOR O EMAIL AUTORIZADO)
   // ============================================
-  if (!isAdmin) {
+  if (!isAdmin || !isAuthorizedBurocrata(currentUser?.email)) {
     return (
       <div className="fixed inset-0 bg-[#0F0F12] text-white z-50 flex flex-col justify-between overflow-y-auto font-sans p-4 sm:p-8 animate-fade-in">
         {/* Top Header */}
@@ -710,9 +751,20 @@ export default function AdminPanel({
           <h3 className="font-editorial text-2xl font-bold text-stone-950 mb-2">
             Área de Administração Única da WZZM
           </h3>
-          <p className="font-serif text-xs text-stone-600 mb-6 leading-relaxed">
+          <p className="font-serif text-xs text-stone-600 mb-4 leading-relaxed">
             Faça login com sua conta Google para continuar no Painel de Burocrata e gerenciar os recursos da WZZM.
           </p>
+
+          {/* Emergency Alert Notice */}
+          <div className="bg-red-50 border-2 border-red-600 p-3 mb-5 text-left shadow-[2px_2px_0px_0px_rgba(185,28,28,1)]">
+            <div className="flex items-center gap-1.5 text-red-700 font-mono text-[10px] font-bold uppercase mb-1">
+              <ShieldAlert className="w-3.5 h-3.5 text-red-600" />
+              <span>Diretriz Emergencial de Segurança</span>
+            </div>
+            <p className="font-mono text-[11px] text-stone-800 leading-snug">
+              Somente o usuário com o e-mail <strong>{AUTHORIZED_BUROCRATA_EMAIL}</strong> possui autorização para efetuar alterações, edições e ter acesso à página do burocrata.
+            </p>
+          </div>
 
           {/* Primary Google Login Button */}
           <div className="space-y-4 font-mono text-xs">
@@ -856,9 +908,10 @@ export default function AdminPanel({
             { id: "dashboard", label: "Painel Geral", icon: Activity },
             { id: "usuarios", label: "Gerenciar Usuários", icon: Users },
             { id: "artigos", label: "Moderação de Artigos", icon: FileText },
+            { id: "exclusao", label: "Exclusão LGPD (solicitacaodeexlusao)", icon: ShieldAlert },
             { id: "tickets", label: "Ouvidoria & LGPD", icon: Ticket },
             { id: "sancoes", label: "Cidades Sancionadas", icon: Scale },
-            { id: "checkuser", label: "Auditoria Forense", icon: ShieldAlert },
+            { id: "checkuser", label: "Auditoria Forense", icon: Shield },
             { id: "ferramentas", label: "Ferramentas da WZZM", icon: Settings }
           ].map((tab) => {
             const Icon = tab.icon;
@@ -1365,7 +1418,435 @@ export default function AdminPanel({
             onSelectToolHref={(href) => setSelectedToolHref(href)}
           />
         )}
+
+        {/* SUB-VIEW 8: EXCLUSÃO DE DADOS LGPD (admin/admintools/solicitacaodeexlusao/) */}
+        {adminTab === "exclusao" && (
+          <div className="space-y-6">
+            {/* Header Banner */}
+            <div className="bg-stone-900 text-white p-5 border-2 border-[#141414] shadow-[4px_4px_0px_0px_rgba(185,28,28,1)] flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="bg-red-700 text-white font-mono text-[10px] font-bold px-2 py-0.5 uppercase tracking-wider">
+                    LGPD • Art. 18 Lei 13.709/2018
+                  </span>
+                  <span className="text-amber-400 font-mono text-[10px] font-bold">
+                    [admin/admintools/solicitacaodeexlusao/]
+                  </span>
+                </div>
+                <h2 className="font-editorial text-2xl font-bold mt-1 text-white">
+                  Fila Operacional de Solicitações de Exclusão de Dados
+                </h2>
+                <p className="text-xs font-mono text-stone-300 mt-1">
+                  Gerenciamento e expurgo definitivo de cadastros e registros. Operação exclusiva do Burocrata oficial ({AUTHORIZED_BUROCRATA_EMAIL}).
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  onClick={() => window.open("/admin/admintools/solicitacaodeexlusao/", "_blank")}
+                  className="bg-stone-800 hover:bg-stone-700 text-white border border-stone-600 px-3 py-2 text-xs font-mono font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer"
+                  title="Abrir página HTML original em nova aba"
+                >
+                  <ExternalLink className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Página Standalone</span>
+                </button>
+                <button
+                  onClick={async () => {
+                    setIsLoadingDeletionRequests(true);
+                    try {
+                      const reqs = await listDeletionRequests();
+                      setDeletionRequestsList(reqs);
+                      showToast("Fila de solicitações LGPD atualizada.");
+                    } finally {
+                      setIsLoadingDeletionRequests(false);
+                    }
+                  }}
+                  className="paper-button bg-stone-100 text-stone-900 hover:bg-white px-3 py-2 text-xs font-mono font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isLoadingDeletionRequests ? "animate-spin" : ""}`} />
+                  <span>Sincronizar</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Emergency Compliance Notice */}
+            <div className="bg-amber-50 border-2 border-amber-600 p-4 shadow-[3px_3px_0px_0px_rgba(217,119,6,1)] flex items-start gap-3">
+              <ShieldAlert className="w-5 h-5 text-amber-700 shrink-0 mt-0.5" />
+              <div className="text-xs font-mono text-stone-900">
+                <span className="font-bold text-amber-900 uppercase block mb-1">
+                  Diretriz de Segurança e Autoria Restrita
+                </span>
+                Conforme instrução técnica emergencial da WZZM, exclusivamente o e-mail oficial{" "}
+                <strong className="text-red-700">{AUTHORIZED_BUROCRATA_EMAIL}</strong> possui permissão jurídica e técnica para deferir, processar e assinar certificados de exclusão nesta base.
+              </div>
+            </div>
+
+            {/* Metrics Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 font-mono">
+              <div className="bg-white border-2 border-[#141414] p-4 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]">
+                <span className="text-[10px] text-stone-500 font-bold uppercase">Total de Pedidos</span>
+                <div className="text-3xl font-bold mt-1 text-stone-900">{deletionRequestsList.length}</div>
+                <span className="text-[10px] text-stone-600 block mt-1">Coleção Firestore: deletion_requests</span>
+              </div>
+
+              <div className="bg-white border-2 border-[#141414] p-4 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]">
+                <span className="text-[10px] text-amber-700 font-bold uppercase">Pendentes de Triagem</span>
+                <div className="text-3xl font-bold mt-1 text-amber-600">
+                  {deletionRequestsList.filter((r) => r.status === "pending").length}
+                </div>
+                <span className="text-[10px] text-stone-500 block mt-1">Prazo legal: até 15 dias</span>
+              </div>
+
+              <div className="bg-white border-2 border-[#141414] p-4 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]">
+                <span className="text-[10px] text-blue-700 font-bold uppercase">Em Processamento</span>
+                <div className="text-3xl font-bold mt-1 text-blue-600">
+                  {deletionRequestsList.filter((r) => r.status === "processing").length}
+                </div>
+                <span className="text-[10px] text-stone-500 block mt-1">Varredura de acervo em curso</span>
+              </div>
+
+              <div className="bg-white border-2 border-[#141414] p-4 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]">
+                <span className="text-[10px] text-emerald-700 font-bold uppercase">Concluídas (Expurgadas)</span>
+                <div className="text-3xl font-bold mt-1 text-emerald-600">
+                  {deletionRequestsList.filter((r) => r.status === "completed").length}
+                </div>
+                <span className="text-[10px] text-emerald-700 block mt-1">Com certificado de expurgo emitido</span>
+              </div>
+            </div>
+
+            {/* Filter and Search Bar */}
+            <div className="bg-white border-2 border-[#141414] p-4 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] flex flex-col md:flex-row items-center justify-between gap-4 font-mono text-xs">
+              <div className="relative w-full md:w-80">
+                <Search className="w-4 h-4 absolute left-3 top-2.5 text-stone-400" />
+                <input
+                  type="text"
+                  placeholder="Buscar por protocolo, nome, email ou CPF..."
+                  value={deletionSearchTerm}
+                  onChange={(e) => setDeletionSearchTerm(e.target.value)}
+                  className="w-full pl-9 pr-3 py-2 border border-[#141414] bg-[#F8F7F4] focus:outline-none"
+                />
+              </div>
+
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {[
+                  { id: "all", label: "Todas" },
+                  { id: "pending", label: "Pendentes" },
+                  { id: "processing", label: "Processando" },
+                  { id: "completed", label: "Concluídas" },
+                  { id: "rejected", label: "Indeferidas" }
+                ].map((st) => (
+                  <button
+                    key={st.id}
+                    onClick={() => setDeletionStatusFilter(st.id)}
+                    className={`px-3 py-1.5 font-bold uppercase border cursor-pointer transition-all ${
+                      deletionStatusFilter === st.id
+                        ? "bg-[#141414] text-white border-[#141414]"
+                        : "bg-[#F8F7F4] text-stone-700 border-stone-300 hover:bg-stone-200"
+                    }`}
+                  >
+                    {st.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Deletion Requests Table */}
+            <div className="bg-white border-2 border-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] overflow-x-auto">
+              <table className="w-full text-left font-mono text-xs border-collapse">
+                <thead>
+                  <tr className="bg-[#141414] text-white uppercase text-[10px] tracking-wider">
+                    <th className="p-3 border-r border-stone-700">Protocolo</th>
+                    <th className="p-3 border-r border-stone-700">Titular Solicitante</th>
+                    <th className="p-3 border-r border-stone-700">Documento / CPF</th>
+                    <th className="p-3 border-r border-stone-700">Tipo de Dado</th>
+                    <th className="p-3 border-r border-stone-700">Data Requerimento</th>
+                    <th className="p-3 border-r border-stone-700 text-center">Status</th>
+                    <th className="p-3 text-right">Ação Burocrática</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-stone-200">
+                  {deletionRequestsList
+                    .filter((req) => {
+                      if (deletionStatusFilter !== "all" && req.status !== deletionStatusFilter) return false;
+                      if (!deletionSearchTerm.trim()) return true;
+                      const q = deletionSearchTerm.toLowerCase();
+                      return (
+                        req.protocolo.toLowerCase().includes(q) ||
+                        req.nomeCompleto.toLowerCase().includes(q) ||
+                        req.email.toLowerCase().includes(q) ||
+                        (req.cpf || "").toLowerCase().includes(q)
+                      );
+                    })
+                    .map((req) => {
+                      const statusBadge =
+                        req.status === "completed"
+                          ? "bg-emerald-100 text-emerald-800 border-emerald-400"
+                          : req.status === "processing"
+                          ? "bg-blue-100 text-blue-800 border-blue-400"
+                          : req.status === "rejected"
+                          ? "bg-red-100 text-red-800 border-red-400"
+                          : "bg-amber-100 text-amber-800 border-amber-400";
+
+                      const statusLabel =
+                        req.status === "completed"
+                          ? "Concluído"
+                          : req.status === "processing"
+                          ? "Em Análise"
+                          : req.status === "rejected"
+                          ? "Indeferido"
+                          : "Pendente";
+
+                      return (
+                        <tr key={req.id} className="hover:bg-amber-50/40 transition-colors">
+                          <td className="p-3 font-bold border-r border-stone-200">
+                            <span className="text-red-700">{req.protocolo}</span>
+                          </td>
+                          <td className="p-3 border-r border-stone-200">
+                            <div className="font-bold text-stone-900">{req.nomeCompleto}</div>
+                            <div className="text-[10px] text-stone-500">{req.email}</div>
+                          </td>
+                          <td className="p-3 border-r border-stone-200 text-stone-700">
+                            {req.cpf || "Não informado"}
+                          </td>
+                          <td className="p-3 border-r border-stone-200">
+                            <span className="bg-stone-100 border border-stone-300 px-2 py-0.5 text-[10px] font-bold">
+                              {req.tipoDado || "Conta e Registros"}
+                            </span>
+                          </td>
+                          <td className="p-3 border-r border-stone-200 text-stone-600">
+                            {new Date(req.dataSolicitacao).toLocaleDateString("pt-BR")}
+                          </td>
+                          <td className="p-3 border-r border-stone-200 text-center">
+                            <span className={`px-2 py-0.5 text-[10px] font-bold uppercase border ${statusBadge}`}>
+                              {statusLabel}
+                            </span>
+                          </td>
+                          <td className="p-3 text-right">
+                            <button
+                              onClick={() => {
+                                setSelectedDeletionRequest(req);
+                                setDeletionProcessingNotes(req.observacoes || "");
+                              }}
+                              className="bg-[#141414] hover:bg-stone-800 text-white px-3 py-1 font-bold text-[10px] uppercase tracking-wider cursor-pointer shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]"
+                            >
+                              Inspecionar & Despachar
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+
+                  {deletionRequestsList.length === 0 && (
+                    <tr>
+                      <td colSpan={7} className="p-8 text-center text-stone-500 font-mono">
+                        Nenhuma solicitação de exclusão pendente no momento.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
       </main>
+
+      {/* MODAL: INSPEÇÃO E PROCESSAMENTO DE EXCLUSÃO LGPD */}
+      {selectedDeletionRequest && (
+        <div className="fixed inset-0 bg-stone-950/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white border-4 border-[#141414] shadow-[10px_10px_0px_0px_rgba(185,28,28,1)] max-w-2xl w-full p-6 text-left font-mono text-xs max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b-2 border-[#141414] pb-3 mb-4">
+              <div className="flex items-center gap-2">
+                <ShieldAlert className="w-5 h-5 text-red-600" />
+                <h3 className="font-editorial text-xl font-bold uppercase text-stone-900">
+                  Despacho Jurídico de Exclusão LGPD
+                </h3>
+              </div>
+              <button
+                onClick={() => setSelectedDeletionRequest(null)}
+                className="text-stone-500 hover:text-black cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="bg-stone-100 p-3 border border-stone-300 mb-4 space-y-1">
+              <div className="flex justify-between">
+                <span className="text-stone-500 font-bold uppercase text-[10px]">Protocolo Oficial:</span>
+                <span className="font-bold text-red-700">{selectedDeletionRequest.protocolo}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-stone-500 font-bold uppercase text-[10px]">Titular:</span>
+                <span className="font-bold text-stone-900">{selectedDeletionRequest.nomeCompleto}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-stone-500 font-bold uppercase text-[10px]">E-mail Vinculado:</span>
+                <span className="text-stone-900">{selectedDeletionRequest.email}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-stone-500 font-bold uppercase text-[10px]">CPF / Documento:</span>
+                <span className="text-stone-900">{selectedDeletionRequest.cpf || "Não cadastrado"}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-stone-500 font-bold uppercase text-[10px]">Escopo da Exclusão:</span>
+                <span className="text-stone-900 font-bold">{selectedDeletionRequest.tipoDado || "Expurgo Total"}</span>
+              </div>
+              {selectedDeletionRequest.certificadoExclusao && (
+                <div className="flex justify-between pt-1 border-t border-stone-300">
+                  <span className="text-emerald-700 font-bold uppercase text-[10px]">Certificado de Expurgo:</span>
+                  <span className="font-mono font-bold text-emerald-800">{selectedDeletionRequest.certificadoExclusao}</span>
+                </div>
+              )}
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-[10px] font-bold uppercase text-stone-600 mb-1">
+                Justificativa Declarada pelo Solicitante:
+              </label>
+              <div className="p-3 bg-[#F8F7F4] border border-stone-300 text-stone-800 font-serif text-xs leading-relaxed">
+                {selectedDeletionRequest.motivo || "Exercício do direito de eliminação de dados pessoais conforme Artigo 18, VI da Lei Geral de Proteção de Dados (LGPD)."}
+              </div>
+            </div>
+
+            {/* Burocrata Execution Box */}
+            <div className="border-t-2 border-[#141414] pt-4 space-y-3">
+              <div className="flex items-center gap-2 text-stone-900 font-bold uppercase text-[11px]">
+                <Scale className="w-4 h-4 text-red-700" />
+                <span>Despacho Conclusivo do Burocrata:</span>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold uppercase text-stone-600 mb-1">
+                  Parecer Técnico / Notas de Expurgo:
+                </label>
+                <textarea
+                  rows={3}
+                  value={deletionProcessingNotes}
+                  onChange={(e) => setDeletionProcessingNotes(e.target.value)}
+                  placeholder="Insira as observações sobre a eliminação dos dados, coleções limpas ou motivo de indeferimento..."
+                  className="w-full p-2.5 border border-[#141414] bg-[#F8F7F4] focus:outline-none text-xs"
+                />
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!isAuthorizedBurocrata(currentUser?.email)) {
+                        showToast("🚨 Correção emergencial: Somente pedrohenriquecardonaperes@gmail.com pode processar exclusões.", true);
+                        return;
+                      }
+                      setIsProcessingDeletion(true);
+                      try {
+                        await updateDeletionRequestStatus(
+                          selectedDeletionRequest.id,
+                          "processing",
+                          deletionProcessingNotes,
+                          currentUser?.email || AUTHORIZED_BUROCRATA_EMAIL
+                        );
+                        setDeletionRequestsList((prev) =>
+                          prev.map((r) =>
+                            r.id === selectedDeletionRequest.id
+                              ? { ...r, status: "processing", observacoes: deletionProcessingNotes }
+                              : r
+                          )
+                        );
+                        showToast(`Protocolo ${selectedDeletionRequest.protocolo} colocado em análise.`);
+                        setSelectedDeletionRequest(null);
+                      } finally {
+                        setIsProcessingDeletion(false);
+                      }
+                    }}
+                    disabled={isProcessingDeletion}
+                    className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 font-bold uppercase tracking-wider text-[10px] cursor-pointer"
+                  >
+                    Marcar em Análise
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!isAuthorizedBurocrata(currentUser?.email)) {
+                        showToast("🚨 Correção emergencial: Somente pedrohenriquecardonaperes@gmail.com pode processar exclusões.", true);
+                        return;
+                      }
+                      setIsProcessingDeletion(true);
+                      try {
+                        await updateDeletionRequestStatus(
+                          selectedDeletionRequest.id,
+                          "rejected",
+                          deletionProcessingNotes || "Solicitação não atende aos requisitos do Art. 16 da LGPD.",
+                          currentUser?.email || AUTHORIZED_BUROCRATA_EMAIL
+                        );
+                        setDeletionRequestsList((prev) =>
+                          prev.map((r) =>
+                            r.id === selectedDeletionRequest.id
+                              ? { ...r, status: "rejected", observacoes: deletionProcessingNotes }
+                              : r
+                          )
+                        );
+                        showToast(`Protocolo ${selectedDeletionRequest.protocolo} indeferido.`);
+                        setSelectedDeletionRequest(null);
+                      } finally {
+                        setIsProcessingDeletion(false);
+                      }
+                    }}
+                    disabled={isProcessingDeletion}
+                    className="bg-stone-700 hover:bg-stone-800 text-white px-3 py-2 font-bold uppercase tracking-wider text-[10px] cursor-pointer"
+                  >
+                    Indeferir Pedido
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!isAuthorizedBurocrata(currentUser?.email)) {
+                      showToast("🚨 Correção emergencial: Somente pedrohenriquecardonaperes@gmail.com pode processar exclusões.", true);
+                      return;
+                    }
+                    if (!window.confirm(`Confirma a EXCLUSÃO DEFINITIVA dos dados de ${selectedDeletionRequest.nomeCompleto} e a emissão do certificado LGPD?`)) {
+                      return;
+                    }
+                    setIsProcessingDeletion(true);
+                    try {
+                      const certId = "LGPD-CERT-" + Math.random().toString(36).substring(2, 8).toUpperCase();
+                      await updateDeletionRequestStatus(
+                        selectedDeletionRequest.id,
+                        "completed",
+                        deletionProcessingNotes || "Exclusão executada com sucesso pelo Burocrata-Chefe.",
+                        currentUser?.email || AUTHORIZED_BUROCRATA_EMAIL
+                      );
+                      setDeletionRequestsList((prev) =>
+                        prev.map((r) =>
+                          r.id === selectedDeletionRequest.id
+                            ? {
+                                ...r,
+                                status: "completed",
+                                observacoes: deletionProcessingNotes,
+                                certificadoExclusao: certId,
+                                dataConclusao: new Date().toISOString()
+                              }
+                            : r
+                        )
+                      );
+                      showToast(`✓ Exclusão concluída! Certificado emitido: ${certId}`);
+                      setSelectedDeletionRequest(null);
+                    } finally {
+                      setIsProcessingDeletion(false);
+                    }
+                  }}
+                  disabled={isProcessingDeletion}
+                  className="bg-red-700 hover:bg-red-800 text-white px-4 py-2 font-bold uppercase tracking-wider text-[10px] cursor-pointer shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] flex items-center gap-1.5"
+                >
+                  <CheckCircle className="w-3.5 h-3.5 text-amber-300" />
+                  <span>{isProcessingDeletion ? "Executando..." : "Executar Exclusão Definitiva"}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* MODAL: ADD USER MANUALLY */}
       {isAddUserModalOpen && (
