@@ -155,5 +155,11 @@ export const FERRAMENTAS_LIST: FerramentaItem[] = [
     href: "https://wazzimagiygg.com/admin/admintools/pesquisas/",
     isExternal: true,
     category: "Pesquisa Acadêmica"
+  },
+  {
+    label: "NotMediaWiki (Beta) - Engine & Microserviços",
+    href: "https://notmediawiki.wazzimagiygg.com/",
+    category: "NotMediaWiki & Parsoid",
+    isExternal: false
   }
 ];

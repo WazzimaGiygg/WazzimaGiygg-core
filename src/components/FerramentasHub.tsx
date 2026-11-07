@@ -1897,6 +1897,81 @@ export default function FerramentasHub({
             </div>
           </div>
         )}
+
+      {/* NOTMEDIAWIKI BETA DEDICATED TOOL WORKSPACE */}
+      {selectedToolHref === "https://notmediawiki.wazzimagiygg.com/" && (
+        <div className="bg-white border-2 border-[#141414] p-6 shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] space-y-6">
+          <div className="border-b border-stone-200 pb-3 flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="bg-red-700 text-white font-mono text-[10px] font-bold px-2 py-0.5 uppercase tracking-wider">
+                  NotMediaWiki Engine
+                </span>
+                <span className="bg-emerald-100 text-emerald-800 border border-emerald-400 font-mono text-[10px] font-bold px-2 py-0.5 uppercase">
+                  Beta Microservices Online
+                </span>
+              </div>
+              <h4 className="font-editorial text-2xl font-bold text-stone-900 mt-1">
+                NotMediaWiki (Beta) — Parsoid Wikitext & Microserviços
+              </h4>
+              <p className="text-xs text-stone-600 mt-1 font-mono">
+                Repositório oficial: <code>WazzimaGiygg/NotMediaWiki-Beta-</code> • Domínio: <code>notmediawiki.wazzimagiygg.com</code>
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => onNavigateTab("notmediawiki")}
+                className="paper-button px-4 py-2 text-xs font-mono font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer bg-red-700 text-white border-red-950 hover:bg-red-800"
+              >
+                <span>Acessar NotMediaWiki Portal</span>
+                <span className="text-amber-300">→</span>
+              </button>
+              <a
+                href="https://notmediawiki.wazzimagiygg.com/"
+                target="_blank"
+                rel="noreferrer"
+                className="px-4 py-2 text-xs font-mono font-bold uppercase tracking-wider flex items-center gap-1.5 border-2 border-[#141414] bg-stone-100 hover:bg-stone-200 text-stone-900"
+              >
+                <span>Site Externo</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </a>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 font-mono text-xs">
+            <div className="border border-[#141414] p-4 bg-stone-50">
+              <h5 className="font-bold text-stone-900 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                <FileText className="w-4 h-4 text-red-700" />
+                Motor Parsoid
+              </h5>
+              <p className="text-stone-600 text-[11px] leading-relaxed">
+                Renderizador completo de sintaxe wikitext para HTML (seções = H1 =, == H2 ==, tabelas, infoboxes, referências de rodapé e categorias).
+              </p>
+            </div>
+
+            <div className="border border-[#141414] p-4 bg-stone-50">
+              <h5 className="font-bold text-stone-900 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                <Activity className="w-4 h-4 text-red-700" />
+                Myers Diff & Reversões
+              </h5>
+              <p className="text-stone-600 text-[11px] leading-relaxed">
+                Sistema avançado de comparação de revisões linha-a-linha com destaque visual de adições/remoções e rollback administrativo.
+              </p>
+            </div>
+
+            <div className="border border-[#141414] p-4 bg-stone-50">
+              <h5 className="font-bold text-stone-900 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                <Globe className="w-4 h-4 text-red-700" />
+                Microserviços REST /api/v1
+              </h5>
+              <p className="text-stone-600 text-[11px] leading-relaxed">
+                Endpoints integrados para artigos, histórico, parse wikitext, estatísticas, EventStreams e extensões modulares.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

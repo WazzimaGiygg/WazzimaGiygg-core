@@ -75,6 +75,7 @@ interface AdminPanelProps {
   onClose: () => void;
   onElevateSuccess: (userObj: any) => void;
   showToast: (msg: string, isError?: boolean) => void;
+  onNavigateToTab?: (tab: string) => void;
 }
 
 export default function AdminPanel({
@@ -82,7 +83,8 @@ export default function AdminPanel({
   isAdmin,
   onClose,
   onElevateSuccess,
-  showToast
+  showToast,
+  onNavigateToTab
 }: AdminPanelProps) {
   // Navigation inside Admin Core
   const [adminTab, setAdminTab] = useState<
@@ -1413,7 +1415,14 @@ export default function AdminPanel({
             auditLogs={auditLogs}
             showToast={showToast}
             onOpenViewSource={() => setIsViewSourceModalOpen(true)}
-            onNavigateTab={(tab) => setAdminTab(tab as any)}
+            onNavigateTab={(tab) => {
+              if (tab === "notmediawiki") {
+                onClose();
+                onNavigateToTab?.("notmediawiki");
+                return;
+              }
+              setAdminTab(tab as any);
+            }}
             selectedToolHref={selectedToolHref}
             onSelectToolHref={(href) => setSelectedToolHref(href)}
           />

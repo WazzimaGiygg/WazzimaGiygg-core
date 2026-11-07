@@ -2,6 +2,17 @@ import express, { Request, Response } from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
+import {
+  SEED_WIKI_ARTICLES,
+  SEED_WIKI_REVISIONS,
+  SEED_WIKI_EVENTS,
+  SEED_WIKI_EXTENSIONS,
+  parseWikitextToHtml,
+  computeWikitextDiff,
+  WikiArticle,
+  WikiRevision,
+  WikiEvent
+} from './src/data/notMediaWikiData';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1022,6 +1033,248 @@ app.get([
   '/admin/wiki/*'
 ], (_req: Request, res: Response) => {
   res.redirect('/admin/ferramentasadministrativas.html');
+});
+
+// ============================================
+// NOTMEDIAWIKI (notmediawiki.wazzimagiygg.com)
+// REST API GATEWAY & MICROSERVICES
+// ============================================
+const WIKI_STORE = {
+  articles: [...SEED_WIKI_ARTICLES] as WikiArticle[],
+  revisions: [...SEED_WIKI_REVISIONS] as WikiRevision[],
+  events: [...SEED_WIKI_EVENTS] as WikiEvent[],
+  extensions: [...SEED_WIKI_EXTENSIONS]
+};
+
+// 1. Content Service
+app.get('/api/v1/content/articles', (req: Request, res: Response) => {
+  const ns = req.query.namespace !== undefined ? parseInt(req.query.namespace as string, 10) : undefined;
+  const filtered = ns !== undefined ? WIKI_STORE.articles.filter((a) => a.namespace === ns) : WIKI_STORE.articles;
+  res.json({ articles: filtered });
+});
+
+app.get(['/api/v1/content/random', '/api/v1/content/articles/special/random'], (req: Request, res: Response) => {
+  const currentSlug = req.query.current as string | undefined;
+  const pool = currentSlug
+    ? WIKI_STORE.articles.filter((a) => a.slug.toLowerCase() !== currentSlug.toLowerCase())
+    : WIKI_STORE.articles;
+  const candidates = pool.length > 0 ? pool : WIKI_STORE.articles;
+  const random = candidates[Math.floor(Math.random() * candidates.length)];
+  res.json({ article: random });
+});
+
+app.get('/api/v1/content/articles/:slug', (req: Request, res: Response) => {
+  const { slug } = req.params;
+  const article = WIKI_STORE.articles.find((a) => a.slug.toLowerCase() === slug.toLowerCase());
+  if (!article) {
+    res.status(404).json({ error: 'Artigo não encontrado no NotMediaWiki' });
+    return;
+  }
+  article.views += 1;
+  res.json({ article });
+});
+
+app.get('/api/v1/content/articles/:slug/rendered', (req: Request, res: Response) => {
+  const { slug } = req.params;
+  const article = WIKI_STORE.articles.find((a) => a.slug.toLowerCase() === slug.toLowerCase());
+  if (!article) {
+    res.status(404).json({ error: 'Artigo não encontrado' });
+    return;
+  }
+  article.views += 1;
+  const parsed = parseWikitextToHtml(article.wikitext, article.title);
+  res.json({
+    article,
+    html: parsed.html,
+    toc: parsed.toc,
+    categories: parsed.categories,
+    references: parsed.references,
+    parseTimeMs: parsed.parseTimeMs
+  });
+});
+
+app.post('/api/v1/content/articles', (req: Request, res: Response) => {
+  const { title, wikitext, summary, isMinor, authorName, authorId } = req.body;
+  if (!title || !wikitext) {
+    res.status(400).json({ error: 'Título e wikitexto são obrigatórios' });
+    return;
+  }
+  const slug = title.trim().replace(/\s+/g, '_');
+  const revId = `rev-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`;
+  const author = {
+    id: authorId || 'usr_community',
+    name: authorName || 'Editor Comunitário',
+    isBot: false
+  };
+
+  const newRev: WikiRevision = {
+    id: revId,
+    articleSlug: slug,
+    parentRevisionId: null,
+    wikitext,
+    comment: summary || 'Edição via NotMediaWiki API',
+    author,
+    timestamp: new Date().toISOString(),
+    sha256: Math.random().toString(36).substring(2, 18),
+    byteSize: wikitext.length,
+    isMinor: !!isMinor
+  };
+
+  const existingIdx = WIKI_STORE.articles.findIndex((a) => a.slug.toLowerCase() === slug.toLowerCase());
+  let savedArt: WikiArticle;
+  if (existingIdx >= 0) {
+    newRev.parentRevisionId = WIKI_STORE.articles[existingIdx].latestRevisionId;
+    WIKI_STORE.articles[existingIdx] = {
+      ...WIKI_STORE.articles[existingIdx],
+      title,
+      wikitext,
+      latestRevisionId: revId,
+      updatedAt: new Date().toISOString(),
+      views: WIKI_STORE.articles[existingIdx].views + 1
+    };
+    savedArt = WIKI_STORE.articles[existingIdx];
+  } else {
+    savedArt = {
+      id: `art-${Date.now()}`,
+      slug,
+      title,
+      namespace: 0,
+      wikitext,
+      summary: wikitext.substring(0, 150) + '...',
+      latestRevisionId: revId,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      categories: ['Geral'],
+      views: 1
+    };
+    WIKI_STORE.articles.unshift(savedArt);
+  }
+
+  WIKI_STORE.revisions.unshift(newRev);
+
+  // EventStream emission
+  WIKI_STORE.events.unshift({
+    id: `evt-${Date.now()}`,
+    meta: {
+      uri: `https://notmediawiki.wazzimagiygg.com/wiki/${slug}`,
+      request_id: `req-${Date.now()}`,
+      id: `uuid-${Date.now()}`,
+      dt: new Date().toISOString(),
+      domain: 'notmediawiki.wazzimagiygg.com',
+      stream: 'mediawiki.recentchange'
+    },
+    database: 'wzzmwiki',
+    page_title: title,
+    page_namespace: 0,
+    rev_id: revId,
+    rev_timestamp: new Date().toISOString(),
+    rev_sha1: newRev.sha256,
+    rev_minor_edit: !!isMinor,
+    rev_len: wikitext.length,
+    user_text: author.name,
+    comment: summary || 'Edição no acervo',
+    type: existingIdx >= 0 ? 'edit' : 'new'
+  });
+
+  res.status(existingIdx >= 0 ? 200 : 201).json({ success: true, article: savedArt, revision: newRev });
+});
+
+app.get('/api/v1/content/stats', (_req: Request, res: Response) => {
+  res.json({
+    totalArticles: WIKI_STORE.articles.length,
+    totalRevisions: WIKI_STORE.revisions.length,
+    totalViews: WIKI_STORE.articles.reduce((a, b) => a + b.views, 0),
+    activeExtensions: WIKI_STORE.extensions.length
+  });
+});
+
+// 2. Parsoid AST Parser Service
+app.post('/api/v1/parsoid/parse', (req: Request, res: Response) => {
+  const { wikitext, title } = req.body;
+  if (typeof wikitext !== 'string') {
+    res.status(400).json({ error: 'Campo wikitext é obrigatório' });
+    return;
+  }
+  const result = parseWikitextToHtml(wikitext, title || 'Página');
+  res.json({
+    html: result.html,
+    toc: result.toc,
+    categories: result.categories,
+    references: result.references,
+    parseTimeMs: result.parseTimeMs
+  });
+});
+
+// 3. Revisions Service & Diff
+app.get('/api/v1/revisions/article/:slug', (req: Request, res: Response) => {
+  const { slug } = req.params;
+  const revs = WIKI_STORE.revisions
+    .filter((r) => r.articleSlug.toLowerCase() === slug.toLowerCase())
+    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  res.json({ revisions: revs });
+});
+
+app.get('/api/v1/revisions/diff/:fromRevId/:toRevId', (req: Request, res: Response) => {
+  const { fromRevId, toRevId } = req.params;
+  const oldRev = WIKI_STORE.revisions.find((r) => r.id === fromRevId);
+  const newRev = WIKI_STORE.revisions.find((r) => r.id === toRevId);
+  if (!oldRev || !newRev) {
+    res.status(404).json({ error: 'Uma ou ambas as revisões não foram encontradas' });
+    return;
+  }
+  const diff = computeWikitextDiff(oldRev.wikitext, newRev.wikitext, fromRevId, toRevId);
+  res.json({ diff });
+});
+
+app.post('/api/v1/revisions/:slug/rollback', (req: Request, res: Response) => {
+  const { slug } = req.params;
+  const { revIdToRestore, authorName } = req.body;
+  const targetRev = WIKI_STORE.revisions.find((r) => r.id === revIdToRestore);
+  const article = WIKI_STORE.articles.find((a) => a.slug.toLowerCase() === slug.toLowerCase());
+  if (!targetRev || !article) {
+    res.status(404).json({ error: 'Revisão ou artigo não encontrado' });
+    return;
+  }
+  const newRevId = `rev-rb-${Date.now().toString(36)}`;
+  const rollbackRev: WikiRevision = {
+    id: newRevId,
+    articleSlug: article.slug,
+    parentRevisionId: article.latestRevisionId,
+    wikitext: targetRev.wikitext,
+    comment: `Rollback para revisão ${targetRev.id} de ${targetRev.author.name}`,
+    author: { id: 'sysop', name: authorName || 'Burocrata WZZM', isBot: false },
+    timestamp: new Date().toISOString(),
+    sha256: targetRev.sha256,
+    byteSize: targetRev.wikitext.length,
+    isMinor: true
+  };
+  article.wikitext = targetRev.wikitext;
+  article.latestRevisionId = newRevId;
+  article.updatedAt = new Date().toISOString();
+  WIKI_STORE.revisions.unshift(rollbackRev);
+  res.json({ success: true, article, revision: rollbackRev });
+});
+
+// 4. EventStreams Service
+app.get('/api/v1/events/history', (_req: Request, res: Response) => {
+  res.json({ events: WIKI_STORE.events });
+});
+
+// 5. Extensions & Allowed Domains
+app.get('/api/v1/extensions', (_req: Request, res: Response) => {
+  res.json({ extensions: WIKI_STORE.extensions });
+});
+
+app.get('/api/v1/domains', (_req: Request, res: Response) => {
+  res.json({
+    allowedDomains: [
+      'wazzimagiygg.com',
+      'notmediawiki.wazzimagiygg.com',
+      'wikipedia.org',
+      'wikimedia.org',
+      'mediawiki.org'
+    ]
+  });
 });
 
 // ============================================
