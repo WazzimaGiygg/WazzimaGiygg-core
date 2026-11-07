@@ -50,16 +50,22 @@ import {
   BemteviCategory,
   BEMTEVI_CATEGORIES,
   BEMTEVI_TRANSLATIONS,
-  SEED_BEMTEVI_POSTS,
-  SEED_BEMTEVI_COMMUNITIES,
-  SEED_BEMTEVI_USERS,
-  SEED_BEMTEVI_COMMENTS,
-  SEED_BEMTEVI_TRENDING,
-  SEED_BEMTEVI_NOTIFICATIONS,
-  SEED_BEMTEVI_MESSAGES,
   getKarmaLevel,
-  getKarmaBadgeColor
+  getKarmaBadgeColor,
+  computeTrendingTopicsFromDbPosts
 } from '../../data/bemteviData';
+import {
+  listBemteviPostsFromDb,
+  createBemteviPostInDb,
+  deleteBemteviPostInDb,
+  listBemteviCommunitiesFromDb,
+  createBemteviCommunityInDb,
+  listBemteviCommentsFromDb,
+  createBemteviCommentInDb,
+  listBemteviMessagesFromDb,
+  createBemteviMessageInDb,
+  listAllUsersFromFirestore
+} from '../../firebase';
 
 interface BemteviHubProps {
   currentUser?: any;
@@ -82,14 +88,22 @@ export default function BemteviHub({ currentUser, showToast }: BemteviHubProps) 
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [activeCommunityView, setActiveCommunityView] = useState<BemteviCommunity | null>(null);
 
-  // In-Memory Data Stores (synced to /api/bemtevi/*)
-  const [posts, setPosts] = useState<BemteviPost[]>(SEED_BEMTEVI_POSTS);
-  const [comments, setComments] = useState<BemteviComment[]>(SEED_BEMTEVI_COMMENTS);
-  const [communities, setCommunities] = useState<BemteviCommunity[]>(SEED_BEMTEVI_COMMUNITIES);
-  const [usersList, setUsersList] = useState<BemteviUser[]>(SEED_BEMTEVI_USERS);
-  const [trending, setTrending] = useState<BemteviTrendingTopic[]>(SEED_BEMTEVI_TRENDING);
-  const [messages, setMessages] = useState<BemteviDirectMessage[]>(SEED_BEMTEVI_MESSAGES);
-  const [savedPostIds, setSavedPostIds] = useState<string[]>(['post-1', 'post-3']);
+  // Database-Synchronized Stores (Exclusively from database, no fictitious suggested data)
+  const [posts, setPosts] = useState<BemteviPost[]>([]);
+  const [comments, setComments] = useState<BemteviComment[]>([]);
+  const [communities, setCommunities] = useState<BemteviCommunity[]>([]);
+  const [usersList, setUsersList] = useState<BemteviUser[]>([]);
+  const [trending, setTrending] = useState<BemteviTrendingTopic[]>([]);
+  const [messages, setMessages] = useState<BemteviDirectMessage[]>([]);
+  const [savedPostIds, setSavedPostIds] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('bemtevi_saved_posts');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [isLoadingData, setIsLoadingData] = useState(true);
 
   // Post Composer State (strictly max 127 chars as in repo)
   const [composerText, setComposerText] = useState('');
@@ -118,40 +132,83 @@ export default function BemteviHub({ currentUser, showToast }: BemteviHubProps) 
   const [exploreQuery, setExploreQuery] = useState('');
   const [exploreFilter, setExploreFilter] = useState<'all' | 'posts' | 'users' | 'communities'>('all');
 
-  // Load from backend API if available
+  // Load ONLY real data synchronized from the database
+  const loadDatabaseData = async () => {
+    setIsLoadingData(true);
+    try {
+      const [dbPosts, dbComms, dbMsgs, dbUsers] = await Promise.all([
+        listBemteviPostsFromDb(),
+        listBemteviCommunitiesFromDb(),
+        listBemteviMessagesFromDb(),
+        listAllUsersFromFirestore()
+      ]);
+
+      const validPosts: BemteviPost[] = (dbPosts || []).map((p: any) => ({
+        id: p.id || `post-${Date.now()}`,
+        authorId: p.authorId || 'anon',
+        authorName: p.authorName || 'Usuário WZZM',
+        authorHandle: p.authorHandle || `@${(p.authorName || 'usuario').toLowerCase().replace(/[^a-z0-9_]/g, '')}`,
+        authorAvatar: p.authorAvatar || undefined,
+        authorBadge: p.authorBadge || 'Membro',
+        authorKarma: p.authorKarma || 10,
+        content: p.content || '',
+        link: p.link || undefined,
+        category: p.category || 'Geral',
+        communityId: p.communityId || undefined,
+        communityName: p.communityName || undefined,
+        likesCount: p.likesCount || (Array.isArray(p.likedBy) ? p.likedBy.length : 0),
+        commentsCount: p.commentsCount || 0,
+        sharesCount: p.sharesCount || 0,
+        savesCount: p.savesCount || 0,
+        likedBy: Array.isArray(p.likedBy) ? p.likedBy : [],
+        savedBy: Array.isArray(p.savedBy) ? p.savedBy : [],
+        createdAt: p.createdAt || new Date().toISOString()
+      }));
+      setPosts(validPosts);
+
+      // Compute trending topics EXCLUSIVELY from real database posts
+      setTrending(computeTrendingTopicsFromDbPosts(validPosts));
+
+      const validComms: BemteviCommunity[] = (dbComms || []).map((c: any) => ({
+        id: c.id || `comm-${Date.now()}`,
+        name: c.name || 'Comunidade WZZM',
+        description: c.description || '',
+        category: c.category || 'Geral',
+        membersCount: c.membersCount || (Array.isArray(c.members) ? c.members.length : 1),
+        postsCount: c.postsCount || 0,
+        icon: c.icon || '🏛️',
+        createdBy: c.createdBy || 'sistema',
+        members: Array.isArray(c.members) ? c.members : [],
+        createdAt: c.createdAt || new Date().toISOString()
+      }));
+      setCommunities(validComms);
+
+      setMessages(dbMsgs || []);
+
+      // Real users from database
+      const mappedUsers: BemteviUser[] = (dbUsers || []).map((u: any) => ({
+        uid: u.uid || u.id,
+        name: u.name || u.nome || u.email?.split('@')[0] || 'Usuário WZZM',
+        handle: `@${(u.email?.split('@')[0] || u.name || 'usuario').toLowerCase().replace(/[^a-z0-9_]/g, '')}`,
+        avatar: u.profilePictureUrl || u.avatar || undefined,
+        bio: u.bio || (u.isAdmin ? 'Burocrata administrador oficial' : (u.isTeacher ? 'Professor verificado' : 'Membro cadastrado no banco de dados')),
+        karma: u.karma || (u.isAdmin ? 5000 : 100),
+        level: u.level || (u.isAdmin ? 'Lendário' : (u.isTeacher ? 'Veterano' : 'Iniciante')),
+        followers: Array.isArray(u.followers) ? u.followers : [],
+        following: Array.isArray(u.following) ? u.following : [],
+        badges: Array.isArray(u.badges) ? u.badges : (u.isAdmin ? ['Burocrata Oficial'] : ['Registrado']),
+        joinedAt: u.createdAt || new Date().toISOString()
+      }));
+      setUsersList(mappedUsers);
+    } catch (err) {
+      console.warn('Erro ao carregar dados exclusivos do banco de dados:', err);
+    } finally {
+      setIsLoadingData(false);
+    }
+  };
+
   useEffect(() => {
-    const fetchSocialData = async () => {
-      try {
-        const [postsRes, commsRes, trendRes] = await Promise.allSettled([
-          fetch('/api/bemtevi/posts'),
-          fetch('/api/bemtevi/communities'),
-          fetch('/api/bemtevi/trending')
-        ]);
-
-        if (postsRes.status === 'fulfilled' && postsRes.value.ok) {
-          const data = await postsRes.value.json();
-          if (Array.isArray(data.posts) && data.posts.length > 0) {
-            setPosts(data.posts);
-          }
-        }
-        if (commsRes.status === 'fulfilled' && commsRes.value.ok) {
-          const data = await commsRes.value.json();
-          if (Array.isArray(data.communities) && data.communities.length > 0) {
-            setCommunities(data.communities);
-          }
-        }
-        if (trendRes.status === 'fulfilled' && trendRes.value.ok) {
-          const data = await trendRes.value.json();
-          if (Array.isArray(data.trending) && data.trending.length > 0) {
-            setTrending(data.trending);
-          }
-        }
-      } catch (err) {
-        console.warn('Backend Bemtevi fallback to local memory state:', err);
-      }
-    };
-
-    fetchSocialData();
+    loadDatabaseData();
   }, []);
 
   // Current session user details in Bemtevi format
@@ -193,8 +250,7 @@ export default function BemteviHub({ currentUser, showToast }: BemteviHubProps) 
     setIsSubmittingPost(true);
     const targetComm = communities.find((c) => c.id === composerCommunityId);
 
-    const newPost: BemteviPost = {
-      id: `post-${Date.now()}`,
+    const postPayload = {
       authorId: myUser.uid,
       authorName: myUser.name,
       authorHandle: myUser.handle,
@@ -211,32 +267,21 @@ export default function BemteviHub({ currentUser, showToast }: BemteviHubProps) 
       sharesCount: 0,
       savesCount: 0,
       likedBy: [],
-      savedBy: [],
-      createdAt: new Date().toISOString()
+      savedBy: []
     };
 
-    // Update state locally
-    setPosts([newPost, ...posts]);
-    setComposerText('');
-    setComposerLink('');
-    setComposerCommunityId('');
-
-    // Award user karma (+10)
-    setUsersList((prev) =>
-      prev.map((u) => (u.uid === myUser.uid ? { ...u, karma: u.karma + 10, level: getKarmaLevel(u.karma + 10) } : u))
-    );
-
-    showToast('Post publicado com sucesso no Bemtevi! (+10 Karma)', false);
-
-    // Sync to backend
     try {
-      await fetch('/api/bemtevi/posts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newPost)
-      });
-    } catch {
-      // Handled silently
+      const savedPost = await createBemteviPostInDb(postPayload);
+      const updatedList = [savedPost, ...posts];
+      setPosts(updatedList);
+      setTrending(computeTrendingTopicsFromDbPosts(updatedList));
+      setComposerText('');
+      setComposerLink('');
+      setComposerCommunityId('');
+      showToast('Post gravado com sucesso no banco de dados! (+10 Karma)', false);
+    } catch (err) {
+      console.warn('Erro ao salvar post no banco de dados:', err);
+      showToast('Erro ao sincronizar post com o banco de dados.', true);
     } finally {
       setIsSubmittingPost(false);
     }
@@ -257,7 +302,7 @@ export default function BemteviHub({ currentUser, showToast }: BemteviHubProps) 
       )
     );
 
-    // Sync to backend
+    // Sync to backend database
     fetch(`/api/bemtevi/posts/${post.id}/like`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -268,20 +313,29 @@ export default function BemteviHub({ currentUser, showToast }: BemteviHubProps) 
   // Toggle Save on Post
   const handleToggleSave = (post: BemteviPost) => {
     const isSaved = savedPostIds.includes(post.id);
-    if (isSaved) {
-      setSavedPostIds(savedPostIds.filter((id) => id !== post.id));
-      showToast('Post removido dos seus salvos.');
-    } else {
-      setSavedPostIds([...savedPostIds, post.id]);
-      showToast('Post salvo com sucesso em Seus Salvos! 🔖');
-    }
+    const updated = isSaved
+      ? savedPostIds.filter((id) => id !== post.id)
+      : [...savedPostIds, post.id];
+
+    setSavedPostIds(updated);
+    try {
+      localStorage.setItem('bemtevi_saved_posts', JSON.stringify(updated));
+    } catch {}
+
+    showToast(isSaved ? 'Post removido dos seus salvos.' : 'Post salvo em Seus Salvos! 🔖');
   };
 
   // Delete Post
-  const handleDeletePost = (postId: string) => {
-    setPosts((prev) => prev.filter((p) => p.id !== postId));
-    showToast('Post removido do feed.');
-    fetch(`/api/bemtevi/posts/${postId}`, { method: 'DELETE' }).catch(() => {});
+  const handleDeletePost = async (postId: string) => {
+    try {
+      await deleteBemteviPostInDb(postId);
+      const updatedList = posts.filter((p) => p.id !== postId);
+      setPosts(updatedList);
+      setTrending(computeTrendingTopicsFromDbPosts(updatedList));
+      showToast('Post excluído do banco de dados.');
+    } catch {
+      showToast('Erro ao excluir post do banco de dados.', true);
+    }
   };
 
   // Share / Copy Link
@@ -345,15 +399,14 @@ export default function BemteviHub({ currentUser, showToast }: BemteviHubProps) 
   };
 
   // Create Community
-  const handleCreateCommunitySubmit = (e: React.FormEvent) => {
+  const handleCreateCommunitySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newCommunityName.trim() || newCommunityName.length < 3) {
       showToast('O nome da comunidade deve ter pelo menos 3 caracteres!', true);
       return;
     }
 
-    const newComm: BemteviCommunity = {
-      id: `comm-${Date.now()}`,
+    const newCommData = {
       name: newCommunityName.trim(),
       description: newCommunityDesc.trim() || 'Comunidade colaborativa do Bemtevi.',
       category: newCommunityCat,
@@ -361,19 +414,34 @@ export default function BemteviHub({ currentUser, showToast }: BemteviHubProps) 
       postsCount: 0,
       icon: '🏛️',
       createdBy: myUser.uid,
-      members: [myUser.uid],
-      createdAt: new Date().toISOString()
+      members: [myUser.uid]
     };
 
-    setCommunities([newComm, ...communities]);
-    setIsCreateCommunityModalOpen(false);
-    setNewCommunityName('');
-    setNewCommunityDesc('');
-    showToast(`Comunidade "${newComm.name}" criada com sucesso! 🚀`);
+    try {
+      const savedComm = await createBemteviCommunityInDb(newCommData);
+      setCommunities([savedComm, ...communities]);
+      setIsCreateCommunityModalOpen(false);
+      setNewCommunityName('');
+      setNewCommunityDesc('');
+      showToast(`Comunidade "${savedComm.name}" gravada com sucesso no banco de dados! 🚀`);
+    } catch {
+      showToast('Erro ao gravar comunidade no banco de dados.', true);
+    }
+  };
+
+  // Open Comments Modal & load comments from database
+  const handleOpenCommentsModal = async (post: BemteviPost) => {
+    setSelectedPostForComments(post);
+    try {
+      const dbComments = await listBemteviCommentsFromDb(post.id);
+      setComments(dbComments);
+    } catch {
+      //
+    }
   };
 
   // Submit Comment
-  const handleSendComment = (e: React.FormEvent) => {
+  const handleSendComment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedPostForComments || !newCommentText.trim()) return;
 
@@ -383,8 +451,7 @@ export default function BemteviHub({ currentUser, showToast }: BemteviHubProps) 
     }
 
     setIsSubmittingComment(true);
-    const commentItem: BemteviComment = {
-      id: `comm-${Date.now()}`,
+    const commentData = {
       postId: selectedPostForComments.id,
       authorId: myUser.uid,
       authorName: myUser.name,
@@ -392,43 +459,50 @@ export default function BemteviHub({ currentUser, showToast }: BemteviHubProps) 
       authorAvatar: myUser.avatar,
       content: newCommentText.trim(),
       likesCount: 0,
-      likedBy: [],
-      createdAt: new Date().toISOString()
+      likedBy: []
     };
 
-    setComments([...comments, commentItem]);
-    setPosts((prev) =>
-      prev.map((p) =>
-        p.id === selectedPostForComments.id
-          ? { ...p, commentsCount: p.commentsCount + 1 }
-          : p
-      )
-    );
-
-    setNewCommentText('');
-    setIsSubmittingComment(false);
-    showToast('Comentário publicado! (+5 Karma)');
+    try {
+      const savedComment = await createBemteviCommentInDb(selectedPostForComments.id, commentData);
+      setComments([...comments, savedComment]);
+      setPosts((prev) =>
+        prev.map((p) =>
+          p.id === selectedPostForComments.id
+            ? { ...p, commentsCount: p.commentsCount + 1 }
+            : p
+        )
+      );
+      setNewCommentText('');
+      showToast('Comentário gravado no banco de dados! (+5 Karma)');
+    } catch {
+      showToast('Erro ao gravar comentário no banco de dados.', true);
+    } finally {
+      setIsSubmittingComment(false);
+    }
   };
 
   // Direct Message Send
-  const handleSendDirectMessage = (e: React.FormEvent) => {
+  const handleSendDirectMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeDmUser || !dmInputText.trim()) return;
 
     const convId = [myUser.uid, activeDmUser.uid].sort().join('_');
-    const newMsg: BemteviDirectMessage = {
-      id: `msg-${Date.now()}`,
+    const msgData = {
       conversationId: convId,
       senderId: myUser.uid,
       senderName: myUser.name,
       senderAvatar: myUser.avatar,
       receiverId: activeDmUser.uid,
-      text: dmInputText.trim(),
-      createdAt: new Date().toISOString()
+      text: dmInputText.trim()
     };
 
-    setMessages([...messages, newMsg]);
-    setDmInputText('');
+    try {
+      const savedMsg = await createBemteviMessageInDb(msgData);
+      setMessages([...messages, savedMsg]);
+      setDmInputText('');
+    } catch {
+      showToast('Erro ao gravar mensagem privada no banco de dados.', true);
+    }
   };
 
   // Filtered Posts
@@ -791,9 +865,14 @@ export default function BemteviHub({ currentUser, showToast }: BemteviHubProps) 
 
               {/* POSTS LIST */}
               <div className="space-y-4">
-                {filteredPosts.length === 0 ? (
+                {isLoadingData ? (
+                  <div className="bg-[#16161B] border border-stone-800 rounded-2xl p-10 text-center text-stone-400 font-mono text-xs flex flex-col items-center justify-center gap-3">
+                    <div className="w-6 h-6 border-2 border-stone-600 border-t-[#667eea] rounded-full animate-spin" />
+                    <p>Sincronizando dados em tempo real com o banco de dados...</p>
+                  </div>
+                ) : filteredPosts.length === 0 ? (
                   <div className="bg-[#16161B] border border-stone-800 rounded-2xl p-10 text-center text-stone-500 font-mono text-xs">
-                    <p>Nenhuma postagem encontrada para os filtros selecionados.</p>
+                    <p>Nenhuma postagem encontrada no banco de dados.</p>
                     <p className="mt-1 text-stone-600">Seja o primeiro a publicar algo interessante no Bemtevi!</p>
                   </div>
                 ) : (
@@ -900,7 +979,7 @@ export default function BemteviHub({ currentUser, showToast }: BemteviHubProps) 
 
                           {/* Comments */}
                           <button
-                            onClick={() => setSelectedPostForComments(post)}
+                            onClick={() => handleOpenCommentsModal(post)}
                             className="flex items-center gap-1.5 py-1 px-2 rounded-lg hover:text-blue-400 hover:bg-stone-800 transition-colors cursor-pointer"
                           >
                             <MessageCircle className="w-4 h-4" />
@@ -973,37 +1052,127 @@ export default function BemteviHub({ currentUser, showToast }: BemteviHubProps) 
                 </div>
               </div>
 
-              {/* Trending Topics Grid in Explore */}
-              <div className="bg-[#16161B] border border-stone-800 rounded-2xl p-5 shadow-xl space-y-3">
-                <h3 className="font-editorial text-lg font-bold text-white flex items-center gap-2">
-                  <Flame className="w-5 h-5 text-red-500" />
-                  <span>Assuntos em Alta no Brasil & Rede WZZM</span>
-                </h3>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-                  {trending.map((item, idx) => (
-                    <div
-                      key={idx}
-                      onClick={() => {
-                        setComposerText(`${item.tag} `);
-                        setActiveTab('feed');
-                      }}
-                      className="p-3 bg-stone-900/60 hover:bg-stone-900 border border-stone-800 hover:border-stone-700 rounded-xl transition-all cursor-pointer group"
-                    >
-                      <div className="flex items-center justify-between text-[11px] text-stone-500 mb-1">
-                        <span className="uppercase font-mono">{item.category}</span>
-                        <span>#{idx + 1}</span>
-                      </div>
-                      <h4 className="font-bold text-sm text-stone-200 group-hover:text-[#667eea] transition-colors">
-                        {item.tag}
+              {/* Se houver termo de busca, exibe resultados da pesquisa sincronizados */}
+              {exploreQuery.trim() ? (
+                <div className="space-y-4">
+                  {(exploreFilter === 'all' || exploreFilter === 'posts') && (
+                    <div className="space-y-3">
+                      <h4 className="text-xs font-mono font-bold text-stone-400 uppercase tracking-wider">
+                        Postagens Encontradas ({posts.filter(p => p.content.toLowerCase().includes(exploreQuery.toLowerCase().trim()) || (p.tags ? p.tags.some((t: string) => t.toLowerCase().includes(exploreQuery.toLowerCase().trim())) : false)).length})
                       </h4>
-                      <p className="text-[11px] font-mono text-stone-400 mt-1">
-                        {item.postsCount} postagens
-                      </p>
+                      {posts.filter(p => p.content.toLowerCase().includes(exploreQuery.toLowerCase().trim()) || (p.tags ? p.tags.some((t: string) => t.toLowerCase().includes(exploreQuery.toLowerCase().trim())) : false)).length === 0 ? (
+                        <p className="text-xs font-mono text-stone-500 bg-[#16161B] p-4 rounded-xl border border-stone-800">
+                          Nenhuma postagem no banco de dados com este termo.
+                        </p>
+                      ) : (
+                        posts.filter(p => p.content.toLowerCase().includes(exploreQuery.toLowerCase().trim()) || (p.tags ? p.tags.some((t: string) => t.toLowerCase().includes(exploreQuery.toLowerCase().trim())) : false)).map(post => (
+                          <div key={post.id} className="bg-[#16161B] border border-stone-800 rounded-xl p-4 space-y-2">
+                            <div className="flex items-center justify-between text-xs text-stone-400 font-mono">
+                              <span className="font-bold text-white">{post.authorName}</span>
+                              <span>{formatTimeAgo(post.createdAt)}</span>
+                            </div>
+                            <p className="text-stone-200 text-sm font-serif">{post.content}</p>
+                          </div>
+                        ))
+                      )}
                     </div>
-                  ))}
+                  )}
+
+                  {(exploreFilter === 'all' || exploreFilter === 'users') && (
+                    <div className="space-y-3">
+                      <h4 className="text-xs font-mono font-bold text-stone-400 uppercase tracking-wider">
+                        Usuários Cadastrados ({usersList.filter(u => u.name.toLowerCase().includes(exploreQuery.toLowerCase().trim()) || u.handle.toLowerCase().includes(exploreQuery.toLowerCase().trim())).length})
+                      </h4>
+                      {usersList.filter(u => u.name.toLowerCase().includes(exploreQuery.toLowerCase().trim()) || u.handle.toLowerCase().includes(exploreQuery.toLowerCase().trim())).length === 0 ? (
+                        <p className="text-xs font-mono text-stone-500 bg-[#16161B] p-4 rounded-xl border border-stone-800">
+                          Nenhum usuário encontrado no banco de dados com este nome.
+                        </p>
+                      ) : (
+                        usersList.filter(u => u.name.toLowerCase().includes(exploreQuery.toLowerCase().trim()) || u.handle.toLowerCase().includes(exploreQuery.toLowerCase().trim())).map(u => (
+                          <div key={u.uid} onClick={() => setSelectedProfileUser(u)} className="bg-[#16161B] border border-stone-800 rounded-xl p-3 flex items-center justify-between cursor-pointer hover:border-stone-700">
+                            <div className="flex items-center gap-3">
+                              <div className="w-9 h-9 rounded-full bg-stone-700 flex items-center justify-center font-bold text-xs overflow-hidden">
+                                {u.avatar ? <img src={u.avatar} alt={u.name} className="w-full h-full object-cover" /> : u.name.charAt(0)}
+                              </div>
+                              <div>
+                                <h5 className="font-bold text-xs text-stone-200">{u.name}</h5>
+                                <span className="text-[10px] text-stone-500 font-mono">{u.handle}</span>
+                              </div>
+                            </div>
+                            <button onClick={(e) => { e.stopPropagation(); handleToggleFollow(u); }} className="text-[10px] font-mono px-3 py-1 rounded-full bg-stone-800 hover:bg-stone-700 text-stone-300">
+                              {myUser.following.includes(u.uid) ? 'Seguindo' : 'Seguir'}
+                            </button>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+
+                  {(exploreFilter === 'all' || exploreFilter === 'communities') && (
+                    <div className="space-y-3">
+                      <h4 className="text-xs font-mono font-bold text-stone-400 uppercase tracking-wider">
+                        Comunidades ({communities.filter(c => c.name.toLowerCase().includes(exploreQuery.toLowerCase().trim()) || c.description.toLowerCase().includes(exploreQuery.toLowerCase().trim())).length})
+                      </h4>
+                      {communities.filter(c => c.name.toLowerCase().includes(exploreQuery.toLowerCase().trim()) || c.description.toLowerCase().includes(exploreQuery.toLowerCase().trim())).length === 0 ? (
+                        <p className="text-xs font-mono text-stone-500 bg-[#16161B] p-4 rounded-xl border border-stone-800">
+                          Nenhuma comunidade encontrada no banco de dados com este termo.
+                        </p>
+                      ) : (
+                        communities.filter(c => c.name.toLowerCase().includes(exploreQuery.toLowerCase().trim()) || c.description.toLowerCase().includes(exploreQuery.toLowerCase().trim())).map(c => (
+                          <div key={c.id} className="bg-[#16161B] border border-stone-800 rounded-xl p-4 flex items-center justify-between">
+                            <div>
+                              <h5 className="font-bold text-sm text-stone-200">{c.name}</h5>
+                              <p className="text-xs text-stone-400 mt-0.5">{c.description}</p>
+                            </div>
+                            <button onClick={() => { setActiveCommunityView(c); setActiveTab('feed'); }} className="text-xs font-mono text-[#667eea] hover:underline font-bold">
+                              Ver Feed →
+                            </button>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
                 </div>
-              </div>
+              ) : (
+                /* Trending Topics Grid in Explore (se sem busca ativa) */
+                <div className="bg-[#16161B] border border-stone-800 rounded-2xl p-5 shadow-xl space-y-3">
+                  <h3 className="font-editorial text-lg font-bold text-white flex items-center gap-2">
+                    <Flame className="w-5 h-5 text-red-500" />
+                    <span>Assuntos em Alta no Brasil & Rede WZZM</span>
+                  </h3>
+
+                  {trending.length === 0 ? (
+                    <div className="p-8 text-center text-stone-500 font-mono text-xs">
+                      <p>Nenhum tópico em alta no banco de dados.</p>
+                      <p className="mt-1 text-stone-600">Publique no feed utilizando #hashtags para gerar tendências reais.</p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+                      {trending.map((item, idx) => (
+                        <div
+                          key={idx}
+                          onClick={() => {
+                            setComposerText(`${item.tag} `);
+                            setActiveTab('feed');
+                          }}
+                          className="p-3 bg-stone-900/60 hover:bg-stone-900 border border-stone-800 hover:border-stone-700 rounded-xl transition-all cursor-pointer group"
+                        >
+                          <div className="flex items-center justify-between text-[11px] text-stone-500 mb-1">
+                            <span className="uppercase font-mono">{item.category}</span>
+                            <span>#{idx + 1}</span>
+                          </div>
+                          <h4 className="font-bold text-sm text-stone-200 group-hover:text-[#667eea] transition-colors">
+                            {item.tag}
+                          </h4>
+                          <p className="text-[11px] font-mono text-stone-400 mt-1">
+                            {item.postsCount} postagens
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
@@ -1029,7 +1198,13 @@ export default function BemteviHub({ currentUser, showToast }: BemteviHubProps) 
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {communities.map((comm) => {
+                {communities.length === 0 ? (
+                  <div className="bg-[#16161B] border border-stone-800 rounded-2xl p-10 text-center text-stone-500 font-mono text-xs col-span-1 sm:col-span-2">
+                    <p>Nenhuma comunidade cadastrada no banco de dados.</p>
+                    <p className="mt-1 text-stone-600">Clique em &ldquo;Criar Comunidade&rdquo; para fundar a primeira comunidade no Bemtevi!</p>
+                  </div>
+                ) : (
+                  communities.map((comm) => {
                   const isMember = comm.members.includes(myUser.uid);
                   return (
                     <div
@@ -1083,7 +1258,7 @@ export default function BemteviHub({ currentUser, showToast }: BemteviHubProps) 
                       </div>
                     </div>
                   );
-                })}
+                }))}
               </div>
             </div>
           )}
@@ -1097,34 +1272,40 @@ export default function BemteviHub({ currentUser, showToast }: BemteviHubProps) 
                   Conversas Diretas
                 </h3>
                 <div className="space-y-2">
-                  {usersList
-                    .filter((u) => u.uid !== myUser.uid)
-                    .map((user) => {
-                      const isSelected = activeDmUser?.uid === user.uid;
-                      return (
-                        <div
-                          key={user.uid}
-                          onClick={() => setActiveDmUser(user)}
-                          className={`p-3 rounded-xl flex items-center gap-3 cursor-pointer transition-colors ${
-                            isSelected
-                              ? 'bg-[#667eea] text-white'
-                              : 'bg-stone-900/60 hover:bg-stone-800 text-stone-200'
-                          }`}
-                        >
-                          <div className="w-9 h-9 rounded-full bg-stone-700 flex items-center justify-center font-bold overflow-hidden text-xs">
-                            {user.avatar ? (
-                              <img src={user.avatar} alt={user.name} className="w-full h-full object-cover" />
-                            ) : (
-                              user.name.charAt(0)
-                            )}
+                  {usersList.filter((u) => u.uid !== myUser.uid).length === 0 ? (
+                    <p className="text-xs font-mono text-stone-500 p-4 text-center">
+                      Nenhum outro usuário cadastrado no banco de dados para conversar.
+                    </p>
+                  ) : (
+                    usersList
+                      .filter((u) => u.uid !== myUser.uid)
+                      .map((user) => {
+                        const isSelected = activeDmUser?.uid === user.uid;
+                        return (
+                          <div
+                            key={user.uid}
+                            onClick={() => setActiveDmUser(user)}
+                            className={`p-3 rounded-xl flex items-center gap-3 cursor-pointer transition-colors ${
+                              isSelected
+                                ? 'bg-[#667eea] text-white'
+                                : 'bg-stone-900/60 hover:bg-stone-800 text-stone-200'
+                            }`}
+                          >
+                            <div className="w-9 h-9 rounded-full bg-stone-700 flex items-center justify-center font-bold overflow-hidden text-xs">
+                              {user.avatar ? (
+                                <img src={user.avatar} alt={user.name} className="w-full h-full object-cover" />
+                              ) : (
+                                user.name.charAt(0)
+                              )}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <h4 className="font-bold text-xs truncate">{user.name}</h4>
+                              <p className="text-[10px] opacity-70 truncate font-mono">{user.handle}</p>
+                            </div>
                           </div>
-                          <div className="flex-1 min-w-0">
-                            <h4 className="font-bold text-xs truncate">{user.name}</h4>
-                            <p className="text-[10px] opacity-70 truncate font-mono">{user.handle}</p>
-                          </div>
-                        </div>
-                      );
-                    })}
+                        );
+                      })
+                  )}
                 </div>
               </div>
 
@@ -1144,28 +1325,43 @@ export default function BemteviHub({ currentUser, showToast }: BemteviHubProps) 
 
                     {/* Messages history */}
                     <div className="flex-1 py-4 space-y-3 overflow-y-auto max-h-[360px]">
-                      {messages.map((m) => {
-                        const isMe = m.senderId === myUser.uid;
-                        return (
-                          <div
-                            key={m.id}
-                            className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}
-                          >
-                            <span className="text-[9px] font-mono text-stone-500 mb-0.5">
-                              {m.senderName} • {formatTimeAgo(m.createdAt)}
-                            </span>
+                      {messages
+                        .filter(
+                          (m) =>
+                            (m.senderId === activeDmUser.uid && (m.recipientId === myUser.uid || m.receiverId === myUser.uid)) ||
+                            (m.senderId === myUser.uid && (m.recipientId === activeDmUser.uid || m.receiverId === activeDmUser.uid))
+                        )
+                        .map((m) => {
+                          const isMe = m.senderId === myUser.uid;
+                          return (
                             <div
-                              className={`max-w-[80%] p-3 rounded-2xl text-xs font-mono ${
-                                isMe
-                                  ? 'bg-[#667eea] text-white rounded-br-none'
-                                  : 'bg-stone-800 text-stone-200 rounded-bl-none'
-                              }`}
+                              key={m.id}
+                              className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}
                             >
-                              {m.text}
+                              <span className="text-[9px] font-mono text-stone-500 mb-0.5">
+                                {m.senderName} • {formatTimeAgo(m.createdAt)}
+                              </span>
+                              <div
+                                className={`max-w-[80%] p-3 rounded-2xl text-xs font-mono ${
+                                  isMe
+                                    ? 'bg-[#667eea] text-white rounded-br-none'
+                                    : 'bg-stone-800 text-stone-200 rounded-bl-none'
+                                }`}
+                              >
+                                {m.text}
+                              </div>
                             </div>
-                          </div>
-                        );
-                      })}
+                          );
+                        })}
+                      {messages.filter(
+                        (m) =>
+                          (m.senderId === activeDmUser.uid && (m.recipientId === myUser.uid || m.receiverId === myUser.uid)) ||
+                          (m.senderId === myUser.uid && (m.recipientId === activeDmUser.uid || m.receiverId === activeDmUser.uid))
+                      ).length === 0 && (
+                        <p className="text-center text-xs font-mono text-stone-500 py-10">
+                          Nenhuma mensagem direta ainda com @{activeDmUser.handle}. Envie a primeira mensagem abaixo!
+                        </p>
+                      )}
                     </div>
 
                     {/* Input */}
@@ -1337,28 +1533,36 @@ export default function BemteviHub({ currentUser, showToast }: BemteviHubProps) 
             </h3>
 
             <div className="space-y-2.5">
-              {trending.slice(0, 5).map((trend, i) => (
-                <div
-                  key={i}
-                  onClick={() => {
-                    setComposerText(`${trend.tag} `);
-                    setActiveTab('feed');
-                  }}
-                  className="flex items-center justify-between text-xs group cursor-pointer"
-                >
-                  <div>
-                    <span className="text-[10px] font-mono text-stone-500 uppercase">
-                      {trend.category}
-                    </span>
-                    <h5 className="font-bold text-stone-300 group-hover:text-amber-400 transition-colors">
-                      {trend.tag}
-                    </h5>
-                  </div>
-                  <span className="text-[10px] font-mono text-stone-500">
-                    {trend.postsCount}
-                  </span>
+              {trending.length === 0 ? (
+                <div className="p-3 bg-stone-900/40 border border-stone-800 rounded-xl text-center">
+                  <p className="text-[11px] font-mono text-stone-500">
+                    Nenhum tópico em alta no banco de dados. Crie posts com #hashtags para gerar tendências reais.
+                  </p>
                 </div>
-              ))}
+              ) : (
+                trending.slice(0, 5).map((trend, i) => (
+                  <div
+                    key={i}
+                    onClick={() => {
+                      setComposerText(`${trend.tag} `);
+                      setActiveTab('feed');
+                    }}
+                    className="flex items-center justify-between text-xs group cursor-pointer"
+                  >
+                    <div>
+                      <span className="text-[10px] font-mono text-stone-500 uppercase">
+                        {trend.category}
+                      </span>
+                      <h5 className="font-bold text-stone-300 group-hover:text-amber-400 transition-colors">
+                        {trend.tag}
+                      </h5>
+                    </div>
+                    <span className="text-[10px] font-mono text-stone-500">
+                      {trend.postsCount}
+                    </span>
+                  </div>
+                ))
+              )}
             </div>
           </div>
 
@@ -1370,47 +1574,55 @@ export default function BemteviHub({ currentUser, showToast }: BemteviHubProps) 
             </h3>
 
             <div className="space-y-3">
-              {usersList
-                .filter((u) => u.uid !== myUser.uid)
-                .slice(0, 3)
-                .map((u) => {
-                  const isFollowing = myUser.following.includes(u.uid);
-                  return (
-                    <div key={u.uid} className="flex items-center justify-between gap-2">
-                      <div
-                        onClick={() => setSelectedProfileUser(u)}
-                        className="flex items-center gap-2 cursor-pointer group min-w-0"
-                      >
-                        <div className="w-8 h-8 rounded-full bg-stone-700 flex items-center justify-center font-bold text-xs shrink-0 overflow-hidden">
-                          {u.avatar ? (
-                            <img src={u.avatar} alt={u.name} className="w-full h-full object-cover" />
-                          ) : (
-                            u.name.charAt(0)
-                          )}
+              {usersList.filter((u) => u.uid !== myUser.uid).length === 0 ? (
+                <div className="p-3 bg-stone-900/40 border border-stone-800 rounded-xl text-center">
+                  <p className="text-[11px] font-mono text-stone-500">
+                    Nenhum outro usuário cadastrado no banco de dados.
+                  </p>
+                </div>
+              ) : (
+                usersList
+                  .filter((u) => u.uid !== myUser.uid)
+                  .slice(0, 4)
+                  .map((u) => {
+                    const isFollowing = myUser.following.includes(u.uid);
+                    return (
+                      <div key={u.uid} className="flex items-center justify-between gap-2">
+                        <div
+                          onClick={() => setSelectedProfileUser(u)}
+                          className="flex items-center gap-2 cursor-pointer group min-w-0"
+                        >
+                          <div className="w-8 h-8 rounded-full bg-stone-700 flex items-center justify-center font-bold text-xs shrink-0 overflow-hidden">
+                            {u.avatar ? (
+                              <img src={u.avatar} alt={u.name} className="w-full h-full object-cover" />
+                            ) : (
+                              u.name.charAt(0)
+                            )}
+                          </div>
+                          <div className="min-w-0">
+                            <h5 className="font-bold text-xs text-stone-200 group-hover:text-[#667eea] truncate">
+                              {u.name}
+                            </h5>
+                            <span className="text-[10px] text-stone-500 font-mono truncate block">
+                              {u.handle}
+                            </span>
+                          </div>
                         </div>
-                        <div className="min-w-0">
-                          <h5 className="font-bold text-xs text-stone-200 group-hover:text-[#667eea] truncate">
-                            {u.name}
-                          </h5>
-                          <span className="text-[10px] text-stone-500 font-mono truncate block">
-                            {u.handle}
-                          </span>
-                        </div>
-                      </div>
 
-                      <button
-                        onClick={() => handleToggleFollow(u)}
-                        className={`text-[10px] font-mono font-bold uppercase px-2.5 py-1 rounded-full transition-colors shrink-0 cursor-pointer ${
-                          isFollowing
-                            ? 'bg-stone-800 text-stone-400 border border-stone-700 hover:text-white'
-                            : 'bg-[#667eea] hover:bg-[#5a6fd6] text-white'
-                        }`}
-                      >
-                        {isFollowing ? 'Seguindo' : 'Seguir'}
-                      </button>
-                    </div>
-                  );
-                })}
+                        <button
+                          onClick={() => handleToggleFollow(u)}
+                          className={`text-[10px] font-mono font-bold uppercase px-2.5 py-1 rounded-full transition-colors shrink-0 cursor-pointer ${
+                            isFollowing
+                              ? 'bg-stone-800 text-stone-400 border border-stone-700 hover:text-white'
+                              : 'bg-[#667eea] hover:bg-[#5a6fd6] text-white'
+                          }`}
+                        >
+                          {isFollowing ? 'Seguindo' : 'Seguir'}
+                        </button>
+                      </div>
+                    );
+                  })
+              )}
             </div>
           </div>
 

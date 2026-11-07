@@ -22,7 +22,8 @@ import {
   SEED_BEMTEVI_MESSAGES,
   BemteviPost,
   BemteviComment,
-  BemteviCommunity
+  BemteviCommunity,
+  computeTrendingTopicsFromDbPosts
 } from './src/data/bemteviData';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -1431,14 +1432,66 @@ app.post('/api/bemtevi/communities', (req: Request, res: Response) => {
   res.status(201).json({ success: true, community: newComm });
 });
 
-// 6. Trending Topics
+// 6. Trending Topics (Calculados estritamente a partir das postagens reais salvas no banco de dados)
 app.get('/api/bemtevi/trending', (_req: Request, res: Response) => {
-  res.json({ trending: BEMTEVI_STORE.trending });
+  const dynamicTrending = computeTrendingTopicsFromDbPosts(BEMTEVI_STORE.posts);
+  res.json({ trending: dynamicTrending });
 });
 
-// 7. Users
+// 7. Users (Apenas usuários reais cadastrados no banco de dados)
 app.get('/api/bemtevi/users', (_req: Request, res: Response) => {
-  res.json({ users: BEMTEVI_STORE.users });
+  const realUsers = (DATA_CACHE.users || []).map((u: any) => ({
+    uid: u.uid || u.id,
+    name: u.name || u.nome || u.email?.split('@')[0] || 'Usuário WZZM',
+    handle: `@${(u.email?.split('@')[0] || u.name || 'usuario').toLowerCase().replace(/[^a-z0-9_]/g, '')}`,
+    avatar: u.profilePictureUrl || u.avatar || undefined,
+    bio: u.bio || (u.isTeacher ? 'Professor verificado no acervo WZZM' : (u.isAdmin ? 'Burocrata administrador oficial' : 'Membro registrado da comunidade')),
+    karma: u.karma || (u.isAdmin ? 5000 : 100),
+    level: u.level || (u.isAdmin ? 'Lendário' : (u.isTeacher ? 'Veterano' : 'Iniciante')),
+    followers: u.followers || [],
+    following: u.following || [],
+    badges: u.badges || (u.isAdmin ? ['Burocrata'] : (u.isTeacher ? ['Docente'] : ['Registrado'])),
+    joinedAt: u.createdAt || new Date().toISOString()
+  }));
+  res.json({ users: realUsers });
+});
+
+// 8. Comments (Comentários sincronizados por post)
+app.get('/api/bemtevi/posts/:postId/comments', (req: Request, res: Response) => {
+  const { postId } = req.params;
+  const list = BEMTEVI_STORE.comments.filter((c) => c.postId === postId);
+  res.json({ comments: list });
+});
+
+app.post('/api/bemtevi/posts/:postId/comments', (req: Request, res: Response) => {
+  const { postId } = req.params;
+  const { content, authorId, authorName, authorHandle, authorAvatar } = req.body;
+  if (!content || typeof content !== 'string') {
+    res.status(400).json({ error: 'Comentário não pode estar vazio.' });
+    return;
+  }
+  if (content.length > 280) {
+    res.status(400).json({ error: 'Comentário muito longo! Máximo 280 caracteres.' });
+    return;
+  }
+  const newComment: BemteviComment = {
+    id: `comm-${Date.now()}`,
+    postId,
+    authorId: authorId || 'usr-anon',
+    authorName: authorName || 'Membro',
+    authorHandle: authorHandle || '@membro',
+    authorAvatar,
+    content: content.trim(),
+    likesCount: 0,
+    likedBy: [],
+    createdAt: new Date().toISOString()
+  };
+  BEMTEVI_STORE.comments.push(newComment);
+  const targetPost = BEMTEVI_STORE.posts.find((p) => p.id === postId);
+  if (targetPost) {
+    targetPost.commentsCount += 1;
+  }
+  res.status(201).json({ success: true, comment: newComment });
 });
 
 // 8. Direct Messages

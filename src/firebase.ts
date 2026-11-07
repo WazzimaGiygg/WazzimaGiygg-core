@@ -654,3 +654,273 @@ export async function deleteArticleFromFirestore(collectionName: string, id: str
   }
 }
 
+// ============================================
+// BEMTEVI REDE SOCIAL - SINCRONIZAÇÃO COM BANCO DE DADOS
+// Apenas dados sincronizados do banco de dados são permitidos
+// ============================================
+
+export async function listBemteviPostsFromDb(): Promise<any[]> {
+  try {
+    const q = query(collection(db, "bemtevi_posts"), orderBy("createdAt", "desc"));
+    const snapshot = await getDocs(q);
+    const posts: any[] = [];
+    snapshot.forEach((docSnap) => {
+      const data = docSnap.data();
+      posts.push({
+        id: docSnap.id,
+        ...data,
+        createdAt: data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : data.createdAt || new Date().toISOString()
+      });
+    });
+    if (posts.length > 0) return posts;
+  } catch (err) {
+    console.warn("Firestore bemtevi_posts read warning:", err);
+  }
+
+  // Fallback to backend database endpoint
+  try {
+    const res = await fetch("/api/bemtevi/posts");
+    if (res.ok) {
+      const json = await res.json();
+      return json.posts || [];
+    }
+  } catch {
+    //
+  }
+
+  return [];
+}
+
+export async function createBemteviPostInDb(postData: any): Promise<any> {
+  const payload = {
+    ...postData,
+    createdAt: serverTimestamp()
+  };
+
+  try {
+    const docRef = await addDoc(collection(db, "bemtevi_posts"), payload);
+    const result = {
+      ...postData,
+      id: docRef.id,
+      createdAt: new Date().toISOString()
+    };
+    // Sync to backend cache
+    fetch("/api/bemtevi/posts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(result)
+    }).catch(() => {});
+    return result;
+  } catch (err) {
+    console.warn("Firestore bemtevi_posts add error, using backend:", err);
+    const res = await fetch("/api/bemtevi/posts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(postData)
+    });
+    if (res.ok) {
+      const data = await res.json();
+      return data.post;
+    }
+    throw err;
+  }
+}
+
+export async function deleteBemteviPostInDb(postId: string): Promise<boolean> {
+  try {
+    await deleteDoc(doc(db, "bemtevi_posts", postId));
+  } catch (err) {
+    console.warn("Firestore delete bemtevi_post error:", err);
+  }
+
+  try {
+    await fetch(`/api/bemtevi/posts/${postId}`, { method: "DELETE" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function listBemteviCommunitiesFromDb(): Promise<any[]> {
+  try {
+    const snapshot = await getDocs(collection(db, "bemtevi_communities"));
+    const comms: any[] = [];
+    snapshot.forEach((docSnap) => {
+      const data = docSnap.data();
+      comms.push({
+        id: docSnap.id,
+        ...data,
+        createdAt: data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : data.createdAt || new Date().toISOString()
+      });
+    });
+    if (comms.length > 0) return comms;
+  } catch (err) {
+    console.warn("Firestore bemtevi_communities read error:", err);
+  }
+
+  try {
+    const res = await fetch("/api/bemtevi/communities");
+    if (res.ok) {
+      const json = await res.json();
+      return json.communities || [];
+    }
+  } catch {
+    //
+  }
+
+  return [];
+}
+
+export async function createBemteviCommunityInDb(commData: any): Promise<any> {
+  const payload = {
+    ...commData,
+    createdAt: serverTimestamp()
+  };
+
+  try {
+    const docRef = await addDoc(collection(db, "bemtevi_communities"), payload);
+    const result = { ...commData, id: docRef.id, createdAt: new Date().toISOString() };
+    fetch("/api/bemtevi/communities", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(result)
+    }).catch(() => {});
+    return result;
+  } catch (err) {
+    const res = await fetch("/api/bemtevi/communities", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(commData)
+    });
+    if (res.ok) {
+      const json = await res.json();
+      return json.community;
+    }
+    throw err;
+  }
+}
+
+export async function listBemteviCommentsFromDb(postId: string): Promise<any[]> {
+  try {
+    const q = query(collection(db, "bemtevi_comments"), orderBy("createdAt", "asc"));
+    const snapshot = await getDocs(q);
+    const comms: any[] = [];
+    snapshot.forEach((docSnap) => {
+      const data = docSnap.data();
+      if (data.postId === postId) {
+        comms.push({
+          id: docSnap.id,
+          ...data,
+          createdAt: data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : data.createdAt || new Date().toISOString()
+        });
+      }
+    });
+    if (comms.length > 0) return comms;
+  } catch (err) {
+    console.warn("Firestore bemtevi_comments read error:", err);
+  }
+
+  try {
+    const res = await fetch(`/api/bemtevi/posts/${postId}/comments`);
+    if (res.ok) {
+      const json = await res.json();
+      return json.comments || [];
+    }
+  } catch {
+    //
+  }
+
+  return [];
+}
+
+export async function createBemteviCommentInDb(postId: string, commentData: any): Promise<any> {
+  const payload = {
+    postId,
+    ...commentData,
+    createdAt: serverTimestamp()
+  };
+
+  try {
+    const docRef = await addDoc(collection(db, "bemtevi_comments"), payload);
+    const result = { id: docRef.id, postId, ...commentData, createdAt: new Date().toISOString() };
+    fetch(`/api/bemtevi/posts/${postId}/comments`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(result)
+    }).catch(() => {});
+    return result;
+  } catch (err) {
+    const res = await fetch(`/api/bemtevi/posts/${postId}/comments`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(commentData)
+    });
+    if (res.ok) {
+      const json = await res.json();
+      return json.comment;
+    }
+    throw err;
+  }
+}
+
+export async function listBemteviMessagesFromDb(): Promise<any[]> {
+  try {
+    const q = query(collection(db, "bemtevi_messages"), orderBy("createdAt", "asc"));
+    const snapshot = await getDocs(q);
+    const msgs: any[] = [];
+    snapshot.forEach((docSnap) => {
+      const data = docSnap.data();
+      msgs.push({
+        id: docSnap.id,
+        ...data,
+        createdAt: data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : data.createdAt || new Date().toISOString()
+      });
+    });
+    if (msgs.length > 0) return msgs;
+  } catch (err) {
+    console.warn("Firestore bemtevi_messages read error:", err);
+  }
+
+  try {
+    const res = await fetch("/api/bemtevi/messages");
+    if (res.ok) {
+      const json = await res.json();
+      return json.messages || [];
+    }
+  } catch {
+    //
+  }
+
+  return [];
+}
+
+export async function createBemteviMessageInDb(msgData: any): Promise<any> {
+  const payload = {
+    ...msgData,
+    createdAt: serverTimestamp()
+  };
+
+  try {
+    const docRef = await addDoc(collection(db, "bemtevi_messages"), payload);
+    const result = { id: docRef.id, ...msgData, createdAt: new Date().toISOString() };
+    fetch("/api/bemtevi/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(result)
+    }).catch(() => {});
+    return result;
+  } catch (err) {
+    const res = await fetch("/api/bemtevi/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(msgData)
+    });
+    if (res.ok) {
+      const json = await res.json();
+      return json.message;
+    }
+    throw err;
+  }
+}
+
+
