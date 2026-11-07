@@ -161,5 +161,11 @@ export const FERRAMENTAS_LIST: FerramentaItem[] = [
     href: "https://notmediawiki.wazzimagiygg.com/",
     category: "NotMediaWiki & Parsoid",
     isExternal: false
+  },
+  {
+    label: "Bemtevi - Rede Social Livre & Microblogging",
+    href: "https://bemtevi.wazzimagiygg.com/",
+    category: "Rede Social Bemtevi",
+    isExternal: false
   }
 ];

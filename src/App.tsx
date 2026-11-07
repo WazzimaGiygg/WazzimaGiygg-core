@@ -40,7 +40,10 @@ import {
   Info,
   Crown,
   Shield,
-  FileDown
+  FileDown,
+  MessageCircle,
+  Flame,
+  Award
 } from "lucide-react";
 import jsPDF from "jspdf";
 
@@ -65,6 +68,7 @@ import {
 import { stripHtmlToPlainText } from "./utils/text";
 import AdminPanel from "./components/AdminPanel";
 import NotMediaWikiPortal from "./components/notmediawiki/NotMediaWikiPortal";
+import BemteviHub from "./components/bemtevi/BemteviHub";
 
 export default function App() {
   // Authentication & Role States
@@ -87,6 +91,7 @@ export default function App() {
     | "tickets"
     | "chat"
     | "notmediawiki"
+    | "bemtevi"
   >("wikiworldweb");
 
   const [articles, setArticles] = useState<{ [key: string]: Article[] }>({
@@ -790,6 +795,14 @@ export default function App() {
                   </span>
                 )}
                 <button
+                  onClick={() => setCurrentTab("bemtevi")}
+                  className="bg-[#667eea]/20 text-indigo-300 border border-[#667eea]/40 hover:bg-[#667eea]/40 text-[9px] px-1.5 py-0.2 rounded font-mono font-bold flex items-center gap-1 cursor-pointer"
+                  title="Abrir perfil social no Bemtevi"
+                >
+                  <Award className="w-2.5 h-2.5 text-amber-400" />
+                  <span>Bemtevi</span>
+                </button>
+                <button
                   onClick={handleLogout}
                   className="hover:text-red-400 text-stone-400 transition-colors cursor-pointer ml-1"
                   title="Sair"
@@ -888,7 +901,8 @@ export default function App() {
               { id: "dossie", label: "Dossiê & Abusos Wikipédia", icon: Scale },
               { id: "tickets", label: "Ouvidoria & Tickets", icon: Ticket },
               { id: "chat", label: "Chat & Mensagens", icon: MessageSquare },
-              { id: "notmediawiki", label: "NotMediaWiki (Beta)", icon: Database }
+              { id: "notmediawiki", label: "NotMediaWiki (Beta)", icon: Database },
+              { id: "bemtevi", label: "Bemtevi (Rede Social)", icon: MessageCircle }
             ].map((tab) => {
               const Icon = tab.icon;
               const isActive = currentTab === tab.id;
@@ -1482,6 +1496,11 @@ export default function App() {
         {currentTab === "notmediawiki" && (
           <NotMediaWikiPortal currentUser={user} showToast={showToast} />
         )}
+
+        {/* VIEW 7: BEMTEVI - REDE SOCIAL LIVRE & COLABORATIVA */}
+        {currentTab === "bemtevi" && (
+          <BemteviHub currentUser={user} showToast={showToast} />
+        )}
       </main>
 
       {/* ============================================ */}
@@ -1499,6 +1518,19 @@ export default function App() {
                 <span className="text-stone-300">Coleção: {selectedArticle.colecao}</span>
               </div>
               <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    setSelectedArticle(null);
+                    setCurrentTab("bemtevi");
+                    showToast(`Abrindo Bemtevi para debater "${selectedArticle.titulo}"! 🐦`);
+                  }}
+                  className="bg-[#667eea] hover:bg-[#5a6fd6] text-white px-2.5 py-1 text-[11px] font-mono font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer border border-[#4d63d6] shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]"
+                  title="Compartilhar e debater na rede social Bemtevi"
+                >
+                  <MessageCircle className="w-3.5 h-3.5 text-white" />
+                  <span className="hidden sm:inline">Compartilhar no Bemtevi</span>
+                  <span className="sm:hidden">Bemtevi</span>
+                </button>
                 <button
                   onClick={() => handleSaveArticleAsPdf(selectedArticle)}
                   disabled={isGeneratingPdf}

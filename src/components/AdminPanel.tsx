@@ -1416,9 +1416,9 @@ export default function AdminPanel({
             showToast={showToast}
             onOpenViewSource={() => setIsViewSourceModalOpen(true)}
             onNavigateTab={(tab) => {
-              if (tab === "notmediawiki") {
+              if (tab === "notmediawiki" || tab === "bemtevi") {
                 onClose();
-                onNavigateToTab?.("notmediawiki");
+                onNavigateToTab?.(tab);
                 return;
               }
               setAdminTab(tab as any);

@@ -33,7 +33,8 @@ import {
   HelpCircle,
   Activity,
   Pin,
-  FileCheck
+  FileCheck,
+  Award
 } from "lucide-react";
 import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 import { db, registerAuditLog, updateUserTeacherStatus, updateUserAdminStatus, updateUserBanStatus, AppUser, Article } from "../firebase";
@@ -1967,6 +1968,81 @@ export default function FerramentasHub({
               </h5>
               <p className="text-stone-600 text-[11px] leading-relaxed">
                 Endpoints integrados para artigos, histórico, parse wikitext, estatísticas, EventStreams e extensões modulares.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* BEMTEVI SOCIAL NETWORK DEDICATED TOOL WORKSPACE */}
+      {selectedToolHref === "https://bemtevi.wazzimagiygg.com/" && (
+        <div className="bg-white border-2 border-[#141414] p-6 shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] space-y-6">
+          <div className="border-b border-stone-200 pb-3 flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="bg-[#667eea] text-white font-mono text-[10px] font-bold px-2 py-0.5 uppercase tracking-wider">
+                  Rede Social Bemtevi
+                </span>
+                <span className="bg-emerald-100 text-emerald-800 border border-emerald-400 font-mono text-[10px] font-bold px-2 py-0.5 uppercase">
+                  Ativa & Integrada ao Portal
+                </span>
+              </div>
+              <h4 className="font-editorial text-2xl font-bold text-stone-900 mt-1">
+                Bemtevi — Rede Social Livre & Microblogging WZZM
+              </h4>
+              <p className="text-xs text-stone-600 mt-1 font-mono">
+                Repositório oficial: <code>WazzimaGiygg/bemtevi</code> • Domínio: <code>bemtevi.wazzimagiygg.com</code>
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => onNavigateTab("bemtevi")}
+                className="paper-button px-4 py-2 text-xs font-mono font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer bg-[#667eea] text-white border-blue-950 hover:bg-[#5a6fd6]"
+              >
+                <span>Acessar Rede Social Bemtevi</span>
+                <span className="text-amber-300">→</span>
+              </button>
+              <a
+                href="https://bemtevi.wazzimagiygg.com/"
+                target="_blank"
+                rel="noreferrer"
+                className="px-4 py-2 text-xs font-mono font-bold uppercase tracking-wider flex items-center gap-1.5 border-2 border-[#141414] bg-stone-100 hover:bg-stone-200 text-stone-900"
+              >
+                <span>Site Externo</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </a>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 font-mono text-xs">
+            <div className="border border-[#141414] p-4 bg-stone-50">
+              <h5 className="font-bold text-stone-900 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                <MessageSquare className="w-4 h-4 text-[#667eea]" />
+                Microblogging (127 caracteres)
+              </h5>
+              <p className="text-stone-600 text-[11px] leading-relaxed">
+                Posts sucintos com links anexados, categorias, marcações #hashtags e comentários estendidos (280 chars).
+              </p>
+            </div>
+
+            <div className="border border-[#141414] p-4 bg-stone-50">
+              <h5 className="font-bold text-stone-900 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                <Users className="w-4 h-4 text-[#667eea]" />
+                Comunidades & Fóruns
+              </h5>
+              <p className="text-stone-600 text-[11px] leading-relaxed">
+                Espaços de discussão colaborativos por interesse (Tecnologia, Ciência, LGPD, Filosofia, etc.).
+              </p>
+            </div>
+
+            <div className="border border-[#141414] p-4 bg-stone-50">
+              <h5 className="font-bold text-stone-900 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                <Award className="w-4 h-4 text-[#667eea]" />
+                Gamificação & Níveis de Karma
+              </h5>
+              <p className="text-stone-600 text-[11px] leading-relaxed">
+                Sistema que reconhece membros ativos com selos de Novato até Lendário conforme a qualidade da interação.
               </p>
             </div>
           </div>

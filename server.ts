@@ -13,6 +13,17 @@ import {
   WikiRevision,
   WikiEvent
 } from './src/data/notMediaWikiData';
+import {
+  SEED_BEMTEVI_POSTS,
+  SEED_BEMTEVI_COMMUNITIES,
+  SEED_BEMTEVI_USERS,
+  SEED_BEMTEVI_COMMENTS,
+  SEED_BEMTEVI_TRENDING,
+  SEED_BEMTEVI_MESSAGES,
+  BemteviPost,
+  BemteviComment,
+  BemteviCommunity
+} from './src/data/bemteviData';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1270,11 +1281,196 @@ app.get('/api/v1/domains', (_req: Request, res: Response) => {
     allowedDomains: [
       'wazzimagiygg.com',
       'notmediawiki.wazzimagiygg.com',
+      'bemtevi.wazzimagiygg.com',
       'wikipedia.org',
       'wikimedia.org',
       'mediawiki.org'
     ]
   });
+});
+
+// ============================================
+// BEMTEVI SOCIAL NETWORK ENDPOINTS (/api/bemtevi/*)
+// Repositório: WazzimaGiygg/bemtevi
+// Domínio: bemtevi.wazzimagiygg.com
+// ============================================
+const BEMTEVI_STORE = {
+  posts: [...SEED_BEMTEVI_POSTS] as BemteviPost[],
+  communities: [...SEED_BEMTEVI_COMMUNITIES] as BemteviCommunity[],
+  users: [...SEED_BEMTEVI_USERS],
+  comments: [...SEED_BEMTEVI_COMMENTS] as BemteviComment[],
+  trending: [...SEED_BEMTEVI_TRENDING],
+  messages: [...SEED_BEMTEVI_MESSAGES]
+};
+
+// 1. Get Posts (with query filters)
+app.get('/api/bemtevi/posts', (req: Request, res: Response) => {
+  const { category, communityId, authorId, search } = req.query;
+  let list = [...BEMTEVI_STORE.posts];
+
+  if (category && category !== 'all') {
+    list = list.filter((p) => p.category === category);
+  }
+  if (communityId) {
+    list = list.filter((p) => p.communityId === communityId);
+  }
+  if (authorId) {
+    list = list.filter((p) => p.authorId === authorId);
+  }
+  if (search && typeof search === 'string') {
+    const q = search.toLowerCase();
+    list = list.filter((p) => p.content.toLowerCase().includes(q) || p.authorName.toLowerCase().includes(q));
+  }
+
+  res.json({ posts: list, total: list.length });
+});
+
+// 2. Create Post (strictly enforced max 127 characters)
+app.post('/api/bemtevi/posts', (req: Request, res: Response) => {
+  const { content, authorId, authorName, authorHandle, authorAvatar, link, category, communityId, communityName } = req.body;
+
+  if (!content || typeof content !== 'string') {
+    res.status(400).json({ error: 'Conteúdo da postagem é obrigatório.' });
+    return;
+  }
+
+  if (content.length > 127) {
+    res.status(400).json({ error: 'O texto deve ter no máximo 127 caracteres!' });
+    return;
+  }
+
+  const newPost: BemteviPost = {
+    id: `post-${Date.now()}`,
+    authorId: authorId || 'usr-anon',
+    authorName: authorName || 'Membro Bemtevi',
+    authorHandle: authorHandle || '@membro',
+    authorAvatar: authorAvatar || undefined,
+    authorBadge: 'Iniciante',
+    authorKarma: 10,
+    content: content.trim(),
+    link: link || undefined,
+    category: category || 'Geral',
+    communityId: communityId || undefined,
+    communityName: communityName || undefined,
+    likesCount: 0,
+    commentsCount: 0,
+    sharesCount: 0,
+    savesCount: 0,
+    likedBy: [],
+    savedBy: [],
+    createdAt: new Date().toISOString()
+  };
+
+  BEMTEVI_STORE.posts.unshift(newPost);
+  res.status(201).json({ success: true, post: newPost });
+});
+
+// 3. Delete Post
+app.delete('/api/bemtevi/posts/:id', (req: Request, res: Response) => {
+  const { id } = req.params;
+  const initialLen = BEMTEVI_STORE.posts.length;
+  BEMTEVI_STORE.posts = BEMTEVI_STORE.posts.filter((p) => p.id !== id);
+
+  if (BEMTEVI_STORE.posts.length < initialLen) {
+    res.json({ success: true, message: 'Post excluído com sucesso.' });
+  } else {
+    res.status(404).json({ error: 'Post não encontrado.' });
+  }
+});
+
+// 4. Like / Unlike Post
+app.post('/api/bemtevi/posts/:id/like', (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { userId } = req.body;
+  const post = BEMTEVI_STORE.posts.find((p) => p.id === id);
+
+  if (!post) {
+    res.status(404).json({ error: 'Post não encontrado.' });
+    return;
+  }
+
+  const uid = userId || 'usr-guest';
+  const isLiked = post.likedBy.includes(uid);
+  if (isLiked) {
+    post.likedBy = post.likedBy.filter((u) => u !== uid);
+    post.likesCount = Math.max(0, post.likesCount - 1);
+  } else {
+    post.likedBy.push(uid);
+    post.likesCount += 1;
+  }
+
+  res.json({ success: true, isLiked: !isLiked, likesCount: post.likesCount });
+});
+
+// 5. Communities
+app.get('/api/bemtevi/communities', (_req: Request, res: Response) => {
+  res.json({ communities: BEMTEVI_STORE.communities });
+});
+
+app.post('/api/bemtevi/communities', (req: Request, res: Response) => {
+  const { name, description, category, createdBy } = req.body;
+  if (!name || name.length < 3) {
+    res.status(400).json({ error: 'Nome da comunidade deve ter pelo menos 3 caracteres.' });
+    return;
+  }
+
+  const newComm: BemteviCommunity = {
+    id: `comm-${Date.now()}`,
+    name: name.trim(),
+    description: description || '',
+    category: category || 'Geral',
+    membersCount: 1,
+    postsCount: 0,
+    icon: '🏛️',
+    createdBy: createdBy || 'usr-anon',
+    members: [createdBy || 'usr-anon'],
+    createdAt: new Date().toISOString()
+  };
+
+  BEMTEVI_STORE.communities.unshift(newComm);
+  res.status(201).json({ success: true, community: newComm });
+});
+
+// 6. Trending Topics
+app.get('/api/bemtevi/trending', (_req: Request, res: Response) => {
+  res.json({ trending: BEMTEVI_STORE.trending });
+});
+
+// 7. Users
+app.get('/api/bemtevi/users', (_req: Request, res: Response) => {
+  res.json({ users: BEMTEVI_STORE.users });
+});
+
+// 8. Direct Messages
+app.get('/api/bemtevi/messages', (req: Request, res: Response) => {
+  const { conversationId } = req.query;
+  let list = BEMTEVI_STORE.messages;
+  if (conversationId && typeof conversationId === 'string') {
+    list = list.filter((m) => m.conversationId === conversationId);
+  }
+  res.json({ messages: list });
+});
+
+app.post('/api/bemtevi/messages', (req: Request, res: Response) => {
+  const { conversationId, senderId, senderName, senderAvatar, receiverId, text } = req.body;
+  if (!text || !receiverId) {
+    res.status(400).json({ error: 'Destinatário e mensagem são obrigatórios.' });
+    return;
+  }
+
+  const newMsg = {
+    id: `msg-${Date.now()}`,
+    conversationId: conversationId || `conv-${Date.now()}`,
+    senderId: senderId || 'usr-anon',
+    senderName: senderName || 'Anônimo',
+    senderAvatar,
+    receiverId,
+    text: text.trim(),
+    createdAt: new Date().toISOString()
+  };
+
+  BEMTEVI_STORE.messages.push(newMsg);
+  res.status(201).json({ success: true, message: newMsg });
 });
 
 // ============================================
