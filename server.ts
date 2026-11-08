@@ -11,7 +11,13 @@ import {
   computeWikitextDiff,
   WikiArticle,
   WikiRevision,
-  WikiEvent
+  WikiEvent,
+  WikiExtension,
+  ALLOWED_EXTENSION_DOMAINS,
+  scanExtensionCodeForMalware,
+  verifyExtensionSyncSecurity,
+  computeSha256Hex,
+  ExtensionSecurityAudit
 } from './src/data/notMediaWikiData';
 import {
   SEED_BEMTEVI_POSTS,
@@ -1284,22 +1290,169 @@ app.get('/api/v1/events/history', (_req: Request, res: Response) => {
   res.json({ events: WIKI_STORE.events });
 });
 
-// 5. Extensions & Allowed Domains
+// 5. Extensions Security & Verification Gateway (Dispositivos 3.05.9.a & 3.05.9.b)
 app.get('/api/v1/extensions', (_req: Request, res: Response) => {
-  res.json({ extensions: WIKI_STORE.extensions });
+  res.json({
+    extensions: WIKI_STORE.extensions,
+    allowedDomains: ALLOWED_EXTENSION_DOMAINS,
+    securityDevices: {
+      syncDeviceActive: true,
+      malwareScannerActive: true,
+      quarantineGuardActive: true,
+      governanceBureaucrat: 'pedrohenriquecardonaperes@gmail.com'
+    }
+  });
 });
 
 app.get('/api/v1/domains', (_req: Request, res: Response) => {
   res.json({
-    allowedDomains: [
-      'wazzimagiygg.com',
-      'notmediawiki.wazzimagiygg.com',
-      'bemtevi.wazzimagiygg.com',
-      'wikipedia.org',
-      'wikimedia.org',
-      'mediawiki.org'
-    ]
+    allowedDomains: ALLOWED_EXTENSION_DOMAINS
   });
+});
+
+// Endpoint 3.05.9.b: Static Analysis & Malicious Information Scan
+app.post('/api/v1/extensions/security/scan', (req: Request, res: Response) => {
+  try {
+    const { extensionId, fileName, code } = req.body;
+    if (!code || typeof code !== 'string') {
+      return res.status(400).json({ error: 'Código da extensão é obrigatório para análise forense.' });
+    }
+
+    const audit = scanExtensionCodeForMalware(
+      extensionId || 'custom-inspection',
+      fileName || 'payload.ts',
+      code
+    );
+
+    res.json({
+      success: true,
+      audit,
+      sha256: computeSha256Hex(code)
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Erro durante execução do analisador estático.', details: err.message });
+  }
+});
+
+// Endpoint 3.05.9.a & 3.05.9.b: Security Synchronization Device with Cryptographic Verification
+app.post('/api/v1/extensions/security/sync', (req: Request, res: Response) => {
+  try {
+    const { extension, extensionId, userEmail } = req.body;
+    const bureaucratEmail = 'pedrohenriquecardonaperes@gmail.com';
+
+    // Emergency rule: only Burocrata can synchronize extensions
+    if (!userEmail || userEmail.toLowerCase() !== bureaucratEmail.toLowerCase()) {
+      return res.status(403).json({
+        success: false,
+        error: 'ACESSO NEGADO: Somente o Burocrata oficial (pedrohenriquecardonaperes@gmail.com) tem permissão para sincronizar extensões no ecossistema NotMediaWiki.',
+        status: 'unverified'
+      });
+    }
+
+    let targetExt: WikiExtension | undefined;
+
+    if (extension && typeof extension === 'object') {
+      targetExt = extension as WikiExtension;
+    } else if (extensionId) {
+      targetExt = WIKI_STORE.extensions.find(e => e.id === extensionId);
+    }
+
+    if (!targetExt) {
+      return res.status(404).json({
+        success: false,
+        error: 'Extensão alvo não encontrada para sincronização.'
+      });
+    }
+
+    // Run Security Synchronization Device Verification
+    const verification = verifyExtensionSyncSecurity(targetExt, userEmail);
+
+    // Update in store or upsert
+    const existingIndex = WIKI_STORE.extensions.findIndex(e => e.id === targetExt!.id);
+    const updatedExt: WikiExtension = {
+      ...targetExt,
+      signatureStatus: verification.status,
+      lastSyncTimestamp: new Date().toISOString(),
+      syncAuthorizedBy: userEmail,
+      quarantined: verification.status === 'quarantined' || verification.audit.quarantined,
+      quarantineReason: verification.audit.quarantineReason,
+      securityAudit: verification.audit,
+      // If quarantined, force disabled
+      enabled: verification.status === 'quarantined' ? false : targetExt.enabled
+    };
+
+    if (existingIndex >= 0) {
+      WIKI_STORE.extensions[existingIndex] = updatedExt;
+    } else {
+      WIKI_STORE.extensions.push(updatedExt);
+    }
+
+    res.json({
+      success: verification.approved,
+      status: verification.status,
+      extension: updatedExt,
+      reasons: verification.reasons,
+      audit: verification.audit
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Erro no dispositivo de sincronização de extensões.', details: err.message });
+  }
+});
+
+// Endpoint: Toggle Extension (Strict check: Burocrata + Quarantined Guard)
+app.post('/api/v1/extensions/:id/toggle', (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { enabled, userEmail } = req.body;
+  const bureaucratEmail = 'pedrohenriquecardonaperes@gmail.com';
+
+  if (!userEmail || userEmail.toLowerCase() !== bureaucratEmail.toLowerCase()) {
+    return res.status(403).json({
+      error: 'ACESSO NEGADO: Somente o Burocrata oficial (pedrohenriquecardonaperes@gmail.com) pode alterar o estado das extensões.'
+    });
+  }
+
+  const ext = WIKI_STORE.extensions.find(e => e.id === id);
+  if (!ext) {
+    return res.status(404).json({ error: 'Extensão não encontrada.' });
+  }
+
+  // Quarantined Extension Guard
+  if (ext.quarantined && enabled) {
+    return res.status(403).json({
+      error: 'BLOQUEIO DE SEGURANÇA: Esta extensão está isolada em QUARENTENA devido a código malicioso detectado e não pode ser ativada.',
+      quarantineReason: ext.quarantineReason
+    });
+  }
+
+  ext.enabled = !!enabled;
+  res.json({ success: true, extension: ext });
+});
+
+// Endpoint: Quarantine Management (Burocrata only)
+app.post('/api/v1/extensions/:id/quarantine', (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { quarantined, reason, userEmail } = req.body;
+  const bureaucratEmail = 'pedrohenriquecardonaperes@gmail.com';
+
+  if (!userEmail || userEmail.toLowerCase() !== bureaucratEmail.toLowerCase()) {
+    return res.status(403).json({
+      error: 'ACESSO NEGADO: Somente o Burocrata oficial (pedrohenriquecardonaperes@gmail.com) pode gerenciar quarentena de extensões.'
+    });
+  }
+
+  const ext = WIKI_STORE.extensions.find(e => e.id === id);
+  if (!ext) {
+    return res.status(404).json({ error: 'Extensão não encontrada.' });
+  }
+
+  ext.quarantined = !!quarantined;
+  ext.quarantineReason = quarantined ? (reason || 'Isolada manualmente pelo Burocrata.') : undefined;
+  ext.signatureStatus = quarantined ? 'quarantined' : 'verified';
+  if (quarantined) {
+    ext.enabled = false;
+  }
+
+  res.json({ success: true, extension: ext });
 });
 
 // ============================================

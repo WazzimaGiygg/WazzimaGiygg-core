@@ -36,7 +36,9 @@ import {
   Bell,
   Layers,
   Globe,
-  FileCode
+  FileCode,
+  PieChart as PieChartIcon,
+  BarChart2
 } from "lucide-react";
 import { signInWithPopup } from "firebase/auth";
 import { collection, addDoc, serverTimestamp } from "firebase/firestore";
@@ -68,6 +70,7 @@ import {
   FerramentaItem
 } from "../data/ferramentasSource";
 import FerramentasHub from "./FerramentasHub";
+import DeletionRequestsDashboard from "./DeletionRequestsDashboard";
 
 interface AdminPanelProps {
   currentUser: any;
@@ -94,6 +97,7 @@ export default function AdminPanel({
   // Solicitacao de Exclusao LGPD State (admin/admintools/solicitacaodeexlusao/)
   const [deletionRequestsList, setDeletionRequestsList] = useState<DeletionRequest[]>([]);
   const [isLoadingDeletionRequests, setIsLoadingDeletionRequests] = useState(false);
+  const [exclusaoViewMode, setExclusaoViewMode] = useState<"dashboard" | "queue">("dashboard");
   const [deletionSearchTerm, setDeletionSearchTerm] = useState("");
   const [deletionStatusFilter, setDeletionStatusFilter] = useState<string>("all");
   const [selectedDeletionRequest, setSelectedDeletionRequest] = useState<DeletionRequest | null>(null);
@@ -983,7 +987,7 @@ export default function AdminPanel({
                 Utilize as abas superiores ou os atalhos rápidos abaixo para moderar usuários, aplicar sanções territoriais e gerenciar o acervo da WazzimaGiygg.
               </p>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 font-mono text-xs font-bold">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 font-mono text-xs font-bold">
                 <button
                   onClick={() => setAdminTab("usuarios")}
                   className="paper-button p-4 text-left flex flex-col justify-between cursor-pointer"
@@ -1006,6 +1010,17 @@ export default function AdminPanel({
                 >
                   <Ticket className="w-5 h-5 text-amber-400 mb-2" />
                   <span>Atender Chamados da LGPD →</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    setAdminTab("exclusao");
+                    setExclusaoViewMode("dashboard");
+                  }}
+                  className="paper-button p-4 text-left flex flex-col justify-between cursor-pointer border-2 border-red-700 bg-red-50/50"
+                >
+                  <PieChartIcon className="w-5 h-5 text-red-700 mb-2" />
+                  <span>Dashboard de Exclusões (Recharts) →</span>
                 </button>
               </div>
             </div>
@@ -1490,7 +1505,51 @@ export default function AdminPanel({
               </div>
             </div>
 
-            {/* Metrics Cards */}
+            {/* View Mode Switcher */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b-2 border-stone-300 pb-2 font-mono text-xs">
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  onClick={() => setExclusaoViewMode("dashboard")}
+                  className={`px-3.5 py-2 font-bold uppercase tracking-wider flex items-center gap-2 border-2 cursor-pointer transition-all ${
+                    exclusaoViewMode === "dashboard"
+                      ? "bg-[#141414] text-white border-black shadow-[3px_3px_0px_0px_rgba(220,38,38,1)]"
+                      : "bg-white text-stone-700 border-stone-300 hover:bg-stone-100"
+                  }`}
+                >
+                  <PieChartIcon className="w-4 h-4 text-red-600" />
+                  <span>Dashboard Estatístico em Tempo Real (Recharts)</span>
+                </button>
+                <button
+                  onClick={() => setExclusaoViewMode("queue")}
+                  className={`px-3.5 py-2 font-bold uppercase tracking-wider flex items-center gap-2 border-2 cursor-pointer transition-all ${
+                    exclusaoViewMode === "queue"
+                      ? "bg-[#141414] text-white border-black shadow-[3px_3px_0px_0px_rgba(20,20,20,1)]"
+                      : "bg-white text-stone-700 border-stone-300 hover:bg-stone-100"
+                  }`}
+                >
+                  <FileText className="w-4 h-4 text-blue-600" />
+                  <span>Fila de Atendimento & Certificados ({deletionRequestsList.length})</span>
+                </button>
+              </div>
+
+              <span className="text-[11px] text-stone-500 font-bold hidden md:inline">
+                Lei 13.709/2018 • Prazo de Atendimento: 15 dias
+              </span>
+            </div>
+
+            {/* Mode 1: Dashboard with Recharts Pie Chart */}
+            {exclusaoViewMode === "dashboard" && (
+              <DeletionRequestsDashboard
+                requests={deletionRequestsList}
+                onSelectRequest={setSelectedDeletionRequest}
+                currentUserEmail={currentUser?.email}
+              />
+            )}
+
+            {/* Mode 2: Traditional Queue Table */}
+            {exclusaoViewMode === "queue" && (
+              <>
+                {/* Metrics Cards */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 font-mono">
               <div className="bg-white border-2 border-[#141414] p-4 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]">
                 <span className="text-[10px] text-stone-500 font-bold uppercase">Total de Pedidos</span>
@@ -1655,8 +1714,10 @@ export default function AdminPanel({
                 </tbody>
               </table>
             </div>
-          </div>
-        )}
+            </>
+          )}
+        </div>
+      )}
       </main>
 
       {/* MODAL: INSPEÇÃO E PROCESSAMENTO DE EXCLUSÃO LGPD */}

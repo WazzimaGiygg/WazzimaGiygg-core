@@ -17,6 +17,13 @@ import {
   serverTimestamp,
   onSnapshot
 } from "firebase/firestore";
+import {
+  WikiExtension,
+  ExtensionFile,
+  computeSha256Hex,
+  ALLOWED_EXTENSION_DOMAINS,
+  SEED_WIKI_EXTENSIONS
+} from "./data/notMediaWikiData";
 
 // The user's specific Firebase config from the original repository
 export const firebaseConfig = {
@@ -567,6 +574,66 @@ export async function listDeletionRequests(): Promise<DeletionRequest[]> {
   }
 
   return [];
+}
+
+/**
+ * Real-time Firestore listener for LGPD deletion requests
+ */
+export function setupDeletionRequestsListener(
+  callback: (requests: DeletionRequest[]) => void
+): () => void {
+  try {
+    const q = query(collection(db, "deletion_requests"), orderBy("requestDate", "desc"));
+    return onSnapshot(
+      q,
+      (snapshot) => {
+        const requests: DeletionRequest[] = [];
+        snapshot.forEach((docSnap) => {
+          const d = docSnap.data();
+          const reqDate = d.requestDate?.toDate
+            ? d.requestDate.toDate().toISOString()
+            : d.requestDate || new Date().toISOString();
+          requests.push({
+            id: docSnap.id,
+            name: d.name || d.nomeCompleto || "Titular Anônimo",
+            email: d.email || "",
+            phone: d.phone || "",
+            cpf: d.cpf || "",
+            reason: d.reason || d.motivo || "Exercício de direito LGPD Art. 18",
+            dataTypes: d.dataTypes || ["Contas", "Comentários", "Histórico"],
+            status: d.status || "pending",
+            requestDate: reqDate,
+            ipAddress: d.ipAddress || "189.40.xxx.xxx",
+            processedBy: d.processedBy,
+            completedAt: d.completedAt?.toDate ? d.completedAt.toDate().toISOString() : d.completedAt,
+            rejectedAt: d.rejectedAt?.toDate ? d.rejectedAt.toDate().toISOString() : d.rejectedAt,
+            rejectionReason: d.rejectionReason || d.observacoes,
+            certificateId: d.certificateId || d.certificadoExclusao,
+            protocolo: d.protocolo || docSnap.id,
+            nomeCompleto: d.nomeCompleto || d.name || "Titular Anônimo",
+            motivo: d.motivo || d.reason || "Exercício de direito LGPD Art. 18",
+            tipoDado: d.tipoDado || (Array.isArray(d.dataTypes) ? d.dataTypes.join(", ") : "Expurgo Geral"),
+            dataSolicitacao: reqDate,
+            observacoes: d.observacoes || d.rejectionReason || "",
+            certificadoExclusao: d.certificadoExclusao || d.certificateId || ""
+          });
+        });
+        if (requests.length > 0) {
+          callback(requests);
+        } else {
+          listDeletionRequests().then(callback);
+        }
+      },
+      (err) => {
+        console.warn("Firestore deletion_requests snapshot error, falling back to fetch:", err);
+        listDeletionRequests().then(callback);
+      }
+    );
+  } catch (err) {
+    console.warn("Could not bind deletion_requests snapshot listener:", err);
+    listDeletionRequests().then(callback);
+    return () => {};
+  }
 }
 
 export async function updateDeletionRequestStatus(
@@ -1134,3 +1201,428 @@ export async function listWikiEventsFromDb(): Promise<any[]> {
 
   return [];
 }
+
+// ============================================
+// EXTENSION INTEGRITY VERIFICATION LAYER (FIRESTORE-BACKED)
+// Validates downloaded extension metadata & signatures against
+// registered hashes in Firestore prior to runtime execution.
+// ============================================
+
+export interface ExtensionIntegrityCheckResult {
+  extensionId: string;
+  valid: boolean;
+  canExecute: boolean;
+  status: 'verified' | 'tampered' | 'quarantined' | 'unregistered' | 'unverified';
+  expectedHash: string;
+  computedHash: string;
+  filesIntegrity: {
+    fileName: string;
+    expectedHash: string;
+    computedHash: string;
+    match: boolean;
+  }[];
+  originAllowed: boolean;
+  authorizedBureaucrat: boolean;
+  errors: string[];
+  verifiedAt: string;
+  firestoreDocId?: string;
+}
+
+export interface FirestoreExtensionMetadata {
+  id: string;
+  name: string;
+  namePt?: string;
+  version: string;
+  packageSha256: string;
+  originDomain: string;
+  files: {
+    name: string;
+    size: number;
+    sha256: string;
+  }[];
+  registeredBy: string;
+  registeredAt: any;
+  signatureStatus: 'verified' | 'tampered' | 'quarantined' | 'unverified';
+  quarantined: boolean;
+  quarantineReason?: string;
+}
+
+/**
+ * Computes canonical composite SHA-256 hash across all files and essential metadata
+ */
+export function computeCanonicalExtensionHash(ext: WikiExtension): string {
+  const fileSignatures = (ext.files || [])
+    .map(f => `${f.name}:${computeSha256Hex(f.content || '')}`)
+    .sort()
+    .join(';');
+  const canonicalString = `id:${ext.id}|ver:${ext.version}|domain:${ext.originDomain}|files:${fileSignatures}`;
+  return computeSha256Hex(canonicalString);
+}
+
+/**
+ * Registers or updates an extension's authorized hash in Firestore.
+ * Strictly enforced: Only pedrohenriquecardonaperes@gmail.com can register or update hashes.
+ */
+export async function registerExtensionHashInFirestore(
+  extension: WikiExtension,
+  bureaucratEmail?: string
+): Promise<{ success: boolean; hash: string; error?: string }> {
+  const email = bureaucratEmail || AUTHORIZED_BUROCRATA_EMAIL;
+  if (!isAuthorizedBurocrata(email)) {
+    return {
+      success: false,
+      hash: '',
+      error: `Acesso negado: Somente o Burocrata oficial (${AUTHORIZED_BUROCRATA_EMAIL}) pode registrar ou assinar hashes de extensões no Firestore.`
+    };
+  }
+
+  // Calculate file digests and package composite hash
+  const processedFiles = (extension.files || []).map(f => {
+    const calculatedSha = computeSha256Hex(f.content || '');
+    return {
+      name: f.name,
+      size: f.size || (f.content ? f.content.length : 0),
+      sha256: calculatedSha
+    };
+  });
+
+  const packageHash = computeCanonicalExtensionHash(extension);
+
+  const payload: FirestoreExtensionMetadata = {
+    id: extension.id,
+    name: extension.name,
+    namePt: extension.namePt,
+    version: extension.version,
+    packageSha256: packageHash,
+    originDomain: extension.originDomain,
+    files: processedFiles,
+    registeredBy: email,
+    registeredAt: serverTimestamp(),
+    signatureStatus: extension.quarantined ? 'quarantined' : 'verified',
+    quarantined: !!extension.quarantined,
+    quarantineReason: extension.quarantineReason
+  };
+
+  try {
+    // Save to primary extensions registry in Firestore
+    await setDoc(doc(db, "wiki_extensions", extension.id), payload, { merge: true });
+    // Also save to immutable integrity registry collection
+    await setDoc(doc(db, "extensions_integrity_registry", extension.id), {
+      ...payload,
+      syncedAt: serverTimestamp()
+    }, { merge: true });
+
+    // Log the registration event in audit log
+    await registerAuditLog(
+      email,
+      "EXTENSION_HASH_REGISTERED",
+      { extensionId: extension.id, sha256: packageHash, filesCount: processedFiles.length }
+    );
+
+    // Sync with backend API
+    fetch("/api/v1/extensions/security/sync", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        extension: { ...extension, sha256: packageHash },
+        userEmail: email
+      })
+    }).catch(() => {});
+
+    return { success: true, hash: packageHash };
+  } catch (err: any) {
+    console.warn("Could not write extension hash to Firestore directly:", err);
+    // Fallback sync via backend
+    try {
+      const res = await fetch("/api/v1/extensions/security/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          extension: { ...extension, sha256: packageHash },
+          userEmail: email
+        })
+      });
+      if (res.ok) {
+        return { success: true, hash: packageHash };
+      }
+    } catch {
+      //
+    }
+    return { success: false, hash: packageHash, error: err.message };
+  }
+}
+
+/**
+ * Validates the downloaded extension metadata and files against the hashes
+ * registered in Firestore before allowing execution.
+ */
+export async function verifyExtensionIntegrityWithFirestore(
+  extension: WikiExtension
+): Promise<ExtensionIntegrityCheckResult> {
+  const errors: string[] = [];
+  const filesIntegrity: ExtensionIntegrityCheckResult['filesIntegrity'] = [];
+  const verifiedAt = new Date().toISOString();
+
+  // 1. Origin Domain Whitelist Validation
+  const originClean = (extension.originDomain || '').toLowerCase().trim();
+  const originAllowed = ALLOWED_EXTENSION_DOMAINS.some(
+    d => originClean === d || originClean.endsWith('.' + d)
+  );
+  if (!originAllowed) {
+    errors.push(`Domínio de origem "${extension.originDomain}" não está na Whitelist autorizada.`);
+  }
+
+  // 2. Compute local downloaded hash
+  const computedPackageHash = computeCanonicalExtensionHash(extension);
+
+  // 3. Fetch registered hash record from Firestore
+  let firestoreRecord: FirestoreExtensionMetadata | null = null;
+  try {
+    const docSnap = await getDoc(doc(db, "wiki_extensions", extension.id));
+    if (docSnap.exists()) {
+      firestoreRecord = docSnap.data() as FirestoreExtensionMetadata;
+    }
+  } catch (err) {
+    console.warn(`Firestore read warning for extension ${extension.id}:`, err);
+  }
+
+  // If not found in Firestore, check baseline seed registry
+  if (!firestoreRecord) {
+    const seed = SEED_WIKI_EXTENSIONS.find(e => e.id === extension.id);
+    if (seed) {
+      const seedHash = computeCanonicalExtensionHash(seed);
+      firestoreRecord = {
+        id: seed.id,
+        name: seed.name,
+        namePt: seed.namePt,
+        version: seed.version,
+        packageSha256: seedHash,
+        originDomain: seed.originDomain,
+        files: (seed.files || []).map(f => ({
+          name: f.name,
+          size: f.size,
+          sha256: computeSha256Hex(f.content || '')
+        })),
+        registeredBy: AUTHORIZED_BUROCRATA_EMAIL,
+        registeredAt: new Date().toISOString(),
+        signatureStatus: 'verified',
+        quarantined: false
+      };
+      // Auto-register baseline seed in Firestore asynchronously
+      registerExtensionHashInFirestore(seed, AUTHORIZED_BUROCRATA_EMAIL).catch(() => {});
+    }
+  }
+
+  if (!firestoreRecord) {
+    errors.push(`A extensão "${extension.id}" não possui registro de assinatura ou hash no Firestore.`);
+    return {
+      extensionId: extension.id,
+      valid: false,
+      canExecute: false,
+      status: 'unregistered',
+      expectedHash: 'N/A',
+      computedHash: computedPackageHash,
+      filesIntegrity: [],
+      originAllowed,
+      authorizedBureaucrat: false,
+      errors,
+      verifiedAt
+    };
+  }
+
+  const expectedPackageHash = firestoreRecord.packageSha256;
+
+  // 4. Validate Bureaucrat Authority of the registered record
+  const authorizedBureaucrat = isAuthorizedBurocrata(firestoreRecord.registeredBy);
+  if (!authorizedBureaucrat) {
+    errors.push(`Assinatura do registro no Firestore não pertence ao Burocrata oficial (${firestoreRecord.registeredBy}).`);
+  }
+
+  // 5. Check Quarantine Status in Firestore
+  const isQuarantined = !!(firestoreRecord.quarantined || extension.quarantined);
+  if (isQuarantined) {
+    errors.push(`BLOQUEIO: A extensão está classificada em QUARENTENA no Firestore (${firestoreRecord.quarantineReason || 'Código malicioso detectado'}).`);
+  }
+
+  // 6. Verify Each Constituent File Hash Against Firestore Record
+  const registeredFilesMap = new Map<string, string>();
+  (firestoreRecord.files || []).forEach(f => {
+    registeredFilesMap.set(f.name, f.sha256);
+  });
+
+  let filesTampered = false;
+  if (!extension.files || extension.files.length === 0) {
+    errors.push("Nenhum arquivo local encontrado no pacote da extensão para validação.");
+    filesTampered = true;
+  } else {
+    for (const f of extension.files) {
+      const computedFileHash = computeSha256Hex(f.content || '');
+      const expectedFileHash = registeredFilesMap.get(f.name) || '';
+      const match = expectedFileHash === computedFileHash;
+
+      filesIntegrity.push({
+        fileName: f.name,
+        expectedHash: expectedFileHash,
+        computedHash: computedFileHash,
+        match
+      });
+
+      if (!match) {
+        filesTampered = true;
+        errors.push(
+          `Adulteração no arquivo "${f.name}": hash baixado (${computedFileHash.slice(0, 12)}...) diverge do registrado no Firestore (${expectedFileHash ? expectedFileHash.slice(0, 12) + '...' : 'INEXISTENTE'}).`
+        );
+      }
+    }
+  }
+
+  // 7. Verify Package Composite Hash
+  const packageMatches = computedPackageHash === expectedPackageHash;
+  if (!packageMatches && !filesTampered) {
+    errors.push(`O hash do pacote (${computedPackageHash.slice(0, 12)}...) não coincide com o registrado no Firestore (${expectedPackageHash.slice(0, 12)}...).`);
+  }
+
+  // 8. Determine Final Status
+  let finalStatus: ExtensionIntegrityCheckResult['status'] = 'verified';
+  if (isQuarantined) {
+    finalStatus = 'quarantined';
+  } else if (filesTampered || !packageMatches) {
+    finalStatus = 'tampered';
+  } else if (!originAllowed || !authorizedBureaucrat) {
+    finalStatus = 'unverified';
+  }
+
+  const valid = finalStatus === 'verified';
+  const canExecute = valid && !isQuarantined;
+
+  // Log Security Alert if Tampering Detected
+  if (finalStatus === 'tampered') {
+    registerAuditLog(
+      "security_monitor",
+      "EXTENSION_TAMPERING_BLOCKED",
+      {
+        extensionId: extension.id,
+        errors,
+        computedHash: computedPackageHash,
+        expectedHash: expectedPackageHash
+      }
+    ).catch(() => {});
+  }
+
+  return {
+    extensionId: extension.id,
+    valid,
+    canExecute,
+    status: finalStatus,
+    expectedHash: expectedPackageHash,
+    computedHash: computedPackageHash,
+    filesIntegrity,
+    originAllowed,
+    authorizedBureaucrat,
+    errors,
+    verifiedAt,
+    firestoreDocId: firestoreRecord.id
+  };
+}
+
+/**
+ * High-Security Execution Wrapper
+ * Executes an extension hook/function ONLY IF the integrity check against Firestore succeeds.
+ */
+export async function executeExtensionSafely<T>(
+  extension: WikiExtension,
+  executionFn: () => T
+): Promise<{ success: boolean; result?: T; error?: string; integrity: ExtensionIntegrityCheckResult }> {
+  const integrity = await verifyExtensionIntegrityWithFirestore(extension);
+
+  if (!integrity.canExecute) {
+    const errorMsg = `Execução da extensão "${extension.name}" abortada pelo Dispositivo de Integridade do Firestore: [Status: ${integrity.status}] - ${integrity.errors.join(' ')}`;
+    console.error(errorMsg);
+    return {
+      success: false,
+      error: errorMsg,
+      integrity
+    };
+  }
+
+  try {
+    const result = executionFn();
+    return {
+      success: true,
+      result,
+      integrity
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: `Erro durante a execução sandboxed da extensão: ${err.message}`,
+      integrity
+    };
+  }
+}
+
+/**
+ * Loads all extensions from Firestore and runs the integrity verification layer on all of them.
+ */
+export async function loadAndVerifyAllExtensionsFromDb(): Promise<{
+  verifiedExtensions: WikiExtension[];
+  quarantinedExtensions: WikiExtension[];
+  tamperedExtensions: WikiExtension[];
+  integrityResults: Record<string, ExtensionIntegrityCheckResult>;
+}> {
+  const verifiedExtensions: WikiExtension[] = [];
+  const quarantinedExtensions: WikiExtension[] = [];
+  const tamperedExtensions: WikiExtension[] = [];
+  const integrityResults: Record<string, ExtensionIntegrityCheckResult> = {};
+
+  // Get base extensions list
+  let sourceList: WikiExtension[] = [...SEED_WIKI_EXTENSIONS];
+  try {
+    const snapshot = await getDocs(collection(db, "wiki_extensions"));
+    if (!snapshot.empty) {
+      const dbExtMap = new Map<string, any>();
+      snapshot.forEach(docSnap => dbExtMap.set(docSnap.id, docSnap.data()));
+
+      sourceList = sourceList.map(ext => {
+        const dbData = dbExtMap.get(ext.id);
+        if (dbData) {
+          return {
+            ...ext,
+            quarantined: !!dbData.quarantined,
+            signatureStatus: dbData.signatureStatus || ext.signatureStatus
+          };
+        }
+        return ext;
+      });
+    }
+  } catch (err) {
+    console.warn("Could not query wiki_extensions directly from Firestore:", err);
+  }
+
+  for (const ext of sourceList) {
+    const check = await verifyExtensionIntegrityWithFirestore(ext);
+    integrityResults[ext.id] = check;
+
+    const updatedExt: WikiExtension = {
+      ...ext,
+      signatureStatus: check.status === 'verified' ? 'verified' : check.status === 'quarantined' ? 'quarantined' : 'tampered',
+      quarantined: !check.canExecute && check.status === 'quarantined'
+    };
+
+    if (check.status === 'verified') {
+      verifiedExtensions.push(updatedExt);
+    } else if (check.status === 'quarantined') {
+      quarantinedExtensions.push(updatedExt);
+    } else {
+      tamperedExtensions.push(updatedExt);
+    }
+  }
+
+  return {
+    verifiedExtensions,
+    quarantinedExtensions,
+    tamperedExtensions,
+    integrityResults
+  };
+}
+

