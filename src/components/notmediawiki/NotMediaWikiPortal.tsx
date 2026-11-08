@@ -39,6 +39,7 @@ import {
   Settings,
   Sparkles,
   ChevronRight,
+  Trash2,
   X
 } from 'lucide-react';
 import jsPDF from 'jspdf';
@@ -47,15 +48,19 @@ import {
   WikiRevision,
   WikiEvent,
   WikiExtension,
-  SEED_WIKI_ARTICLES,
-  SEED_WIKI_REVISIONS,
-  SEED_WIKI_EVENTS,
   SEED_WIKI_EXTENSIONS,
   parseWikitextToHtml,
   computeWikitextDiff,
   ParseResult,
   DiffResult
 } from '../../data/notMediaWikiData';
+import {
+  listWikiArticlesFromDb,
+  saveWikiArticleInDb,
+  deleteWikiArticleFromDb,
+  listWikiRevisionsFromDb,
+  listWikiEventsFromDb
+} from '../../firebase';
 import { stripHtmlToPlainText } from '../../utils/text';
 
 interface NotMediaWikiPortalProps {
@@ -69,14 +74,15 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
     'portal' | 'reader' | 'editor' | 'history' | 'events' | 'special' | 'extensions' | 'governance'
   >('portal');
 
-  // Articles & Revisions Data
-  const [articles, setArticles] = useState<WikiArticle[]>(SEED_WIKI_ARTICLES);
-  const [revisions, setRevisions] = useState<WikiRevision[]>(SEED_WIKI_REVISIONS);
-  const [events, setEvents] = useState<WikiEvent[]>(SEED_WIKI_EVENTS);
+  // Articles & Revisions Data (Strictly from Database)
+  const [articles, setArticles] = useState<WikiArticle[]>([]);
+  const [revisions, setRevisions] = useState<WikiRevision[]>([]);
+  const [events, setEvents] = useState<WikiEvent[]>([]);
   const [extensions, setExtensions] = useState<WikiExtension[]>(SEED_WIKI_EXTENSIONS);
+  const [isLoadingWikiData, setIsLoadingWikiData] = useState<boolean>(true);
 
   // Active Article in Reader
-  const [currentSlug, setCurrentSlug] = useState<string>('MediaWiki');
+  const [currentSlug, setCurrentSlug] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState<string>('');
 
   // Editor States
@@ -95,27 +101,36 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
   // PDF Generation State
   const [isExportingPdf, setIsExportingPdf] = useState<boolean>(false);
 
-  // Load articles from backend or local cache
+  // Load articles from Firestore & Backend Database
   useEffect(() => {
-    const fetchArticles = async () => {
+    const loadAllWikiDbData = async () => {
+      setIsLoadingWikiData(true);
       try {
-        const res = await fetch('/api/v1/content/articles');
-        if (res.ok) {
-          const data = await res.json();
-          if (data.articles && data.articles.length > 0) {
-            setArticles(data.articles);
-          }
+        const [dbArticles, dbRevisions, dbEvents] = await Promise.all([
+          listWikiArticlesFromDb(),
+          listWikiRevisionsFromDb(),
+          listWikiEventsFromDb()
+        ]);
+        setArticles(dbArticles || []);
+        setRevisions(dbRevisions || []);
+        setEvents(dbEvents || []);
+        if (dbArticles && dbArticles.length > 0 && !currentSlug) {
+          setCurrentSlug(dbArticles[0].slug);
         }
-      } catch {
-        // Fallback to initial seeds
+      } catch (err) {
+        console.warn('Erro ao sincronizar NotWikiPedia com banco de dados:', err);
+      } finally {
+        setIsLoadingWikiData(false);
       }
     };
-    fetchArticles();
+    loadAllWikiDbData();
   }, []);
 
   // Currently active article object
   const currentArticle = useMemo(() => {
-    return articles.find((a) => a.slug.toLowerCase() === currentSlug.toLowerCase()) || articles[0];
+    if (!articles || articles.length === 0) return null;
+    if (!currentSlug) return articles[0];
+    return articles.find((a) => a.slug.toLowerCase() === currentSlug.toLowerCase()) || null;
   }, [articles, currentSlug]);
 
   // Compiled Parsoid AST Result for active article
@@ -216,7 +231,7 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
         articleSlug: slug,
         parentRevisionId: currentArticle?.latestRevisionId || null,
         wikitext: editorWikitext,
-        comment: editorSummary || 'Atualização de conteúdo',
+        comment: editorSummary.trim() || 'Atualização de conteúdo no banco de dados',
         author: { id: authorId, name: authorName, isBot: false },
         timestamp: new Date().toISOString(),
         sha256: Math.random().toString(36).substring(2, 18),
@@ -225,23 +240,23 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
       };
 
       const existingIndex = articles.findIndex((a) => a.slug.toLowerCase() === slug.toLowerCase());
-      let updatedArticles = [...articles];
+      let savedArt: WikiArticle;
 
       if (existingIndex >= 0) {
-        updatedArticles[existingIndex] = {
-          ...updatedArticles[existingIndex],
-          title: editorTitle,
+        savedArt = {
+          ...articles[existingIndex],
+          title: editorTitle.trim(),
           wikitext: editorWikitext,
           latestRevisionId: revId,
           updatedAt: new Date().toISOString(),
-          views: updatedArticles[existingIndex].views + 1
+          views: (articles[existingIndex].views || 0) + 1
         };
       } else {
-        const newArt: WikiArticle = {
+        savedArt = {
           id: `art-${Date.now()}`,
           slug,
-          title: editorTitle,
-          namespace: 0,
+          title: editorTitle.trim(),
+          namespace: editorTitle.startsWith('Talk:') || editorTitle.startsWith('Discussão:') ? 1 : 0,
           wikitext: editorWikitext,
           summary: editorWikitext.substring(0, 150).replace(/[=[\]{}|]/g, '') + '...',
           latestRevisionId: revId,
@@ -250,8 +265,16 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
           categories: ['Geral', 'Comunidade'],
           views: 1
         };
-        updatedArticles = [newArt, ...updatedArticles];
       }
+
+      // Persist directly to Firestore database and sync with backend
+      await saveWikiArticleInDb(savedArt, newRev);
+
+      setArticles((prev) => {
+        const without = prev.filter((a) => a.slug.toLowerCase() !== slug.toLowerCase());
+        return [savedArt, ...without];
+      });
+      setRevisions((prev) => [newRev, ...prev]);
 
       // Add to events stream
       const newEvent: WikiEvent = {
@@ -266,7 +289,7 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
         },
         database: 'wzzmwiki',
         page_title: editorTitle,
-        page_namespace: 0,
+        page_namespace: savedArt.namespace,
         rev_id: revId,
         rev_timestamp: new Date().toISOString(),
         rev_sha1: newRev.sha256,
@@ -276,22 +299,21 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
         comment: editorSummary || 'Edição no acervo',
         type: existingIndex >= 0 ? 'edit' : 'new'
       };
+      setEvents((prev) => [newEvent, ...prev]);
 
-      setArticles(updatedArticles);
-      setRevisions([newRev, ...revisions]);
-      setEvents([newEvent, ...events]);
       setCurrentSlug(slug);
       setActiveTab('reader');
-      showToast(`✓ Artigo "${editorTitle}" gravado com sucesso!`);
+      showToast(`✓ Artigo "${editorTitle}" gravado com sucesso no banco de dados!`);
     } catch {
-      showToast('Erro ao gravar revisão.', true);
+      showToast('Erro ao gravar artigo no banco de dados.', true);
     } finally {
       setIsSavingArticle(false);
     }
   };
 
-  // Rollback Revision
-  const handleRollback = (revToRestore: WikiRevision) => {
+  // Rollback Revision in Database
+  const handleRollback = async (revToRestore: WikiRevision) => {
+    if (!currentArticle) return;
     if (!window.confirm(`Confirma reverter "${currentArticle.title}" para a versão de ${new Date(revToRestore.timestamp).toLocaleString('pt-BR')} por ${revToRestore.author.name}?`)) {
       return;
     }
@@ -305,7 +327,7 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
       comment: `Reversão para a revisão ${revToRestore.id} de ${revToRestore.author.name}`,
       author: {
         id: currentUser?.uid || 'sysop',
-        name: currentUser?.displayName || 'Burocrata WZZM',
+        name: currentUser?.displayName || currentUser?.email || 'Burocrata WZZM',
         isBot: false
       },
       timestamp: new Date().toISOString(),
@@ -314,19 +336,54 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
       isMinor: true
     };
 
-    setArticles((prev) =>
-      prev.map((a) =>
-        a.slug === currentArticle.slug
-          ? { ...a, wikitext: revToRestore.wikitext, latestRevisionId: revId, updatedAt: new Date().toISOString() }
-          : a
-      )
-    );
-    setRevisions([rollbackRev, ...revisions]);
-    showToast(`✓ Artigo revertido para a revisão de ${revToRestore.author.name}.`);
+    const updatedArticle = {
+      ...currentArticle,
+      wikitext: revToRestore.wikitext,
+      latestRevisionId: revId,
+      updatedAt: new Date().toISOString()
+    };
+
+    try {
+      await saveWikiArticleInDb(updatedArticle, rollbackRev);
+      setArticles((prev) =>
+        prev.map((a) => (a.slug === currentArticle.slug ? updatedArticle : a))
+      );
+      setRevisions((prev) => [rollbackRev, ...prev]);
+      showToast(`✓ Artigo revertido e gravado no banco de dados.`);
+    } catch {
+      showToast('Erro ao salvar reversão no banco de dados.', true);
+    }
+  };
+
+  // Delete Article from Database (Exclusive for Burocrata)
+  const handleDeleteArticle = async (slugToDelete: string) => {
+    const isBureaucrat = currentUser?.email?.toLowerCase() === 'pedrohenriquecardonaperes@gmail.com';
+    if (!isBureaucrat) {
+      showToast('Apenas o Burocrata oficial (pedrohenriquecardonaperes@gmail.com) pode excluir artigos do banco de dados.', true);
+      return;
+    }
+    if (!window.confirm(`Confirma a exclusão definitiva do artigo "${slugToDelete}" do banco de dados?`)) {
+      return;
+    }
+    try {
+      await deleteWikiArticleFromDb(slugToDelete);
+      setArticles((prev) => prev.filter((a) => a.slug.toLowerCase() !== slugToDelete.toLowerCase()));
+      setRevisions((prev) => prev.filter((r) => r.articleSlug.toLowerCase() !== slugToDelete.toLowerCase()));
+      showToast(`Artigo "${slugToDelete}" excluído com sucesso do banco de dados.`);
+      setCurrentSlug('');
+      setActiveTab('portal');
+    } catch {
+      showToast('Erro ao excluir artigo do banco de dados.', true);
+    }
   };
 
   // Export Wiki Article to PDF using jsPDF
   const handleExportWikiToPdf = async () => {
+    if (!currentArticle) {
+      showToast('Nenhum artigo selecionado para exportar.', true);
+      return;
+    }
+
     try {
       setIsExportingPdf(true);
       showToast('Gerando documento PDF oficial NotMediaWiki...');
@@ -519,7 +576,7 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
         <div className="flex items-center gap-1.5 font-mono text-xs font-bold uppercase tracking-wider">
           {[
             { id: 'portal', label: 'Portal Comunitário', icon: Compass },
-            { id: 'reader', label: `Verbete: ${currentArticle.title}`, icon: BookOpen },
+            { id: 'reader', label: currentArticle ? `Verbete: ${currentArticle.title}` : 'Leitor de Verbete', icon: BookOpen },
             { id: 'editor', label: 'Editor Wikitexto', icon: Edit3 },
             { id: 'history', label: 'Histórico & Diff', icon: GitCompare },
             { id: 'events', label: 'EventStreams ao Vivo', icon: Zap },
@@ -567,9 +624,12 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
                 <button
                   onClick={() => {
                     const pool = articles.filter((a) => a.slug !== currentSlug);
-                    if (pool.length > 0) {
-                      const random = pool[Math.floor(Math.random() * pool.length)];
+                    const candidates = pool.length > 0 ? pool : articles;
+                    if (candidates.length > 0) {
+                      const random = candidates[Math.floor(Math.random() * candidates.length)];
                       handleNavigateSlug(random.slug);
+                    } else {
+                      showToast('Nenhum artigo cadastrado no banco de dados para sorteio.', true);
                     }
                   }}
                   className="paper-button-secondary px-3 py-1.5 text-xs font-mono font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer"
@@ -616,42 +676,64 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
             </div>
 
             {/* Articles Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pt-2">
-              {filteredArticles.map((art) => (
-                <div
-                  key={art.id}
-                  className="paper-card p-4 flex flex-col justify-between hover:border-black cursor-pointer group"
-                  onClick={() => handleNavigateSlug(art.slug)}
+            {isLoadingWikiData ? (
+              <div className="p-12 text-center text-stone-500 font-mono text-xs flex flex-col items-center justify-center gap-3">
+                <div className="w-6 h-6 border-2 border-stone-800 border-t-amber-500 rounded-full animate-spin" />
+                <p>Sincronizando verbetes reais do banco de dados (Firestore)...</p>
+              </div>
+            ) : filteredArticles.length === 0 ? (
+              <div className="p-10 border border-dashed border-stone-400 bg-stone-50 text-center font-mono text-xs space-y-3">
+                <BookOpen className="w-10 h-10 mx-auto text-stone-400" />
+                <p className="font-bold text-stone-800">Nenhum verbete encontrado no banco de dados.</p>
+                <p className="text-stone-500 text-[11px] max-w-md mx-auto">
+                  A NotWikiPedia sincroniza apenas dados reais persistidos no banco. Seja o primeiro a criar um verbete colaborativo!
+                </p>
+                <button
+                  onClick={handleOpenNewArticle}
+                  className="bg-[#141414] hover:bg-stone-800 text-white px-4 py-2 font-bold uppercase text-[10px] tracking-wider inline-flex items-center gap-1.5 cursor-pointer shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]"
                 >
-                  <div>
-                    <div className="flex items-center justify-between text-[10px] font-mono text-stone-500 mb-2">
-                      <span className="bg-stone-100 text-stone-800 font-bold px-1.5 py-0.5 border border-stone-300 uppercase">
-                        {art.namespace === 1 ? 'Discussão' : 'Artigo'}
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <Eye className="w-3 h-3" />
-                        <span>{art.views.toLocaleString()}</span>
-                      </span>
+                  <Plus className="w-3.5 h-3.5 text-amber-300" />
+                  <span>Criar Primeiro Artigo no Banco</span>
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pt-2">
+                {filteredArticles.map((art) => (
+                  <div
+                    key={art.id}
+                    className="paper-card p-4 flex flex-col justify-between hover:border-black cursor-pointer group"
+                    onClick={() => handleNavigateSlug(art.slug)}
+                  >
+                    <div>
+                      <div className="flex items-center justify-between text-[10px] font-mono text-stone-500 mb-2">
+                        <span className="bg-stone-100 text-stone-800 font-bold px-1.5 py-0.5 border border-stone-300 uppercase">
+                          {art.namespace === 1 ? 'Discussão' : 'Artigo'}
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <Eye className="w-3.5 h-3.5" />
+                          <span>{art.views.toLocaleString()}</span>
+                        </span>
+                      </div>
+
+                      <h4 className="font-editorial text-lg font-bold text-stone-950 group-hover:text-blue-800 transition-colors">
+                        {art.title}
+                      </h4>
+
+                      <p className="text-xs font-serif text-stone-600 line-clamp-3 mt-1.5 leading-relaxed">
+                        {art.summary}
+                      </p>
                     </div>
 
-                    <h4 className="font-editorial text-lg font-bold text-stone-950 group-hover:text-blue-800 transition-colors">
-                      {art.title}
-                    </h4>
-
-                    <p className="text-xs font-serif text-stone-600 line-clamp-3 mt-1.5 leading-relaxed">
-                      {art.summary}
-                    </p>
+                    <div className="pt-3 border-t border-stone-200 mt-3 flex items-center justify-between text-[10px] font-mono text-stone-500">
+                      <span>Rev: {art.latestRevisionId}</span>
+                      <span className="text-blue-700 font-bold group-hover:translate-x-1 transition-transform">
+                        Ler verbete ➔
+                      </span>
+                    </div>
                   </div>
-
-                  <div className="pt-3 border-t border-stone-200 mt-3 flex items-center justify-between text-[10px] font-mono text-stone-500">
-                    <span>Rev: {art.latestRevisionId}</span>
-                    <span className="text-blue-700 font-bold group-hover:translate-x-1 transition-transform">
-                      Ler verbete ➔
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -659,6 +741,30 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
       {/* ===================================================================== */}
       {/* TAB 2: WIKI READER (LEITOR ESTILO MEDIAWIKI)                          */}
       {/* ===================================================================== */}
+      {activeTab === 'reader' && !currentArticle && (
+        <div className="bg-[#FAF9F5] border-2 border-[#141414] p-10 text-center font-mono text-xs shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] space-y-4">
+          <BookOpen className="w-12 h-12 mx-auto text-stone-400" />
+          <h3 className="font-editorial text-2xl font-bold text-stone-900">
+            Nenhum Artigo Selecionado ou Cadastrado no Banco de Dados
+          </h3>
+          <p className="text-stone-600 max-w-md mx-auto">
+            O acervo da NotWikiPedia sincroniza exclusivamente dados reais salvos no banco. Não há dados sugeridos ou simulados.
+          </p>
+          <button
+            onClick={() => {
+              setEditorTitle(currentSlug || 'Página_Principal');
+              setEditorWikitext('== Introdução ==\nEscreva aqui o conteúdo do novo verbete no banco de dados...');
+              setEditorSummary('Criação do verbete');
+              setActiveTab('editor');
+            }}
+            className="paper-button bg-stone-900 text-white hover:bg-stone-800 px-4 py-2 font-bold uppercase tracking-wider inline-flex items-center gap-2 cursor-pointer"
+          >
+            <Plus className="w-4 h-4 text-amber-300" />
+            <span>Criar Este Artigo no Banco</span>
+          </button>
+        </div>
+      )}
+
       {activeTab === 'reader' && currentArticle && (
         <div className="space-y-6">
           {/* Article Header Bar */}
@@ -699,6 +805,17 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
                   <Clock className="w-3.5 h-3.5" />
                   <span>Histórico ({articleRevisions.length})</span>
                 </button>
+
+                {currentUser?.email?.toLowerCase() === 'pedrohenriquecardonaperes@gmail.com' && (
+                  <button
+                    onClick={() => handleDeleteArticle(currentArticle.slug)}
+                    className="paper-button bg-stone-800 hover:bg-red-800 text-stone-300 hover:text-white px-2.5 py-1.5 text-xs font-mono font-bold uppercase tracking-wider flex items-center gap-1 cursor-pointer"
+                    title="Excluir do banco de dados (Burocrata)"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Excluir</span>
+                  </button>
+                )}
 
                 <button
                   onClick={handleExportWikiToPdf}
@@ -914,7 +1031,25 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
       {/* ===================================================================== */}
       {/* TAB 4: ARTICLE HISTORY & DIFF                                         */}
       {/* ===================================================================== */}
-      {activeTab === 'history' && (
+      {activeTab === 'history' && !currentArticle && (
+        <div className="bg-white border-2 border-[#141414] p-10 text-center font-mono text-xs shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] space-y-4">
+          <GitCompare className="w-12 h-12 mx-auto text-stone-400" />
+          <h3 className="font-editorial text-2xl font-bold text-stone-900">
+            Nenhum Artigo Selecionado para Histórico
+          </h3>
+          <p className="text-stone-600 max-w-md mx-auto">
+            Selecione ou crie um verbete real no banco de dados para consultar suas revisões criptográficas.
+          </p>
+          <button
+            onClick={() => setActiveTab('portal')}
+            className="paper-button bg-stone-900 text-white hover:bg-stone-800 px-4 py-2 font-bold uppercase tracking-wider cursor-pointer"
+          >
+            Voltar ao Acervo
+          </button>
+        </div>
+      )}
+
+      {activeTab === 'history' && currentArticle && (
         <div className="bg-white border-2 border-[#141414] p-6 shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] space-y-6">
           <div className="border-b-2 border-[#141414] pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
@@ -1035,25 +1170,33 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
                 </tr>
               </thead>
               <tbody className="divide-y divide-stone-200">
-                {articleRevisions.map((rev) => (
-                  <tr key={rev.id} className="hover:bg-amber-50">
-                    <td className="p-2.5 font-bold text-blue-700">{rev.id}</td>
-                    <td className="p-2.5 text-stone-600">{new Date(rev.timestamp).toLocaleString('pt-BR')}</td>
-                    <td className="p-2.5 font-bold text-stone-900">{rev.author.name}</td>
-                    <td className="p-2.5 text-stone-700 font-serif">{rev.comment}</td>
-                    <td className="p-2.5 text-right text-stone-500">{rev.byteSize} bytes</td>
-                    <td className="p-2.5 text-right">
-                      {rev.id !== currentArticle.latestRevisionId && (
-                        <button
-                          onClick={() => handleRollback(rev)}
-                          className="bg-amber-600 hover:bg-amber-700 text-white px-2.5 py-1 text-[10px] font-bold uppercase cursor-pointer shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]"
-                        >
-                          Reverter
-                        </button>
-                      )}
+                {articleRevisions.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="p-6 text-center text-stone-500 font-mono text-xs">
+                      Nenhuma revisão registrada no banco de dados para este verbete.
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  articleRevisions.map((rev) => (
+                    <tr key={rev.id} className="hover:bg-amber-50">
+                      <td className="p-2.5 font-bold text-blue-700">{rev.id}</td>
+                      <td className="p-2.5 text-stone-600">{new Date(rev.timestamp).toLocaleString('pt-BR')}</td>
+                      <td className="p-2.5 font-bold text-stone-900">{rev.author.name}</td>
+                      <td className="p-2.5 text-stone-700 font-serif">{rev.comment}</td>
+                      <td className="p-2.5 text-right text-stone-500">{rev.byteSize} bytes</td>
+                      <td className="p-2.5 text-right">
+                        {rev.id !== currentArticle.latestRevisionId && (
+                          <button
+                            onClick={() => handleRollback(rev)}
+                            className="bg-amber-600 hover:bg-amber-700 text-white px-2.5 py-1 text-[10px] font-bold uppercase cursor-pointer shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]"
+                          >
+                            Reverter
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -1080,36 +1223,42 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
           </div>
 
           <div className="space-y-3 font-mono text-xs">
-            {events.map((evt) => (
-              <div
-                key={evt.id}
-                className="p-3 border border-stone-300 bg-stone-50 hover:bg-white transition-all shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]"
-              >
-                <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
-                  <div className="flex items-center gap-2">
-                    <span className="bg-[#141414] text-white px-1.5 py-0.2 text-[9px] font-bold uppercase">
-                      {evt.type}
-                    </span>
-                    <span
-                      onClick={() => handleNavigateSlug(evt.page_title)}
-                      className="font-bold text-blue-800 hover:underline cursor-pointer"
-                    >
-                      {evt.page_title}
+            {events.length === 0 ? (
+              <div className="p-8 border border-dashed border-stone-300 bg-stone-50 text-center font-mono text-xs text-stone-500">
+                Nenhuma alteração recente registrada no banco de dados. Todas as edições e criações aparecerão aqui em tempo real.
+              </div>
+            ) : (
+              events.map((evt) => (
+                <div
+                  key={evt.id}
+                  className="p-3 border border-stone-300 bg-stone-50 hover:bg-white transition-all shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
+                    <div className="flex items-center gap-2">
+                      <span className="bg-[#141414] text-white px-1.5 py-0.2 text-[9px] font-bold uppercase">
+                        {evt.type}
+                      </span>
+                      <span
+                        onClick={() => handleNavigateSlug(evt.page_title)}
+                        className="font-bold text-blue-800 hover:underline cursor-pointer"
+                      >
+                        {evt.page_title}
+                      </span>
+                    </div>
+                    <span className="text-[10px] text-stone-500">
+                      {new Date(evt.meta?.dt || evt.timestamp || Date.now()).toLocaleTimeString('pt-BR')} • {evt.meta?.stream || 'mediawiki.recentchange'}
                     </span>
                   </div>
-                  <span className="text-[10px] text-stone-500">
-                    {new Date(evt.meta.dt).toLocaleTimeString('pt-BR')} • {evt.meta.stream}
-                  </span>
-                </div>
 
-                <p className="text-xs text-stone-700 font-serif">{evt.comment}</p>
+                  <p className="text-xs text-stone-700 font-serif">{evt.comment}</p>
 
-                <div className="mt-2 text-[10px] text-stone-500 flex items-center justify-between pt-1 border-t border-stone-200">
-                  <span>Editor: <strong>{evt.user_text}</strong></span>
-                  <span>{evt.rev_len} bytes • rev: {evt.rev_id}</span>
+                  <div className="mt-2 text-[10px] text-stone-500 flex items-center justify-between pt-1 border-t border-stone-200">
+                    <span>Editor: <strong>{evt.user_text}</strong></span>
+                    <span>{evt.rev_len} bytes • rev: {evt.rev_id}</span>
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </div>
       )}
@@ -1135,17 +1284,21 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
                 Páginas do Acervo:
               </span>
               <ul className="space-y-1.5 text-stone-700">
-                {articles.map((art) => (
-                  <li key={art.id}>
-                    <button
-                      onClick={() => handleNavigateSlug(art.slug)}
-                      className="hover:text-blue-700 hover:underline cursor-pointer flex items-center gap-1.5"
-                    >
-                      <ChevronRight className="w-3 h-3 text-stone-400" />
-                      <span>{art.title}</span>
-                    </button>
-                  </li>
-                ))}
+                {articles.length === 0 ? (
+                  <li className="text-stone-500 italic text-[11px]">Nenhum artigo cadastrado no banco de dados.</li>
+                ) : (
+                  articles.map((art) => (
+                    <li key={art.id}>
+                      <button
+                        onClick={() => handleNavigateSlug(art.slug)}
+                        className="hover:text-blue-700 hover:underline cursor-pointer flex items-center gap-1.5"
+                      >
+                        <ChevronRight className="w-3 h-3 text-stone-400" />
+                        <span>{art.title}</span>
+                      </button>
+                    </li>
+                  ))
+                )}
               </ul>
             </div>
 
@@ -1186,6 +1339,10 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
                 </button>
                 <button
                   onClick={() => {
+                    if (articles.length === 0) {
+                      showToast('Nenhum artigo cadastrado no banco de dados para sorteio.', true);
+                      return;
+                    }
                     const random = articles[Math.floor(Math.random() * articles.length)];
                     handleNavigateSlug(random.slug);
                   }}

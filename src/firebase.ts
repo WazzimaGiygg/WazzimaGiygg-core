@@ -923,4 +923,214 @@ export async function createBemteviMessageInDb(msgData: any): Promise<any> {
   }
 }
 
+// ============================================
+// NOTWIKIPEDIA / NOTMEDIAWIKI DATABASE SYNC
+// ============================================
 
+export async function listWikiArticlesFromDb(): Promise<any[]> {
+  try {
+    const q = query(collection(db, "wiki_articles"), orderBy("updatedAt", "desc"));
+    const snapshot = await getDocs(q);
+    const list: any[] = [];
+    snapshot.forEach((docSnap) => {
+      const data = docSnap.data();
+      list.push({
+        id: docSnap.id,
+        ...data,
+        createdAt: data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : data.createdAt || new Date().toISOString(),
+        updatedAt: data.updatedAt?.toDate ? data.updatedAt.toDate().toISOString() : data.updatedAt || new Date().toISOString()
+      });
+    });
+    if (list.length > 0) return list;
+  } catch (err) {
+    console.warn("Firestore wiki_articles read error:", err);
+  }
+
+  // Fallback to backend API
+  try {
+    const res = await fetch("/api/v1/content/articles");
+    if (res.ok) {
+      const data = await res.json();
+      return data.articles || [];
+    }
+  } catch {
+    //
+  }
+
+  return [];
+}
+
+export async function saveWikiArticleInDb(articleData: any, revisionData?: any): Promise<{ article: any; revision?: any }> {
+  const slug = (articleData.slug || articleData.title.trim().replace(/\s+/g, "_")).toLowerCase();
+  const revId = revisionData?.id || `rev-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`;
+  const now = new Date().toISOString();
+
+  const finalArticle = {
+    ...articleData,
+    slug,
+    latestRevisionId: revId,
+    updatedAt: now,
+    views: articleData.views || 1
+  };
+
+  const finalRev = revisionData ? {
+    ...revisionData,
+    id: revId,
+    articleSlug: slug,
+    timestamp: now
+  } : null;
+
+  try {
+    // Save or update article in Firestore
+    await setDoc(doc(db, "wiki_articles", slug), {
+      ...finalArticle,
+      updatedAt: serverTimestamp()
+    }, { merge: true });
+
+    // Save revision in Firestore
+    if (finalRev) {
+      await setDoc(doc(db, "wiki_revisions", revId), {
+        ...finalRev,
+        timestamp: serverTimestamp()
+      });
+    }
+
+    // Save event in Firestore
+    await addDoc(collection(db, "wiki_events"), {
+      page_title: finalArticle.title,
+      page_namespace: 0,
+      rev_id: revId,
+      rev_len: finalArticle.wikitext?.length || 0,
+      user_text: finalRev?.author?.name || "Editor Comunitário",
+      comment: finalRev?.comment || "Edição de artigo",
+      type: "edit",
+      timestamp: serverTimestamp(),
+      dt: now
+    }).catch(() => {});
+
+    // Sync to backend API
+    fetch("/api/v1/content/articles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: finalArticle.title,
+        wikitext: finalArticle.wikitext,
+        summary: finalRev?.comment || finalArticle.summary || "",
+        isMinor: finalRev?.isMinor || false,
+        authorName: finalRev?.author?.name || "Editor Comunitário",
+        authorId: finalRev?.author?.id || "usr_community"
+      })
+    }).catch(() => {});
+
+    return { article: finalArticle, revision: finalRev };
+  } catch (err) {
+    // If client-side firestore fails, proxy through backend
+    const res = await fetch("/api/v1/content/articles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: finalArticle.title,
+        wikitext: finalArticle.wikitext,
+        summary: finalRev?.comment || finalArticle.summary || "",
+        isMinor: finalRev?.isMinor || false,
+        authorName: finalRev?.author?.name || "Editor Comunitário",
+        authorId: finalRev?.author?.id || "usr_community"
+      })
+    });
+    if (res.ok) {
+      const data = await res.json();
+      return { article: data.article, revision: data.revision };
+    }
+    throw err;
+  }
+}
+
+export async function deleteWikiArticleFromDb(slug: string): Promise<boolean> {
+  const normalizedSlug = slug.toLowerCase();
+  try {
+    await deleteDoc(doc(db, "wiki_articles", normalizedSlug));
+    fetch(`/api/v1/content/articles/${encodeURIComponent(normalizedSlug)}`, {
+      method: "DELETE"
+    }).catch(() => {});
+    return true;
+  } catch (err) {
+    try {
+      const res = await fetch(`/api/v1/content/articles/${encodeURIComponent(normalizedSlug)}`, {
+        method: "DELETE"
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  }
+}
+
+export async function listWikiRevisionsFromDb(slug?: string): Promise<any[]> {
+  try {
+    const q = query(collection(db, "wiki_revisions"), orderBy("timestamp", "desc"));
+    const snapshot = await getDocs(q);
+    const list: any[] = [];
+    snapshot.forEach((docSnap) => {
+      const data = docSnap.data();
+      list.push({
+        id: docSnap.id,
+        ...data,
+        timestamp: data.timestamp?.toDate ? data.timestamp.toDate().toISOString() : data.timestamp || new Date().toISOString()
+      });
+    });
+    if (slug) {
+      const filtered = list.filter((r) => r.articleSlug?.toLowerCase() === slug.toLowerCase());
+      if (filtered.length > 0) return filtered;
+    } else if (list.length > 0) {
+      return list;
+    }
+  } catch (err) {
+    console.warn("Firestore wiki_revisions read error:", err);
+  }
+
+  // Fallback to backend API
+  try {
+    if (slug) {
+      const res = await fetch(`/api/v1/revisions/article/${encodeURIComponent(slug)}`);
+      if (res.ok) {
+        const data = await res.json();
+        return data.revisions || [];
+      }
+    }
+  } catch {
+    //
+  }
+
+  return [];
+}
+
+export async function listWikiEventsFromDb(): Promise<any[]> {
+  try {
+    const q = query(collection(db, "wiki_events"), orderBy("timestamp", "desc"));
+    const snapshot = await getDocs(q);
+    const list: any[] = [];
+    snapshot.forEach((docSnap) => {
+      const data = docSnap.data();
+      list.push({
+        id: docSnap.id,
+        ...data,
+        timestamp: data.timestamp?.toDate ? data.timestamp.toDate().toISOString() : data.timestamp || new Date().toISOString()
+      });
+    });
+    if (list.length > 0) return list;
+  } catch (err) {
+    console.warn("Firestore wiki_events read error:", err);
+  }
+
+  try {
+    const res = await fetch("/api/v1/events/history");
+    if (res.ok) {
+      const data = await res.json();
+      return data.events || [];
+    }
+  } catch {
+    //
+  }
+
+  return [];
+}

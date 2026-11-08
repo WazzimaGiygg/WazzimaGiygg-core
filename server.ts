@@ -1071,8 +1071,20 @@ app.get(['/api/v1/content/random', '/api/v1/content/articles/special/random'], (
     ? WIKI_STORE.articles.filter((a) => a.slug.toLowerCase() !== currentSlug.toLowerCase())
     : WIKI_STORE.articles;
   const candidates = pool.length > 0 ? pool : WIKI_STORE.articles;
+  if (candidates.length === 0) {
+    res.status(404).json({ error: 'Nenhum artigo cadastrado no banco de dados' });
+    return;
+  }
   const random = candidates[Math.floor(Math.random() * candidates.length)];
   res.json({ article: random });
+});
+
+app.delete('/api/v1/content/articles/:slug', (req: Request, res: Response) => {
+  const { slug } = req.params;
+  const initialLen = WIKI_STORE.articles.length;
+  WIKI_STORE.articles = WIKI_STORE.articles.filter((a) => a.slug.toLowerCase() !== slug.toLowerCase());
+  WIKI_STORE.revisions = WIKI_STORE.revisions.filter((r) => r.articleSlug.toLowerCase() !== slug.toLowerCase());
+  res.json({ success: true, deleted: WIKI_STORE.articles.length < initialLen });
 });
 
 app.get('/api/v1/content/articles/:slug', (req: Request, res: Response) => {
