@@ -436,6 +436,43 @@ export async function listAllUsersFromFirestore(): Promise<AppUser[]> {
   return [];
 }
 
+export async function getUserByUidFromFirestore(uid: string): Promise<AppUser | null> {
+  if (!uid) return null;
+  try {
+    const docSnap = await getDoc(doc(db, "users", uid));
+    if (docSnap.exists()) {
+      const d = docSnap.data();
+      return {
+        uid: docSnap.id,
+        email: d.email || "",
+        name: d.name || d.displayName || "Usuário",
+        profilePictureUrl: d.profilePictureUrl || "",
+        isAdmin: !!d.isAdmin,
+        isBanned: !!(d.isBanned || d.isBan),
+        isTeacher: !!(d.isTeacher || d.isTeatcher),
+        createdAt: d.createdAt?.toDate ? d.createdAt.toDate().toISOString() : d.createdAt,
+        lastLoginAt: d.lastLoginAt?.toDate ? d.lastLoginAt.toDate().toISOString() : d.lastLoginAt
+      };
+    }
+  } catch (err) {
+    console.warn("Firestore getUserByUidFromFirestore error:", err);
+  }
+
+  // Fallback: Backend admin users API
+  try {
+    const res = await fetch(`/api/admin/users`);
+    if (res.ok) {
+      const data = await res.json();
+      const found = (data.users || []).find((u: any) => u.uid === uid);
+      if (found) return found;
+    }
+  } catch (apiErr) {
+    console.warn("Backend user fetch error:", apiErr);
+  }
+
+  return null;
+}
+
 export async function updateUserAdminStatus(uid: string, isAdmin: boolean): Promise<boolean> {
   try {
     await updateDoc(doc(db, "users", uid), { isAdmin });

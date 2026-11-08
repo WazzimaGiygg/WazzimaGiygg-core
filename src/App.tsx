@@ -63,12 +63,19 @@ import {
   Article,
   UserNotification,
   AUTHORIZED_BUROCRATA_EMAIL,
-  isAuthorizedBurocrata
+  isAuthorizedBurocrata,
+  listAllUsersFromFirestore,
+  AppUser
 } from "./firebase";
 import { stripHtmlToPlainText } from "./utils/text";
 import AdminPanel from "./components/AdminPanel";
 import NotMediaWikiPortal from "./components/notmediawiki/NotMediaWikiPortal";
 import BemteviHub from "./components/bemtevi/BemteviHub";
+import { useUidNavigation } from "./hooks/useUidNavigation";
+import UidNavigationBar from "./components/UidNavigationBar";
+import UserProfileModal from "./components/UserProfileModal";
+import LgpdRulesShowcase from "./components/LgpdRulesShowcase";
+import LgpdFloatingComplianceBadge from "./components/LgpdFloatingComplianceBadge";
 
 export default function App() {
   // Authentication & Role States
@@ -78,6 +85,7 @@ export default function App() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [isAdminPanelOpen, setIsAdminPanelOpen] = useState(false);
   const [banReason] = useState("Violação dos Termos ou Conta sob Moderação");
+  const [isLgpdModalOpen, setIsLgpdModalOpen] = useState(false);
 
   // Navigation & Content States
   const [currentTab, setCurrentTab] = useState<
@@ -92,6 +100,7 @@ export default function App() {
     | "chat"
     | "notmediawiki"
     | "bemtevi"
+    | "lgpd"
   >("wikiworldweb");
 
   const [articles, setArticles] = useState<{ [key: string]: Article[] }>({
@@ -149,6 +158,58 @@ export default function App() {
 
   // Diagnostics Data
   const [apiHealth, setApiHealth] = useState<any>(null);
+
+  // 3.05.6.d - Inserir o uso do retornar e avançar para navegar pelo UID presente no URL do site
+  const uidNav = useUidNavigation();
+  const [allUsersList, setAllUsersList] = useState<AppUser[]>([]);
+  const [isUserProfileModalOpen, setIsUserProfileModalOpen] = useState(false);
+
+  // Open user profile modal or sync when currentUid is present in URL
+  useEffect(() => {
+    if (uidNav.currentUid) {
+      // If we are not currently viewing Bemtevi, open the universal profile modal
+      if (currentTab !== "bemtevi") {
+        setIsUserProfileModalOpen(true);
+      }
+    } else {
+      setIsUserProfileModalOpen(false);
+    }
+  }, [uidNav.currentUid, currentTab]);
+
+  // Load all registered users from database for UID navigation switcher
+  useEffect(() => {
+    listAllUsersFromFirestore().then((users) => {
+      if (users && users.length > 0) {
+        setAllUsersList(users);
+      }
+    });
+  }, []);
+
+  // Keyboard navigation shortcuts for 3.05.6.d (Alt + ArrowLeft: Retornar, Alt + ArrowRight: Avançar)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Do not intercept if user is typing inside an input or textarea
+      if (
+        document.activeElement?.tagName === "INPUT" ||
+        document.activeElement?.tagName === "TEXTAREA"
+      ) {
+        return;
+      }
+
+      if (e.altKey && e.key === "ArrowLeft" && uidNav.canGoBack) {
+        e.preventDefault();
+        uidNav.navigateBack();
+        showToast("Navegando: Retornar ao UID anterior no histórico");
+      } else if (e.altKey && e.key === "ArrowRight" && uidNav.canGoForward) {
+        e.preventDefault();
+        uidNav.navigateForward();
+        showToast("Navegando: Avançar ao próximo UID no histórico");
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [uidNav.canGoBack, uidNav.canGoForward, uidNav.navigateBack, uidNav.navigateForward]);
 
   // Formatted Current Date for the Newspaper Header
   const formattedDate = useMemo(() => {
@@ -691,6 +752,22 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-4">
+            {/* REGRAS LGPD À AMOSTRA (CIÊNCIA ABSOLUTA) */}
+            <button
+              onClick={() => setIsLgpdModalOpen(true)}
+              className="flex items-center gap-1.5 bg-emerald-950/90 hover:bg-emerald-900 text-emerald-300 border border-emerald-500 px-2.5 py-0.5 text-[10px] font-bold font-mono uppercase tracking-wider transition-all cursor-pointer shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]"
+              title="Regras da LGPD (Lei 13.709/18) à mostra para ciência absoluta de cumprimento"
+            >
+              <Scale className="w-3 h-3 text-emerald-400 shrink-0" />
+              <span>REGRAS LGPD</span>
+              <span className="bg-emerald-500 text-black text-[8px] font-black px-1 py-0.2 uppercase">
+                À AMOSTRA
+              </span>
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+            </button>
+
+            <span className="text-stone-700">|</span>
+
             <button
               onClick={() => setIsDiagnosticsOpen(!isDiagnosticsOpen)}
               className="flex items-center gap-1.5 hover:text-white text-stone-400 transition-colors cursor-pointer text-[10px]"
@@ -824,6 +901,18 @@ export default function App() {
       </header>
 
       {/* ============================================ */}
+      {/* 1.1. UID URL NAVIGATION CONTROLS (3.05.6.d) */}
+      {/* ============================================ */}
+      <UidNavigationBar
+        nav={uidNav}
+        availableUsers={allUsersList}
+        onOpenUserProfile={(uid) => {
+          setIsUserProfileModalOpen(true);
+        }}
+        showToast={showToast}
+      />
+
+      {/* ============================================ */}
       {/* 2. MAIN NEWSPAPER MASTHEAD */}
       {/* ============================================ */}
       <section className="bg-[#F8F7F4] border-b-4 border-[#141414] pt-8 pb-5 px-4">
@@ -902,7 +991,8 @@ export default function App() {
               { id: "tickets", label: "Ouvidoria & Tickets", icon: Ticket },
               { id: "chat", label: "Chat & Mensagens", icon: MessageSquare },
               { id: "notmediawiki", label: "NotMediaWiki (Beta)", icon: Database },
-              { id: "bemtevi", label: "Bemtevi (Rede Social)", icon: MessageCircle }
+              { id: "bemtevi", label: "Bemtevi (Rede Social)", icon: MessageCircle },
+              { id: "lgpd", label: "Regras LGPD (Lei 13.709)", icon: Scale }
             ].map((tab) => {
               const Icon = tab.icon;
               const isActive = currentTab === tab.id;
@@ -1499,7 +1589,32 @@ export default function App() {
 
         {/* VIEW 7: BEMTEVI - REDE SOCIAL LIVRE & COLABORATIVA */}
         {currentTab === "bemtevi" && (
-          <BemteviHub currentUser={user} showToast={showToast} />
+          <BemteviHub
+            currentUser={user}
+            showToast={showToast}
+            activeUid={uidNav.currentUid}
+            onNavigateUid={uidNav.navigateToUid}
+            canGoBack={uidNav.canGoBack}
+            canGoForward={uidNav.canGoForward}
+            onNavigateBack={uidNav.navigateBack}
+            onNavigateForward={uidNav.navigateForward}
+            onOpenLgpdModal={() => setIsLgpdModalOpen(true)}
+          />
+        )}
+
+        {/* VIEW 8: REGRAS DA LGPD (LEI 13.709/2018) À AMOSTRA (CIÊNCIA ABSOLUTA) */}
+        {currentTab === "lgpd" && (
+          <LgpdRulesShowcase
+            isModal={false}
+            currentUser={user}
+            showToast={showToast}
+            onOpenTicketForm={(tipo) => {
+              setCurrentTab("tickets");
+              if (tipo) {
+                setTicketForm((prev) => ({ ...prev, tipo }));
+              }
+            }}
+          />
         )}
       </main>
 
@@ -1875,18 +1990,28 @@ export default function App() {
               <p className="text-xs font-serif text-stone-700 mt-1 leading-relaxed">
                 Utilizamos cookies estritamente necessários e armazenamento local para assegurar a autenticação e conformidade com o Marco Civil da Internet (Lei nº 12.965/2014).
               </p>
-              <div className="flex items-center gap-2 mt-4 font-mono text-xs">
+              <div className="flex flex-wrap items-center justify-between gap-2 mt-4 font-mono text-xs">
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handleAcceptCookies("all")}
+                    className="paper-button px-4 py-1.5 text-[11px] font-bold uppercase cursor-pointer"
+                  >
+                    Aceitar Todos
+                  </button>
+                  <button
+                    onClick={() => handleAcceptCookies("essential")}
+                    className="paper-button-secondary px-3 py-1.5 text-[11px] font-bold uppercase cursor-pointer"
+                  >
+                    Apenas Essenciais
+                  </button>
+                </div>
                 <button
-                  onClick={() => handleAcceptCookies("all")}
-                  className="paper-button px-4 py-1.5 text-[11px] font-bold uppercase cursor-pointer"
+                  type="button"
+                  onClick={() => setIsLgpdModalOpen(true)}
+                  className="text-[10px] text-emerald-800 hover:text-emerald-950 font-bold uppercase underline cursor-pointer flex items-center gap-1"
                 >
-                  Aceitar Todos
-                </button>
-                <button
-                  onClick={() => handleAcceptCookies("essential")}
-                  className="paper-button-secondary px-3 py-1.5 text-[11px] font-bold uppercase cursor-pointer"
-                >
-                  Apenas Essenciais
+                  <Scale className="w-3 h-3 text-emerald-700" />
+                  <span>Ver Regras da LGPD à Amostra →</span>
                 </button>
               </div>
             </div>
@@ -1938,6 +2063,14 @@ export default function App() {
               Marco Civil & LGPD
             </button>
             <span className="text-stone-700">•</span>
+            <button
+              onClick={() => setIsLgpdModalOpen(true)}
+              className="text-emerald-400 hover:text-emerald-300 font-bold flex items-center gap-1 cursor-pointer"
+            >
+              <Scale className="w-3 h-3 text-emerald-400" />
+              <span>Regras da LGPD (Ciência Absoluta)</span>
+            </button>
+            <span className="text-stone-700">•</span>
             <button onClick={() => setCurrentTab("tickets")} className="hover:text-amber-400">
               Ouvidoria
             </button>
@@ -1986,6 +2119,47 @@ export default function App() {
             setCurrentTab(tab as any);
           }}
           showToast={showToast}
+          activeUid={uidNav.currentUid}
+          onNavigateUid={uidNav.navigateToUid}
+        />
+      )}
+
+      {/* 13. USER PROFILE MODAL (3.05.6.d UID INSPECTION) */}
+      {isUserProfileModalOpen && uidNav.currentUid && (
+        <UserProfileModal
+          uid={uidNav.currentUid}
+          nav={uidNav}
+          onClose={() => {
+            setIsUserProfileModalOpen(false);
+          }}
+          onOpenInBemtevi={(targetUid) => {
+            setIsUserProfileModalOpen(false);
+            setCurrentTab("bemtevi");
+          }}
+          showToast={showToast}
+        />
+      )}
+
+      {/* 14. FLOATING LGPD COMPLIANCE BADGE (REGRAS PERMANENTEMENTE À AMOSTRA) */}
+      <LgpdFloatingComplianceBadge
+        onOpen={() => setIsLgpdModalOpen(true)}
+        hasCiencia={typeof window !== "undefined" && !!localStorage.getItem("wzzm_lgpd_ciencia_absoluta")}
+      />
+
+      {/* 15. MODAL DE REGRAS DA LGPD À AMOSTRA (CIÊNCIA ABSOLUTA) */}
+      {isLgpdModalOpen && (
+        <LgpdRulesShowcase
+          isModal={true}
+          currentUser={user}
+          showToast={showToast}
+          onClose={() => setIsLgpdModalOpen(false)}
+          onOpenTicketForm={(tipo) => {
+            setCurrentTab("tickets");
+            setIsLgpdModalOpen(false);
+            if (tipo) {
+              setTicketForm((prev) => ({ ...prev, tipo }));
+            }
+          }}
         />
       )}
     </div>

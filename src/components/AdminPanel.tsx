@@ -79,6 +79,8 @@ interface AdminPanelProps {
   onElevateSuccess: (userObj: any) => void;
   showToast: (msg: string, isError?: boolean) => void;
   onNavigateToTab?: (tab: string) => void;
+  activeUid?: string | null;
+  onNavigateUid?: (uid: string) => void;
 }
 
 export default function AdminPanel({
@@ -87,7 +89,9 @@ export default function AdminPanel({
   onClose,
   onElevateSuccess,
   showToast,
-  onNavigateToTab
+  onNavigateToTab,
+  activeUid,
+  onNavigateUid
 }: AdminPanelProps) {
   // Navigation inside Admin Core
   const [adminTab, setAdminTab] = useState<
@@ -1092,9 +1096,25 @@ export default function AdminPanel({
                       <tr key={u.uid} className="hover:bg-amber-50/50">
                         <td className="py-2.5 px-4 font-bold border-r border-stone-200">
                           {u.name}
-                          <span className="block text-[9px] text-stone-400 font-normal">
-                            UID: {u.uid}
-                          </span>
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            <span className="text-[9px] text-stone-400 font-normal">
+                              UID: {u.uid}
+                            </span>
+                            {onNavigateUid && (
+                              <button
+                                type="button"
+                                onClick={() => onNavigateUid(u.uid)}
+                                className={`text-[9px] px-1 py-0.2 font-mono font-bold cursor-pointer transition-colors ${
+                                  activeUid === u.uid
+                                    ? "bg-amber-500 text-black border border-amber-600"
+                                    : "bg-stone-200 text-stone-700 hover:bg-amber-200 hover:text-stone-900 border border-stone-300"
+                                }`}
+                                title="Navegar pelo UID no URL (?uid=...) [3.05.6.d]"
+                              >
+                                ?uid= 🔗
+                              </button>
+                            )}
+                          </div>
                         </td>
                         <td className="py-2.5 px-4 border-r border-stone-200 text-stone-700">
                           {u.email || "Sem e-mail"}

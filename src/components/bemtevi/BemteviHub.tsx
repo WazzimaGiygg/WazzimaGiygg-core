@@ -37,7 +37,8 @@ import {
   Link as LinkIcon,
   Smile,
   Hash,
-  ArrowLeft
+  ArrowLeft,
+  ArrowRight
 } from 'lucide-react';
 import {
   BemteviPost,
@@ -71,9 +72,26 @@ interface BemteviHubProps {
   currentUser?: any;
   showToast: (msg: string, isError?: boolean) => void;
   onOpenArticleByUrl?: (url: string) => void;
+  activeUid?: string | null;
+  onNavigateUid?: (uid: string) => void;
+  canGoBack?: boolean;
+  canGoForward?: boolean;
+  onNavigateBack?: () => void;
+  onNavigateForward?: () => void;
+  onOpenLgpdModal?: () => void;
 }
 
-export default function BemteviHub({ currentUser, showToast }: BemteviHubProps) {
+export default function BemteviHub({
+  currentUser,
+  showToast,
+  activeUid,
+  onNavigateUid,
+  canGoBack = false,
+  canGoForward = false,
+  onNavigateBack,
+  onNavigateForward,
+  onOpenLgpdModal
+}: BemteviHubProps) {
   // Locale State (pt-BR, en-US, es-ES)
   const [locale, setLocale] = useState<'pt-BR' | 'en-US' | 'es-ES'>('pt-BR');
   const t = BEMTEVI_TRANSLATIONS[locale];
@@ -123,6 +141,38 @@ export default function BemteviHub({ currentUser, showToast }: BemteviHubProps) 
   const [newCommunityCat, setNewCommunityCat] = useState<BemteviCategory>('Geral');
 
   const [selectedProfileUser, setSelectedProfileUser] = useState<BemteviUser | null>(null);
+
+  const handleSelectUser = (u: BemteviUser) => {
+    setSelectedProfileUser(u);
+    if (onNavigateUid) {
+      onNavigateUid(u.uid);
+    }
+  };
+
+  // Synchronize activeUid from URL with selectedProfileUser (3.05.6.d)
+  useEffect(() => {
+    if (activeUid) {
+      const found = usersList.find((u) => u.uid === activeUid);
+      if (found) {
+        setSelectedProfileUser(found);
+      } else if (!isLoadingData) {
+        setSelectedProfileUser({
+          uid: activeUid,
+          name: `Usuário (${activeUid.substring(0, 10)})`,
+          handle: `@${activeUid.toLowerCase().replace(/[^a-z0-9_]/g, '')}`,
+          bio: 'Membro registrado na rede WZZM / Bem-Te-Vi',
+          karma: 50,
+          level: 'Iniciante',
+          followers: [],
+          following: [],
+          badges: ['Registrado'],
+          joinedAt: new Date().toISOString()
+        });
+      }
+    } else {
+      setSelectedProfileUser(null);
+    }
+  }, [activeUid, usersList, isLoadingData]);
 
   // Direct Message Active Chat
   const [activeDmUser, setActiveDmUser] = useState<BemteviUser | null>(null);
@@ -891,7 +941,7 @@ export default function BemteviHub({ currentUser, showToast }: BemteviHubProps) 
                           <div
                             onClick={() => {
                               const authorUser = usersList.find((u) => u.uid === post.authorId);
-                              if (authorUser) setSelectedProfileUser(authorUser);
+                              if (authorUser) handleSelectUser(authorUser);
                             }}
                             className="flex items-center gap-3 cursor-pointer group"
                           >
@@ -1089,7 +1139,7 @@ export default function BemteviHub({ currentUser, showToast }: BemteviHubProps) 
                         </p>
                       ) : (
                         usersList.filter(u => u.name.toLowerCase().includes(exploreQuery.toLowerCase().trim()) || u.handle.toLowerCase().includes(exploreQuery.toLowerCase().trim())).map(u => (
-                          <div key={u.uid} onClick={() => setSelectedProfileUser(u)} className="bg-[#16161B] border border-stone-800 rounded-xl p-3 flex items-center justify-between cursor-pointer hover:border-stone-700">
+                          <div key={u.uid} onClick={() => handleSelectUser(u)} className="bg-[#16161B] border border-stone-800 rounded-xl p-3 flex items-center justify-between cursor-pointer hover:border-stone-700">
                             <div className="flex items-center gap-3">
                               <div className="w-9 h-9 rounded-full bg-stone-700 flex items-center justify-center font-bold text-xs overflow-hidden">
                                 {u.avatar ? <img src={u.avatar} alt={u.name} className="w-full h-full object-cover" /> : u.name.charAt(0)}
@@ -1589,7 +1639,7 @@ export default function BemteviHub({ currentUser, showToast }: BemteviHubProps) 
                     return (
                       <div key={u.uid} className="flex items-center justify-between gap-2">
                         <div
-                          onClick={() => setSelectedProfileUser(u)}
+                          onClick={() => handleSelectUser(u)}
                           className="flex items-center gap-2 cursor-pointer group min-w-0"
                         >
                           <div className="w-8 h-8 rounded-full bg-stone-700 flex items-center justify-center font-bold text-xs shrink-0 overflow-hidden">
@@ -1662,7 +1712,18 @@ export default function BemteviHub({ currentUser, showToast }: BemteviHubProps) 
             <div className="flex flex-wrap gap-2">
               <a href="https://wazzimagiygg.com/donate/" target="_blank" rel="noreferrer" className="hover:text-amber-400">💝 Doação</a>
               <span>•</span>
-              <a href="https://wazzimagiygg.com/LGPD" target="_blank" rel="noreferrer" className="hover:text-stone-300">🔒 LGPD</a>
+              {onOpenLgpdModal ? (
+                <button
+                  type="button"
+                  onClick={onOpenLgpdModal}
+                  className="hover:text-emerald-400 font-bold text-emerald-400 flex items-center gap-1 cursor-pointer"
+                  title="Regras da LGPD à mostra para ciência absoluta de cumprimento"
+                >
+                  🛡️ Regras LGPD à Amostra
+                </button>
+              ) : (
+                <a href="https://wazzimagiygg.com/LGPD" target="_blank" rel="noreferrer" className="hover:text-stone-300">🔒 LGPD</a>
+              )}
               <span>•</span>
               <a href="https://wazzimagiygg.com/MarcoCivil" target="_blank" rel="noreferrer" className="hover:text-stone-300">📜 Marco Civil</a>
               <span>•</span>
@@ -1839,10 +1900,52 @@ export default function BemteviHub({ currentUser, showToast }: BemteviHubProps) 
       {selectedProfileUser && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in font-sans">
           <div className="bg-[#16161B] border border-stone-700 rounded-2xl max-w-md w-full overflow-hidden shadow-2xl relative">
-            <div className="h-28 bg-gradient-to-r from-[#667eea] to-[#764ba2] relative">
+            <div className="h-28 bg-gradient-to-r from-[#667eea] to-[#764ba2] relative p-3 flex items-start justify-between">
+              {/* 3.05.6.d Controles de Retornar e Avançar no Modal */}
+              <div className="flex items-center gap-1.5 bg-black/60 backdrop-blur-md px-2 py-1 rounded-xl border border-white/10">
+                {onNavigateBack && (
+                  <button
+                    type="button"
+                    onClick={onNavigateBack}
+                    disabled={!canGoBack}
+                    className={`flex items-center gap-1 text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded cursor-pointer transition-all ${
+                      canGoBack
+                        ? 'bg-white/20 text-white hover:bg-white/30 active:scale-95'
+                        : 'text-stone-500 cursor-not-allowed opacity-50'
+                    }`}
+                    title="Retornar ao UID anterior no histórico do URL (3.05.6.d)"
+                  >
+                    <ArrowLeft className="w-3 h-3" />
+                    <span>Retornar</span>
+                  </button>
+                )}
+                <div className="w-[1px] h-3 bg-white/20" />
+                {onNavigateForward && (
+                  <button
+                    type="button"
+                    onClick={onNavigateForward}
+                    disabled={!canGoForward}
+                    className={`flex items-center gap-1 text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded cursor-pointer transition-all ${
+                      canGoForward
+                        ? 'bg-white/20 text-white hover:bg-white/30 active:scale-95'
+                        : 'text-stone-500 cursor-not-allowed opacity-50'
+                    }`}
+                    title="Avançar ao próximo UID no histórico do URL (3.05.6.d)"
+                  >
+                    <span>Avançar</span>
+                    <ArrowRight className="w-3 h-3" />
+                  </button>
+                )}
+                <span className="text-[9px] font-mono text-amber-300 ml-1">
+                  ?uid={selectedProfileUser.uid.length > 14 ? selectedProfileUser.uid.substring(0, 14) + '…' : selectedProfileUser.uid}
+                </span>
+              </div>
+
               <button
+                type="button"
                 onClick={() => setSelectedProfileUser(null)}
-                className="absolute top-3 right-3 bg-black/50 text-white rounded-full p-1.5 hover:bg-black"
+                className="bg-black/50 text-white rounded-full p-1.5 hover:bg-black transition-colors cursor-pointer"
+                title="Fechar"
               >
                 <X className="w-4 h-4" />
               </button>
