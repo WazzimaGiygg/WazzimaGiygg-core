@@ -50,9 +50,12 @@ import {
   ShieldAlert,
   ShieldCheck,
   Check,
-  Cpu
+  Cpu,
+  Sliders
 } from 'lucide-react';
 import jsPDF from 'jspdf';
+import ExtensionConfigModal from '../ExtensionConfigModal';
+import AddExtensionCatalogModal from '../AddExtensionCatalogModal';
 import {
   WikiArticle,
   WikiRevision,
@@ -150,6 +153,10 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
     message: string;
     check?: ExtensionIntegrityCheckResult;
   } | null>(null);
+
+  // Modals for Extension Governance (3.05.3.a, 3.05.3.b, 3.05.3.c, 3.05.3.e)
+  const [configModalExt, setConfigModalExt] = useState<WikiExtension | null>(null);
+  const [isCatalogModalOpen, setIsCatalogModalOpen] = useState<boolean>(false);
 
   const isBureaucrat = currentUser?.email?.toLowerCase() === 'pedrohenriquecardonaperes@gmail.com';
 
@@ -302,6 +309,127 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
       showToast(`Extensão "${ext.name}" ${!ext.enabled ? 'ativada' : 'desativada'} com sucesso.`);
     } catch (err: any) {
       showToast(`Erro na requisição: ${err.message}`, true);
+    }
+  };
+
+  // 3.05.3.a, 3.05.3.b, 3.05.3.c, 3.05.3.e: Save Extension Configuration & Code
+  const handleSaveExtensionConfig = async (
+    extensionId: string,
+    newConfig: Record<string, any>,
+    updatedMetadata?: Partial<WikiExtension>
+  ): Promise<boolean> => {
+    try {
+      const res = await fetch(`/api/v1/extensions/${extensionId}/config`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          config: newConfig,
+          userEmail: currentUser?.email
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        showToast(data.error || 'Erro ao salvar configuração da extensão.', true);
+        return false;
+      }
+
+      // If metadata or files were also modified, send PUT /api/v1/extensions/:id
+      if (updatedMetadata && (updatedMetadata.namePt || updatedMetadata.description || updatedMetadata.files)) {
+        await fetch(`/api/v1/extensions/${extensionId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ...updatedMetadata,
+            config: newConfig,
+            userEmail: currentUser?.email
+          })
+        });
+      }
+
+      // Update local state
+      setExtensions((prev) =>
+        prev.map((e) =>
+          e.id === extensionId
+            ? { ...e, ...updatedMetadata, config: { ...(e.config || {}), ...newConfig } }
+            : e
+        )
+      );
+
+      // Re-register hash in Firestore for zero-trust integrity
+      const updatedExt = data.extension;
+      if (updatedExt) {
+        await registerExtensionHashInFirestore(updatedExt);
+        await refreshFirestoreIntegrity([...extensions.filter((e) => e.id !== extensionId), updatedExt]);
+      }
+
+      showToast(`Configurações da extensão "${updatedExt?.name || extensionId}" salvas com sucesso!`);
+      return true;
+    } catch (err: any) {
+      showToast(`Erro na requisição: ${err.message}`, true);
+      return false;
+    }
+  };
+
+  // 3.05.3.a: Add Extension from Existing Catalog
+  const handleAddCatalogExtension = async (catalogExtensionId: string): Promise<boolean> => {
+    try {
+      const res = await fetch('/api/v1/extensions/catalog/add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          catalogExtensionId,
+          userEmail: currentUser?.email
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        showToast(data.error || 'Erro ao adicionar extensão do catálogo.', true);
+        return false;
+      }
+
+      const added = data.extension;
+      setExtensions((prev) => [...prev, added]);
+      await registerExtensionHashInFirestore(added);
+      await refreshFirestoreIntegrity([...extensions, added]);
+
+      showToast(`✓ Extensão "${added.name}" adicionada ao ecossistema com sucesso!`);
+      return true;
+    } catch (err: any) {
+      showToast(`Erro ao adicionar extensão: ${err.message}`, true);
+      return false;
+    }
+  };
+
+  // 3.05.3.a: Add Custom Extension
+  const handleAddCustomExtension = async (customExt: Partial<WikiExtension>): Promise<boolean> => {
+    try {
+      const res = await fetch('/api/v1/extensions/catalog/add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          customExtension: customExt,
+          userEmail: currentUser?.email
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        showToast(data.error || 'Erro ao criar extensão.', true);
+        return false;
+      }
+
+      const added = data.extension;
+      setExtensions((prev) => [...prev, added]);
+      await registerExtensionHashInFirestore(added);
+      await refreshFirestoreIntegrity([...extensions, added]);
+
+      showToast(`✓ Extensão personalizada "${added.name}" registrada com sucesso!`);
+      return true;
+    } catch (err: any) {
+      showToast(`Erro ao criar extensão: ${err.message}`, true);
+      return false;
     }
   };
 
@@ -1664,7 +1792,16 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
               </p>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                onClick={() => setIsCatalogModalOpen(true)}
+                className="px-3.5 py-2 bg-amber-500 hover:bg-amber-400 text-stone-950 text-xs font-mono font-bold uppercase tracking-wider flex items-center gap-2 border-2 border-black shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] active:translate-x-0.5 active:translate-y-0.5 cursor-pointer"
+                title={!isBureaucrat ? 'Exclusivo para o Burocrata pedrohenriquecardonaperes@gmail.com' : 'Adicionar e alterar extensões (3.05.3.a)'}
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Adicionar Extensão Existente (3.05.3.a)</span>
+              </button>
+
               <button
                 onClick={handleSyncAllExtensions}
                 disabled={isSyncingExtensions}
@@ -1856,10 +1993,39 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
                         )}
                       </div>
                     </div>
+                    {/* Live Config Summary Badge */}
+                    {ext.config && Object.keys(ext.config).length > 0 && (
+                      <div className="mt-2.5 p-2 bg-amber-50/80 border border-amber-300 font-mono text-[10px] space-y-0.5 text-stone-800">
+                        <div className="font-bold text-amber-950 flex items-center gap-1">
+                          <Sliders className="w-3 h-3 text-amber-700" />
+                          <span>Configuração Ativa:</span>
+                        </div>
+                        {ext.id === 'ext-support-tickets' && (
+                          <div className="leading-snug">
+                            Suporte URL: <strong className="text-sky-800 break-all">{ext.config.supportUrl || 'https://support.wazzimagiygg.com/'}</strong> • Modo: <span className="font-bold">{ext.config.openMode || 'redirect'}</span>
+                          </div>
+                        )}
+                        {ext.id === 'ext-external-redirector' && (
+                          <div className="leading-snug">
+                            Redirecionador: <strong className={ext.config.enabled ? 'text-emerald-700' : 'text-red-700'}>{ext.config.enabled ? 'Ativo' : 'Desativado'}</strong> • Base: <code className="bg-amber-100 px-1 font-bold">{ext.config.redirectBaseUrl || 'https://wazzimagiygg.com/rv/?uid='}</code>
+                          </div>
+                        )}
+                        {ext.id === 'ext-maintenance-mode' && (
+                          <div className="leading-snug">
+                            Manutenção: <strong className={ext.config.isMaintenanceActive ? 'text-rose-600 font-bold' : 'text-stone-600'}>{ext.config.isMaintenanceActive ? '🔴 Manutenção ATIVA' : '⚪ Desativada'}</strong> • {ext.config.estimatedReturn || 'Normal'}
+                          </div>
+                        )}
+                        {ext.id !== 'ext-support-tickets' && ext.id !== 'ext-external-redirector' && ext.id !== 'ext-maintenance-mode' && (
+                          <div className="text-stone-600 truncate">
+                            {JSON.stringify(ext.config)}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   {/* Actions & Status Controls */}
-                  <div className="pt-3 border-t border-stone-200 mt-3 flex items-center justify-between text-[10px]">
+                  <div className="pt-3 border-t border-stone-200 mt-3 flex items-center justify-between text-[10px] gap-2 flex-wrap">
                     <button
                       onClick={() => {
                         setInspectingExtension(ext);
@@ -1868,10 +2034,19 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
                       className="px-2.5 py-1.5 bg-stone-200 hover:bg-stone-300 text-stone-900 font-bold border border-stone-400 flex items-center gap-1.5 cursor-pointer"
                     >
                       <FileCode className="w-3.5 h-3.5 text-stone-700" />
-                      <span>Inspecionar Arquivos ({ext.files?.length || 1})</span>
+                      <span>Arquivos ({ext.files?.length || 1})</span>
                     </button>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <button
+                        onClick={() => setConfigModalExt(ext)}
+                        className="px-2.5 py-1.5 bg-amber-100 hover:bg-amber-200 text-amber-950 font-bold border border-amber-600 flex items-center gap-1 cursor-pointer"
+                        title="Modificar parâmetros e código da extensão (3.05.3.a)"
+                      >
+                        <Sliders className="w-3.5 h-3.5 text-amber-700" />
+                        <span>Configurar</span>
+                      </button>
+
                       <button
                         onClick={() => handleToggleExtension(ext)}
                         disabled={!isBureaucrat || isQuarantined}
@@ -2350,6 +2525,27 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
           </div>
         </div>
       )}
+
+      {/* Extension Configuration & Modification Modal (3.05.3.a, 3.05.3.b, 3.05.3.c, 3.05.3.e) */}
+      <ExtensionConfigModal
+        isOpen={!!configModalExt}
+        extension={configModalExt}
+        onClose={() => setConfigModalExt(null)}
+        onSaveConfig={handleSaveExtensionConfig}
+        isBureaucrat={isBureaucrat}
+        currentUserEmail={currentUser?.email}
+      />
+
+      {/* Add Extension from Official Catalog Modal (3.05.3.a) */}
+      <AddExtensionCatalogModal
+        isOpen={isCatalogModalOpen}
+        onClose={() => setIsCatalogModalOpen(false)}
+        installedExtensionIds={extensions.map((e) => e.id)}
+        onAddCatalogExtension={handleAddCatalogExtension}
+        onAddCustomExtension={handleAddCustomExtension}
+        isBureaucrat={isBureaucrat}
+        currentUserEmail={currentUser?.email}
+      />
     </div>
   );
 }

@@ -17,7 +17,8 @@ import {
   scanExtensionCodeForMalware,
   verifyExtensionSyncSecurity,
   computeSha256Hex,
-  ExtensionSecurityAudit
+  ExtensionSecurityAudit,
+  EXISTING_EXTENSIONS_CATALOG
 } from './src/data/notMediaWikiData';
 import {
   SEED_BEMTEVI_POSTS,
@@ -1454,6 +1455,166 @@ app.post('/api/v1/extensions/:id/quarantine', (req: Request, res: Response) => {
 
   res.json({ success: true, extension: ext });
 });
+
+// Endpoint 3.05.3.a: Obter Catálogo de Extensões Existentes
+app.get('/api/v1/extensions/catalog', (_req: Request, res: Response) => {
+  res.json({
+    catalog: EXISTING_EXTENSIONS_CATALOG,
+    installedIds: WIKI_STORE.extensions.map((e) => e.id)
+  });
+});
+
+// Endpoint 3.05.3.a, 3.05.3.b, 3.05.3.c, 3.05.3.e: Modificar Configuração da Extensão (Burocrata only)
+app.put('/api/v1/extensions/:id/config', (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { config, userEmail } = req.body;
+  const bureaucratEmail = 'pedrohenriquecardonaperes@gmail.com';
+
+  if (!userEmail || userEmail.toLowerCase() !== bureaucratEmail.toLowerCase()) {
+    return res.status(403).json({
+      error: 'ACESSO NEGADO: Somente o Burocrata oficial (pedrohenriquecardonaperes@gmail.com) pode alterar configurações das extensões.'
+    });
+  }
+
+  const ext = WIKI_STORE.extensions.find((e) => e.id === id);
+  if (!ext) {
+    return res.status(404).json({ error: 'Extensão não encontrada.' });
+  }
+
+  ext.config = {
+    ...(ext.config || {}),
+    ...(config || {})
+  };
+
+  // Sincronizações específicas de extensões de sistema
+  if (id === 'ext-external-redirector' && config?.enabled !== undefined) {
+    ext.enabled = !!config.enabled;
+  }
+  if (id === 'ext-maintenance-mode' && config?.isMaintenanceActive !== undefined) {
+    ext.enabled = !!config.isMaintenanceActive;
+  }
+
+  // Registra timestamp e burocrata autorizador
+  ext.lastSyncTimestamp = new Date().toISOString();
+  ext.syncAuthorizedBy = userEmail;
+
+  res.json({ success: true, extension: ext, message: 'Configurações da extensão atualizadas com sucesso.' });
+});
+
+// Endpoint 3.05.3.a: Adicionar Extensão Existente do Catálogo ou Criar Personalizada (Burocrata only)
+app.post('/api/v1/extensions/catalog/add', (req: Request, res: Response) => {
+  const { catalogExtensionId, customExtension, userEmail } = req.body;
+  const bureaucratEmail = 'pedrohenriquecardonaperes@gmail.com';
+
+  if (!userEmail || userEmail.toLowerCase() !== bureaucratEmail.toLowerCase()) {
+    return res.status(403).json({
+      error: 'ACESSO NEGADO: Somente o Burocrata oficial (pedrohenriquecardonaperes@gmail.com) pode adicionar extensões.'
+    });
+  }
+
+  let extensionToAdd: WikiExtension | undefined;
+
+  if (catalogExtensionId) {
+    const foundInCatalog = EXISTING_EXTENSIONS_CATALOG.find((e) => e.id === catalogExtensionId);
+    if (!foundInCatalog) {
+      return res.status(404).json({ error: 'Extensão não encontrada no catálogo oficial.' });
+    }
+    // Deep clone
+    extensionToAdd = JSON.parse(JSON.stringify(foundInCatalog));
+  } else if (customExtension && typeof customExtension === 'object') {
+    extensionToAdd = customExtension as WikiExtension;
+  }
+
+  if (!extensionToAdd || !extensionToAdd.id || !extensionToAdd.name) {
+    return res.status(400).json({ error: 'Parâmetros da extensão inválidos para adição.' });
+  }
+
+  // Verifica se já está instalada
+  const existingIdx = WIKI_STORE.extensions.findIndex((e) => e.id === extensionToAdd!.id);
+  if (existingIdx >= 0) {
+    return res.status(400).json({
+      error: `A extensão "${extensionToAdd.name}" (${extensionToAdd.id}) já se encontra instalada no sistema.`
+    });
+  }
+
+  // Executa validação de sincronia e segurança
+  const verification = verifyExtensionSyncSecurity(extensionToAdd, userEmail);
+  extensionToAdd.signatureStatus = verification.status;
+  extensionToAdd.lastSyncTimestamp = new Date().toISOString();
+  extensionToAdd.syncAuthorizedBy = userEmail;
+  extensionToAdd.quarantined = verification.status === 'quarantined' || verification.audit.quarantined;
+  extensionToAdd.quarantineReason = verification.audit.quarantineReason;
+  extensionToAdd.securityAudit = verification.audit;
+
+  if (extensionToAdd.quarantined) {
+    extensionToAdd.enabled = false;
+  }
+
+  WIKI_STORE.extensions.push(extensionToAdd);
+
+  res.status(201).json({
+    success: true,
+    extension: extensionToAdd,
+    verification,
+    message: `Extensão "${extensionToAdd.name}" adicionada com sucesso ao ecossistema NotMediaWiki.`
+  });
+});
+
+// Endpoint 3.05.3.a: Modificar Metadados, Arquivos ou Código de uma Extensão Existente (Burocrata only)
+app.put('/api/v1/extensions/:id', (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { name, namePt, description, version, files, config, userEmail } = req.body;
+  const bureaucratEmail = 'pedrohenriquecardonaperes@gmail.com';
+
+  if (!userEmail || userEmail.toLowerCase() !== bureaucratEmail.toLowerCase()) {
+    return res.status(403).json({
+      error: 'ACESSO NEGADO: Somente o Burocrata oficial (pedrohenriquecardonaperes@gmail.com) pode modificar extensões.'
+    });
+  }
+
+  const ext = WIKI_STORE.extensions.find((e) => e.id === id);
+  if (!ext) {
+    return res.status(404).json({ error: 'Extensão não encontrada para modificação.' });
+  }
+
+  if (name) ext.name = name;
+  if (namePt) ext.namePt = namePt;
+  if (description) ext.description = description;
+  if (version) ext.version = version;
+  if (config) ext.config = { ...(ext.config || {}), ...config };
+
+  if (Array.isArray(files) && files.length > 0) {
+    ext.files = files.map((f: any) => ({
+      name: f.name || 'index.ts',
+      content: f.content || '',
+      size: (f.content || '').length,
+      sha256: computeSha256Hex(f.content || ''),
+      mimeType: f.mimeType || 'application/typescript'
+    }));
+    ext.sha256 = ext.files[0]?.sha256 || computeSha256Hex(files[0]?.content || '');
+  }
+
+  // Reanalisa a segurança e integridade
+  const verification = verifyExtensionSyncSecurity(ext, userEmail);
+  ext.signatureStatus = verification.status;
+  ext.lastSyncTimestamp = new Date().toISOString();
+  ext.syncAuthorizedBy = userEmail;
+  ext.quarantined = verification.status === 'quarantined' || verification.audit.quarantined;
+  ext.quarantineReason = verification.audit.quarantineReason;
+  ext.securityAudit = verification.audit;
+
+  if (ext.quarantined) {
+    ext.enabled = false;
+  }
+
+  res.json({
+    success: true,
+    extension: ext,
+    verification,
+    message: `Extensão "${ext.name}" modificada e validada com sucesso.`
+  });
+});
+
 
 // ============================================
 // BEMTEVI SOCIAL NETWORK ENDPOINTS (/api/bemtevi/*)

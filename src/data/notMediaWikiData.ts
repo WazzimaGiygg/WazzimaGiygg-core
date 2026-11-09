@@ -114,7 +114,7 @@ export interface WikiExtension {
   name: string;
   namePt: string;
   version: string;
-  category: 'parser' | 'ui' | 'security' | 'api' | 'bot' | 'portal';
+  category: 'parser' | 'ui' | 'security' | 'api' | 'bot' | 'portal' | 'service' | 'system';
   author: string;
   description: string;
   enabled: boolean;
@@ -129,6 +129,7 @@ export interface WikiExtension {
   quarantineReason?: string;
   files: ExtensionFile[];
   securityAudit?: ExtensionSecurityAudit;
+  config?: Record<string, any>;
 }
 
 // Allowed Domains Whitelist for Extension Synchronization (Dispositivo 3.05.9.a)
@@ -768,6 +769,58 @@ export const PORTAL_LINKS = {
 };
 `;
 
+const SUPPORT_TICKETS_FILE_CONTENT = `// Extension:SupportTickets
+// Central de Suporte & Ouvidoria WZZM (3.05.3.b)
+export const DEFAULT_SUPPORT_CONFIG = {
+  supportUrl: 'https://support.wazzimagiygg.com/',
+  openMode: 'redirect',
+  buttonLabel: 'Suporte & Tickets WZZM',
+  openInNewTab: true
+};
+
+export function getEffectiveSupportUrl(customConfig?: { supportUrl?: string }): string {
+  return customConfig?.supportUrl || DEFAULT_SUPPORT_CONFIG.supportUrl;
+}
+`;
+
+const LINK_REDIRECTOR_FILE_CONTENT = `// Extension:LinkRedirector
+// Redirecionador de Links Externos com UID (3.05.3.c)
+export const DEFAULT_REDIRECTOR_CONFIG = {
+  enabled: true,
+  redirectBaseUrl: 'https://wazzimagiygg.com/rv/?uid=',
+  appendUid: true,
+  showNoticeModal: true,
+  whitelistDomains: [
+    'wazzimagiygg.com',
+    'notmediawiki.wazzimagiygg.com',
+    'bemtevi.wazzimagiygg.com',
+    'support.wazzimagiygg.com'
+  ]
+};
+
+export function buildRedirectUrl(targetUrl: string, uid?: string, config?: any): string {
+  const base = config?.redirectBaseUrl || DEFAULT_REDIRECTOR_CONFIG.redirectBaseUrl;
+  const cleanUid = uid || 'anon';
+  return \`\${base}\${encodeURIComponent(cleanUid)}&dest=\${encodeURIComponent(targetUrl)}\`;
+}
+`;
+
+const MAINTENANCE_MODE_FILE_CONTENT = `// Extension:MaintenanceMode
+// Modo de Manutenção do Sistema (3.05.3.e)
+export const DEFAULT_MAINTENANCE_CONFIG = {
+  isMaintenanceActive: false,
+  maintenanceMessage: 'O portal WazzimaGiygg encontra-se em manutenção programada para atualização de infraestrutura, auditoria forense e sincronização de dados.',
+  estimatedReturn: 'Retorno previsto em breve',
+  allowedBurocrataEmail: 'pedrohenriquecardonaperes@gmail.com'
+};
+
+export function isUserAllowedDuringMaintenance(userEmail?: string, config?: any): boolean {
+  if (!userEmail) return false;
+  const allowed = (config?.allowedBurocrataEmail || DEFAULT_MAINTENANCE_CONFIG.allowedBurocrataEmail).toLowerCase();
+  return userEmail.toLowerCase() === allowed;
+}
+`;
+
 export const SEED_WIKI_EXTENSIONS: WikiExtension[] = [
   {
     id: 'ext-cite',
@@ -996,6 +1049,397 @@ export const SEED_WIKI_EXTENSIONS: WikiExtension[] = [
       safetyScore: 100,
       threatLevel: 'SECURE',
       entropyScore: computeShannonEntropy(WAZZIMAGIYGG_PORTALS_FILE_CONTENT),
+      passedChecks: 9,
+      totalChecks: 9,
+      threats: [],
+      quarantined: false,
+      authorizedBy: 'pedrohenriquecardonaperes@gmail.com'
+    }
+  },
+  {
+    id: 'ext-support-tickets',
+    name: 'SupportTickets',
+    namePt: 'Suporte & Central de Tickets (3.05.3.b)',
+    version: '1.0.0',
+    category: 'service',
+    author: 'WazzimaGiygg Systems',
+    description: 'Transforma a opção de Suporte e Tickets em extensão configurável, permitindo alterar a URL do suporte externo (padrão: https://support.wazzimagiygg.com/) ou chavear o modo de atendimento.',
+    enabled: true,
+    type: 'extension',
+    url: 'https://wazzimagiygg.com',
+    sha256: computeSha256Hex(SUPPORT_TICKETS_FILE_CONTENT),
+    originDomain: 'wazzimagiygg.com',
+    signatureStatus: 'verified',
+    lastSyncTimestamp: '2026-11-09T12:00:00.000Z',
+    syncAuthorizedBy: 'pedrohenriquecardonaperes@gmail.com',
+    quarantined: false,
+    config: {
+      supportUrl: 'https://support.wazzimagiygg.com/',
+      openMode: 'redirect',
+      buttonLabel: 'Suporte & Tickets WZZM',
+      openInNewTab: true
+    },
+    files: [
+      {
+        name: 'support-tickets.ts',
+        size: SUPPORT_TICKETS_FILE_CONTENT.length,
+        sha256: computeSha256Hex(SUPPORT_TICKETS_FILE_CONTENT),
+        content: SUPPORT_TICKETS_FILE_CONTENT,
+        mimeType: 'application/typescript'
+      }
+    ],
+    securityAudit: {
+      extensionId: 'ext-support-tickets',
+      scannedAt: '2026-11-09T12:00:00.000Z',
+      safetyScore: 100,
+      threatLevel: 'SECURE',
+      entropyScore: computeShannonEntropy(SUPPORT_TICKETS_FILE_CONTENT),
+      passedChecks: 9,
+      totalChecks: 9,
+      threats: [],
+      quarantined: false,
+      authorizedBy: 'pedrohenriquecardonaperes@gmail.com'
+    }
+  },
+  {
+    id: 'ext-external-redirector',
+    name: 'LinkRedirector',
+    namePt: 'Redirecionador de Links Externos com UID (3.05.3.c)',
+    version: '1.0.0',
+    category: 'security',
+    author: 'WazzimaGiygg Security Core',
+    description: 'Controla o redirecionador de links externos (padrão: https://wazzimagiygg.com/rv/?uid=), permitindo desativar o redirecionador ou alterar o prefixo do UID redirecionador.',
+    enabled: true,
+    type: 'extension',
+    url: 'https://wazzimagiygg.com',
+    sha256: computeSha256Hex(LINK_REDIRECTOR_FILE_CONTENT),
+    originDomain: 'wazzimagiygg.com',
+    signatureStatus: 'verified',
+    lastSyncTimestamp: '2026-11-09T12:00:00.000Z',
+    syncAuthorizedBy: 'pedrohenriquecardonaperes@gmail.com',
+    quarantined: false,
+    config: {
+      enabled: true,
+      redirectBaseUrl: 'https://wazzimagiygg.com/rv/?uid=',
+      appendUid: true,
+      showNoticeModal: true,
+      whitelistDomains: [
+        'wazzimagiygg.com',
+        'notmediawiki.wazzimagiygg.com',
+        'bemtevi.wazzimagiygg.com',
+        'support.wazzimagiygg.com'
+      ]
+    },
+    files: [
+      {
+        name: 'link-redirector.ts',
+        size: LINK_REDIRECTOR_FILE_CONTENT.length,
+        sha256: computeSha256Hex(LINK_REDIRECTOR_FILE_CONTENT),
+        content: LINK_REDIRECTOR_FILE_CONTENT,
+        mimeType: 'application/typescript'
+      }
+    ],
+    securityAudit: {
+      extensionId: 'ext-external-redirector',
+      scannedAt: '2026-11-09T12:00:00.000Z',
+      safetyScore: 100,
+      threatLevel: 'SECURE',
+      entropyScore: computeShannonEntropy(LINK_REDIRECTOR_FILE_CONTENT),
+      passedChecks: 9,
+      totalChecks: 9,
+      threats: [],
+      quarantined: false,
+      authorizedBy: 'pedrohenriquecardonaperes@gmail.com'
+    }
+  },
+  {
+    id: 'ext-maintenance-mode',
+    name: 'MaintenanceMode',
+    namePt: 'Modo de Manutenção do Sistema (3.05.3.e)',
+    version: '1.0.0',
+    category: 'system',
+    author: 'WazzimaGiygg Governance Bureaucrat',
+    description: 'Define quando o site está em manutenção programada. Quando ativo, apenas o Burocrata oficial (pedrohenriquecardonaperes@gmail.com) tem acesso às configurações via login Google.',
+    enabled: false,
+    type: 'extension',
+    url: 'https://wazzimagiygg.com',
+    sha256: computeSha256Hex(MAINTENANCE_MODE_FILE_CONTENT),
+    originDomain: 'wazzimagiygg.com',
+    signatureStatus: 'verified',
+    lastSyncTimestamp: '2026-11-09T12:00:00.000Z',
+    syncAuthorizedBy: 'pedrohenriquecardonaperes@gmail.com',
+    quarantined: false,
+    config: {
+      isMaintenanceActive: false,
+      maintenanceMessage: 'O portal WazzimaGiygg encontra-se em manutenção programada para atualização de infraestrutura, auditoria forense e sincronização de dados.',
+      estimatedReturn: 'Retorno previsto em breve',
+      allowedBurocrataEmail: 'pedrohenriquecardonaperes@gmail.com'
+    },
+    files: [
+      {
+        name: 'maintenance.ts',
+        size: MAINTENANCE_MODE_FILE_CONTENT.length,
+        sha256: computeSha256Hex(MAINTENANCE_MODE_FILE_CONTENT),
+        content: MAINTENANCE_MODE_FILE_CONTENT,
+        mimeType: 'application/typescript'
+      }
+    ],
+    securityAudit: {
+      extensionId: 'ext-maintenance-mode',
+      scannedAt: '2026-11-09T12:00:00.000Z',
+      safetyScore: 100,
+      threatLevel: 'SECURE',
+      entropyScore: computeShannonEntropy(MAINTENANCE_MODE_FILE_CONTENT),
+      passedChecks: 9,
+      totalChecks: 9,
+      threats: [],
+      quarantined: false,
+      authorizedBy: 'pedrohenriquecardonaperes@gmail.com'
+    }
+  }
+];
+
+// ============================================================================
+// CATÁLOGO DE EXTENSÕES EXISTENTES PARA ADIÇÃO (3.05.3.a)
+// ============================================================================
+const VISUALEDITOR_CODE = `// Extension:VisualEditor WYSIWYG
+export function initVisualEditor() {
+  console.log("VisualEditor iniciado com renderizador DOM semântico.");
+  return { ready: true, mode: "visual" };
+}
+`;
+
+const MATH_CODE = `// Extension:Math LaTeX & MathML
+export function renderLaTeX(tex: string): string {
+  return \`<span class="tex-formula">\${tex}</span>\`;
+}
+`;
+
+const PARSERFUNCTIONS_CODE = `// Extension:ParserFunctions
+export function evaluateCondition(expr: string, trueVal: string, falseVal: string): string {
+  return expr.trim() ? trueVal : falseVal;
+}
+`;
+
+const WIKIEDITOR_CODE = `// Extension:WikiEditor Advanced Toolbar
+export function initToolbar() {
+  return { buttons: ["bold", "italic", "link", "heading", "table"] };
+}
+`;
+
+const MOBILEFRONTEND_CODE = `// Extension:MobileFrontend
+export function isMobileDevice(): boolean {
+  return typeof window !== "undefined" && window.innerWidth < 768;
+}
+`;
+
+export const EXISTING_EXTENSIONS_CATALOG: WikiExtension[] = [
+  {
+    id: 'ext-visualeditor',
+    name: 'VisualEditor',
+    namePt: 'VisualEditor (Editor Visual WYSIWYG)',
+    version: '2.1.0',
+    category: 'ui',
+    author: 'Wikimedia Foundation & Contributors',
+    description: 'Interface avançada de edição em tempo real no formato WYSIWYG para artigos do acervo.',
+    enabled: true,
+    type: 'extension',
+    url: 'https://www.mediawiki.org/wiki/Extension:VisualEditor',
+    sha256: computeSha256Hex(VISUALEDITOR_CODE),
+    originDomain: 'mediawiki.org',
+    signatureStatus: 'verified',
+    lastSyncTimestamp: '2026-11-09T12:00:00.000Z',
+    syncAuthorizedBy: 'pedrohenriquecardonaperes@gmail.com',
+    quarantined: false,
+    config: {
+      enableWikitextMode: true,
+      autoSaveIntervalSeconds: 30
+    },
+    files: [
+      {
+        name: 'visualeditor.ts',
+        size: VISUALEDITOR_CODE.length,
+        sha256: computeSha256Hex(VISUALEDITOR_CODE),
+        content: VISUALEDITOR_CODE,
+        mimeType: 'application/typescript'
+      }
+    ],
+    securityAudit: {
+      extensionId: 'ext-visualeditor',
+      scannedAt: '2026-11-09T12:00:00.000Z',
+      safetyScore: 100,
+      threatLevel: 'SECURE',
+      entropyScore: computeShannonEntropy(VISUALEDITOR_CODE),
+      passedChecks: 9,
+      totalChecks: 9,
+      threats: [],
+      quarantined: false,
+      authorizedBy: 'pedrohenriquecardonaperes@gmail.com'
+    }
+  },
+  {
+    id: 'ext-math',
+    name: 'Math',
+    namePt: 'Math (Renderizador LaTeX & Fórmulas)',
+    version: '3.0.0',
+    category: 'parser',
+    author: 'Moritz Schubotz & MediaWiki Team',
+    description: 'Compilador e renderizador de notação matemática TeX/LaTeX para visualização em fórmulas científicas.',
+    enabled: true,
+    type: 'extension',
+    url: 'https://www.mediawiki.org/wiki/Extension:Math',
+    sha256: computeSha256Hex(MATH_CODE),
+    originDomain: 'mediawiki.org',
+    signatureStatus: 'verified',
+    lastSyncTimestamp: '2026-11-09T12:00:00.000Z',
+    syncAuthorizedBy: 'pedrohenriquecardonaperes@gmail.com',
+    quarantined: false,
+    config: {
+      renderMode: 'mathml',
+      defaultDisplay: 'inline'
+    },
+    files: [
+      {
+        name: 'math.ts',
+        size: MATH_CODE.length,
+        sha256: computeSha256Hex(MATH_CODE),
+        content: MATH_CODE,
+        mimeType: 'application/typescript'
+      }
+    ],
+    securityAudit: {
+      extensionId: 'ext-math',
+      scannedAt: '2026-11-09T12:00:00.000Z',
+      safetyScore: 100,
+      threatLevel: 'SECURE',
+      entropyScore: computeShannonEntropy(MATH_CODE),
+      passedChecks: 9,
+      totalChecks: 9,
+      threats: [],
+      quarantined: false,
+      authorizedBy: 'pedrohenriquecardonaperes@gmail.com'
+    }
+  },
+  {
+    id: 'ext-parserfunctions',
+    name: 'ParserFunctions',
+    namePt: 'ParserFunctions (Lógica Condicional de Wikitexto)',
+    version: '1.6.0',
+    category: 'parser',
+    author: 'Tim Starling',
+    description: 'Adiciona operadores lógicos (#if, #ifeq, #switch, #expr) para templates e predefinições inteligentes.',
+    enabled: true,
+    type: 'extension',
+    url: 'https://www.mediawiki.org/wiki/Extension:ParserFunctions',
+    sha256: computeSha256Hex(PARSERFUNCTIONS_CODE),
+    originDomain: 'mediawiki.org',
+    signatureStatus: 'verified',
+    lastSyncTimestamp: '2026-11-09T12:00:00.000Z',
+    syncAuthorizedBy: 'pedrohenriquecardonaperes@gmail.com',
+    quarantined: false,
+    config: {
+      maxDepth: 10,
+      enableExpr: true
+    },
+    files: [
+      {
+        name: 'parserfunctions.ts',
+        size: PARSERFUNCTIONS_CODE.length,
+        sha256: computeSha256Hex(PARSERFUNCTIONS_CODE),
+        content: PARSERFUNCTIONS_CODE,
+        mimeType: 'application/typescript'
+      }
+    ],
+    securityAudit: {
+      extensionId: 'ext-parserfunctions',
+      scannedAt: '2026-11-09T12:00:00.000Z',
+      safetyScore: 100,
+      threatLevel: 'SECURE',
+      entropyScore: computeShannonEntropy(PARSERFUNCTIONS_CODE),
+      passedChecks: 9,
+      totalChecks: 9,
+      threats: [],
+      quarantined: false,
+      authorizedBy: 'pedrohenriquecardonaperes@gmail.com'
+    }
+  },
+  {
+    id: 'ext-wikieditor',
+    name: 'WikiEditor',
+    namePt: 'WikiEditor (Barra de Ferramentas Avançada)',
+    version: '0.5.1',
+    category: 'ui',
+    author: 'Trevor Parscal, Roan Kattouw',
+    description: 'Enriquece a caixa de texto de edição de wikitexto com botões de formatação rápida, tabelas e links.',
+    enabled: true,
+    type: 'extension',
+    url: 'https://www.mediawiki.org/wiki/Extension:WikiEditor',
+    sha256: computeSha256Hex(WIKIEDITOR_CODE),
+    originDomain: 'mediawiki.org',
+    signatureStatus: 'verified',
+    lastSyncTimestamp: '2026-11-09T12:00:00.000Z',
+    syncAuthorizedBy: 'pedrohenriquecardonaperes@gmail.com',
+    quarantined: false,
+    config: {
+      toolbarFloating: true
+    },
+    files: [
+      {
+        name: 'wikieditor.ts',
+        size: WIKIEDITOR_CODE.length,
+        sha256: computeSha256Hex(WIKIEDITOR_CODE),
+        content: WIKIEDITOR_CODE,
+        mimeType: 'application/typescript'
+      }
+    ],
+    securityAudit: {
+      extensionId: 'ext-wikieditor',
+      scannedAt: '2026-11-09T12:00:00.000Z',
+      safetyScore: 100,
+      threatLevel: 'SECURE',
+      entropyScore: computeShannonEntropy(WIKIEDITOR_CODE),
+      passedChecks: 9,
+      totalChecks: 9,
+      threats: [],
+      quarantined: false,
+      authorizedBy: 'pedrohenriquecardonaperes@gmail.com'
+    }
+  },
+  {
+    id: 'ext-mobilefrontend',
+    name: 'MobileFrontend',
+    namePt: 'MobileFrontend (Adaptação Responsiva para Celular)',
+    version: '2.0.0',
+    category: 'ui',
+    author: 'Wikimedia Mobile Team',
+    description: 'Otimiza o layout, tipografia e consumo de banda para dispositivos móveis e conexões lentas.',
+    enabled: true,
+    type: 'extension',
+    url: 'https://www.mediawiki.org/wiki/Extension:MobileFrontend',
+    sha256: computeSha256Hex(MOBILEFRONTEND_CODE),
+    originDomain: 'mediawiki.org',
+    signatureStatus: 'verified',
+    lastSyncTimestamp: '2026-11-09T12:00:00.000Z',
+    syncAuthorizedBy: 'pedrohenriquecardonaperes@gmail.com',
+    quarantined: false,
+    config: {
+      enableCompactMode: true
+    },
+    files: [
+      {
+        name: 'mobilefrontend.ts',
+        size: MOBILEFRONTEND_CODE.length,
+        sha256: computeSha256Hex(MOBILEFRONTEND_CODE),
+        content: MOBILEFRONTEND_CODE,
+        mimeType: 'application/typescript'
+      }
+    ],
+    securityAudit: {
+      extensionId: 'ext-mobilefrontend',
+      scannedAt: '2026-11-09T12:00:00.000Z',
+      safetyScore: 100,
+      threatLevel: 'SECURE',
+      entropyScore: computeShannonEntropy(MOBILEFRONTEND_CODE),
       passedChecks: 9,
       totalChecks: 9,
       threats: [],

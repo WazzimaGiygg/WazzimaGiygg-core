@@ -77,6 +77,10 @@ import UserProfileModal from "./components/UserProfileModal";
 import LgpdRulesShowcase from "./components/LgpdRulesShowcase";
 import LgpdFloatingComplianceBadge from "./components/LgpdFloatingComplianceBadge";
 import DossieAbusosView from "./components/DossieAbusosView";
+import MaintenanceScreen from "./components/MaintenanceScreen";
+import ExternalRedirectModal from "./components/ExternalRedirectModal";
+import ExtensionConfigModal from "./components/ExtensionConfigModal";
+import { WikiExtension } from "./data/notMediaWikiData";
 
 export default function App() {
   // Authentication & Role States
@@ -159,6 +163,132 @@ export default function App() {
 
   // Diagnostics Data
   const [apiHealth, setApiHealth] = useState<any>(null);
+
+  // Extensions State & Behavioral Effects (3.05, 3.05.3.a, 3.05.3.b, 3.05.3.c, 3.05.3.e)
+  const [extensionsList, setExtensionsList] = useState<WikiExtension[]>([]);
+  const [externalRedirectTarget, setExternalRedirectTarget] = useState<string | null>(null);
+  const [editingExtensionConfig, setEditingExtensionConfig] = useState<WikiExtension | null>(null);
+
+  const fetchExtensions = async () => {
+    try {
+      const res = await fetch("/api/v1/extensions");
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.extensions)) {
+          setExtensionsList(data.extensions);
+        }
+      }
+    } catch (err) {
+      console.warn("Could not fetch extensions:", err);
+    }
+  };
+
+  const supportExtension = useMemo(() => {
+    return extensionsList.find((e) => e.id === "ext-support-tickets");
+  }, [extensionsList]);
+
+  const supportConfig = useMemo(() => {
+    return supportExtension?.config || {
+      supportUrl: "https://support.wazzimagiygg.com/",
+      openMode: "redirect",
+      buttonLabel: "Suporte & Tickets WZZM",
+      openInNewTab: true
+    };
+  }, [supportExtension]);
+
+  const redirectorExtension = useMemo(() => {
+    return extensionsList.find((e) => e.id === "ext-external-redirector");
+  }, [extensionsList]);
+
+  const redirectorConfig = useMemo(() => {
+    return redirectorExtension?.config || {
+      enabled: true,
+      redirectBaseUrl: "https://wazzimagiygg.com/rv/?uid=",
+      appendUid: true,
+      showNoticeModal: true,
+      whitelistDomains: [
+        "wazzimagiygg.com",
+        "notmediawiki.wazzimagiygg.com",
+        "bemtevi.wazzimagiygg.com",
+        "support.wazzimagiygg.com"
+      ]
+    };
+  }, [redirectorExtension]);
+
+  const maintenanceExtension = useMemo(() => {
+    return extensionsList.find((e) => e.id === "ext-maintenance-mode");
+  }, [extensionsList]);
+
+  const isMaintenanceActive = useMemo(() => {
+    return Boolean(maintenanceExtension?.config?.isMaintenanceActive);
+  }, [maintenanceExtension]);
+
+  const isBurocrataUser = useMemo(() => {
+    return user?.email?.toLowerCase() === "pedrohenriquecardonaperes@gmail.com";
+  }, [user]);
+
+  const handleTicketsTabClick = () => {
+    const url = supportConfig.supportUrl || "https://support.wazzimagiygg.com/";
+    if (supportConfig.openMode === "redirect") {
+      window.open(url, supportConfig.openInNewTab !== false ? "_blank" : "_self");
+      showToast(`Redirecionando para Central de Suporte & Tickets: ${url}`);
+    } else {
+      setCurrentTab("tickets");
+      setSelectedSector("todos");
+    }
+  };
+
+  const handleQuickToggleMaintenance = async (active: boolean) => {
+    if (!isBurocrataUser) {
+      showToast("Apenas o Burocrata oficial tem permissão.", true);
+      return;
+    }
+    try {
+      const res = await fetch("/api/v1/extensions/ext-maintenance-mode/config", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          config: { isMaintenanceActive: active },
+          userEmail: user?.email
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setExtensionsList((prev) =>
+          prev.map((e) =>
+            e.id === "ext-maintenance-mode"
+              ? { ...e, config: { ...(e.config || {}), isMaintenanceActive: active } }
+              : e
+          )
+        );
+        showToast(active ? "Modo de Manutenção ativado!" : "Modo de Manutenção desativado.");
+      }
+    } catch (err: any) {
+      showToast(err.message, true);
+    }
+  };
+
+  const handleExternalLinkClick = (url: string, e?: React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+    }
+    const isWhitelisted = (redirectorConfig.whitelistDomains || []).some((dom: string) => url.includes(dom));
+    if (isWhitelisted || !redirectorConfig.enabled) {
+      window.open(url, "_blank");
+      return;
+    }
+
+    if (redirectorConfig.showNoticeModal !== false) {
+      setExternalRedirectTarget(url);
+    } else {
+      const base = redirectorConfig.redirectBaseUrl || "https://wazzimagiygg.com/rv/?uid=";
+      const activeUid = uidNav.currentUid || user?.uid || "usr_pedro_cardona_official";
+      const outbound = redirectorConfig.appendUid !== false
+        ? `${base}${encodeURIComponent(activeUid)}&dest=${encodeURIComponent(url)}`
+        : `${base}&dest=${encodeURIComponent(url)}`;
+      window.open(outbound, "_blank");
+    }
+  };
 
   // 3.05.6.d - Inserir o uso do retornar e avançar para navegar pelo UID presente no URL do site
   const uidNav = useUidNavigation();
@@ -402,6 +532,9 @@ export default function App() {
         } catch {
           // ignore
         }
+
+        // Load extensions for 3.05 governance
+        await fetchExtensions();
       } catch (err) {
         console.error("Error loading initial catalog:", err);
       } finally {
@@ -733,8 +866,48 @@ export default function App() {
     showToast("Preferências de privacidade e cookies salvas.");
   };
 
+  // 3.05.3.e: Modo de Manutenção (Bloqueio completo para visitantes e usuários comuns)
+  if (isMaintenanceActive && !isBurocrataUser && !isLoading) {
+    return (
+      <MaintenanceScreen
+        message={maintenanceExtension?.config?.maintenanceMessage}
+        estimatedReturn={maintenanceExtension?.config?.estimatedReturn}
+        onLoginWithGoogle={handleGoogleLogin}
+        currentUser={user}
+        onRefresh={fetchExtensions}
+        supportUrl={supportConfig.supportUrl}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#F8F7F4] text-[#141414] flex flex-col font-sans selection:bg-[#141414] selection:text-white">
+      {/* 3.05.3.e: Top Banner de Manutenção Exclusivo para o Burocrata */}
+      {isMaintenanceActive && isBurocrataUser && (
+        <div className="bg-rose-700 text-white px-4 py-2.5 text-xs font-mono font-bold flex flex-col sm:flex-row items-center justify-between gap-2 border-b-2 border-rose-950 shadow-md sticky top-0 z-50">
+          <div className="flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-white animate-ping shrink-0" />
+            <span>
+              ⚠️ MODO DE MANUTENÇÃO ATIVO — Apenas o Burocrata ({user?.email}) possui acesso irrestrito às configurações do site.
+            </span>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={() => handleQuickToggleMaintenance(false)}
+              className="px-2.5 py-1 bg-white text-rose-900 hover:bg-stone-100 font-mono font-bold text-[11px] uppercase border border-rose-950 cursor-pointer shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]"
+            >
+              Desativar Manutenção
+            </button>
+            <button
+              onClick={() => setEditingExtensionConfig(maintenanceExtension || null)}
+              className="px-2.5 py-1 bg-rose-900 text-white hover:bg-rose-800 font-mono font-bold text-[11px] uppercase border border-white cursor-pointer shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]"
+            >
+              Configurar Extensão
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ============================================ */}
       {/* 1. TOP TICKER & COMPLIANCE BAR */}
       {/* ============================================ */}
@@ -989,7 +1162,7 @@ export default function App() {
               { id: "uwgbooks", label: "UWG Books", icon: Book },
               { id: "wnpx", label: "WNPX / WikiNotPedia", icon: Newspaper },
               { id: "dossie", label: "Dossiê & Abusos Wikipédia", icon: Scale },
-              { id: "tickets", label: "Ouvidoria & Tickets", icon: Ticket },
+              { id: "tickets", label: supportConfig.buttonLabel || "Ouvidoria & Tickets", icon: Ticket },
               { id: "chat", label: "Chat & Mensagens", icon: MessageSquare },
               { id: "notmediawiki", label: "NotMediaWiki (Beta)", icon: Database },
               { id: "bemtevi", label: "Bemtevi (Rede Social)", icon: MessageCircle },
@@ -1001,8 +1174,12 @@ export default function App() {
                 <button
                   key={tab.id}
                   onClick={() => {
-                    setCurrentTab(tab.id as any);
-                    setSelectedSector("todos");
+                    if (tab.id === "tickets") {
+                      handleTicketsTabClick();
+                    } else {
+                      setCurrentTab(tab.id as any);
+                      setSelectedSector("todos");
+                    }
                   }}
                   className={`flex items-center gap-1.5 px-3 py-2 text-xs font-mono font-bold uppercase tracking-wider whitespace-nowrap transition-all cursor-pointer border ${
                     isActive
@@ -1254,9 +1431,8 @@ export default function App() {
                 <div className="flex items-center gap-2">
                   <a
                     href="https://wazzimagiygg.com/wikinotpedia.html"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="paper-button px-3 py-2 text-xs font-mono font-bold uppercase tracking-wider flex items-center gap-1.5"
+                    onClick={(e) => handleExternalLinkClick("https://wazzimagiygg.com/wikinotpedia.html", e)}
+                    className="paper-button px-3 py-2 text-xs font-mono font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer"
                   >
                     <span>Abrir Portal WNPX</span>
                     <ExternalLink className="w-3.5 h-3.5" />
@@ -1349,6 +1525,37 @@ export default function App() {
         {/* VIEW 4: OUVIDORIA & TICKETS */}
         {currentTab === "tickets" && (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+            {/* 3.05.3.b: Banner da Extensão de Suporte & Tickets */}
+            <div className="lg:col-span-12 p-4 bg-sky-50 border-2 border-sky-600 shadow-[4px_4px_0px_0px_rgba(2,132,199,1)] flex flex-col sm:flex-row sm:items-center justify-between gap-4 font-mono text-xs">
+              <div>
+                <div className="flex items-center gap-2 text-sky-950 font-bold text-sm">
+                  <Ticket className="w-4 h-4 text-sky-700" />
+                  <span>Extensão de Suporte & Central de Tickets WZZM (3.05.3.b)</span>
+                </div>
+                <p className="text-stone-700 font-serif text-xs mt-1 leading-relaxed">
+                  Canal oficial parametrizado: <strong className="text-sky-900 break-all">{supportConfig.supportUrl}</strong> • Modo atual: <span className="font-bold">{supportConfig.openMode === 'redirect' ? 'Redirecionamento Externo' : 'Aba Interna'}</span>
+                </p>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <a
+                  href={supportConfig.supportUrl}
+                  target={supportConfig.openInNewTab !== false ? "_blank" : "_self"}
+                  rel="noopener noreferrer"
+                  className="px-3.5 py-2 bg-sky-700 hover:bg-sky-800 text-white font-bold uppercase tracking-wider flex items-center gap-1.5 border-2 border-sky-950 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] text-xs cursor-pointer"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" /> Abrir Link de Suporte
+                </a>
+                {isAdmin && (
+                  <button
+                    onClick={() => setEditingExtensionConfig(supportExtension || null)}
+                    className="px-3.5 py-2 bg-white hover:bg-stone-100 text-stone-900 font-bold uppercase tracking-wider flex items-center gap-1.5 border-2 border-stone-800 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] text-xs cursor-pointer"
+                  >
+                    <Sliders className="w-3.5 h-3.5 text-amber-600" /> Configurar Link
+                  </button>
+                )}
+              </div>
+            </div>
+
             <div className="lg:col-span-6 bg-white border-2 border-[#141414] p-6 shadow-[6px_6px_0px_0px_rgba(20,20,20,1)]">
               <div className="flex items-center gap-2 text-stone-900 border-b-2 border-[#141414] pb-3 mb-5">
                 <Ticket className="w-5 h-5 text-amber-600" />
@@ -2014,8 +2221,8 @@ export default function App() {
               <span>Regras da LGPD (Ciência Absoluta)</span>
             </button>
             <span className="text-stone-700">•</span>
-            <button onClick={() => setCurrentTab("tickets")} className="hover:text-amber-400">
-              Ouvidoria
+            <button onClick={handleTicketsTabClick} className="hover:text-amber-400 cursor-pointer">
+              Ouvidoria & Tickets
             </button>
             <span className="text-stone-700">•</span>
             <button
@@ -2028,9 +2235,8 @@ export default function App() {
             <span className="text-stone-700">•</span>
             <a
               href="https://wazzimagiygg.com/donate/"
-              target="_blank"
-              rel="noreferrer"
-              className="text-amber-400 hover:text-amber-300 flex items-center gap-1"
+              onClick={(e) => handleExternalLinkClick("https://wazzimagiygg.com/donate/", e)}
+              className="text-amber-400 hover:text-amber-300 flex items-center gap-1 cursor-pointer"
             >
               <span>💝 Doações</span>
             </a>
@@ -2105,6 +2311,54 @@ export default function App() {
           }}
         />
       )}
+
+      {/* 16. MODAL DO REDIRECIONADOR DE LINKS EXTERNOS (3.05.3.c) */}
+      <ExternalRedirectModal
+        isOpen={!!externalRedirectTarget}
+        targetUrl={externalRedirectTarget || ""}
+        redirectorConfig={redirectorConfig}
+        activeUid={uidNav.currentUid || user?.uid || "usr_pedro_cardona_official"}
+        onClose={() => setExternalRedirectTarget(null)}
+        onProceed={(finalUrl) => {
+          setExternalRedirectTarget(null);
+          window.open(finalUrl, "_blank");
+        }}
+      />
+
+      {/* 17. MODAL DE CONFIGURAÇÃO DE EXTENSÕES (3.05.3.a, 3.05.3.b, 3.05.3.c, 3.05.3.e) */}
+      <ExtensionConfigModal
+        isOpen={!!editingExtensionConfig}
+        extension={editingExtensionConfig}
+        onClose={() => setEditingExtensionConfig(null)}
+        onSaveConfig={async (extId, newConf, updatedMeta) => {
+          try {
+            const res = await fetch(`/api/v1/extensions/${extId}/config`, {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ config: newConf, userEmail: user?.email })
+            });
+            const data = await res.json();
+            if (data.success) {
+              setExtensionsList((prev) =>
+                prev.map((e) =>
+                  e.id === extId
+                    ? { ...e, ...updatedMeta, config: { ...(e.config || {}), ...newConf } }
+                    : e
+                )
+              );
+              showToast("Configurações salvas com sucesso!");
+              return true;
+            }
+            showToast(data.error || "Erro ao salvar configuração.", true);
+            return false;
+          } catch (err: any) {
+            showToast(err.message, true);
+            return false;
+          }
+        }}
+        isBureaucrat={isBurocrataUser}
+        currentUserEmail={user?.email}
+      />
     </div>
   );
 }
