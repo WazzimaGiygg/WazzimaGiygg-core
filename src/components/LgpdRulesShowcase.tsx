@@ -327,7 +327,7 @@ export default function LgpdRulesShowcase({
       doc.setFont("helvetica", "normal");
       doc.setFontSize(7.5);
       doc.setTextColor(230, 230, 230);
-      doc.text("WazzimaGiygg • Ouvidoria e DPO: dpo@wazzimagiygg.com • Documento emitido com assinatura digital do sistema.", 105, 289, { align: "center" });
+      doc.text("WazzimaGiygg • Ouvidoria e DPO: pedrohenriquecardonaperes@gmail.com • Documento emitido com assinatura digital do sistema.", 105, 289, { align: "center" });
 
       doc.save(`Certidao_Conformidade_LGPD_${protocolo}.pdf`);
       if (showToast) showToast("Certidão de Conformidade LGPD gerada com sucesso!");
@@ -690,7 +690,7 @@ export default function LgpdRulesShowcase({
                     <li>
                       <span className="text-stone-500 block text-[10px] uppercase">E-mail Oficial do DPO:</span>
                       <strong className="text-amber-800 bg-amber-50 px-1 py-0.5 border border-amber-300">
-                        dpo@wazzimagiygg.com
+                        pedrohenriquecardonaperes@gmail.com
                       </strong>
                     </li>
                     <li>
@@ -842,7 +842,7 @@ export default function LgpdRulesShowcase({
               LEI Nº 13.709/2018 (LGPD) • MARCO CIVIL Nº 12.965/2014
             </span>
             <span>•</span>
-            <span>DPO: dpo@wazzimagiygg.com</span>
+            <span>DPO: pedrohenriquecardonaperes@gmail.com</span>
           </div>
 
           <div className="flex items-center gap-3">
