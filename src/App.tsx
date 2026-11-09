@@ -76,6 +76,7 @@ import UidNavigationBar from "./components/UidNavigationBar";
 import UserProfileModal from "./components/UserProfileModal";
 import LgpdRulesShowcase from "./components/LgpdRulesShowcase";
 import LgpdFloatingComplianceBadge from "./components/LgpdFloatingComplianceBadge";
+import DossieAbusosView from "./components/DossieAbusosView";
 
 export default function App() {
   // Authentication & Role States
@@ -1333,74 +1334,16 @@ export default function App() {
 
         {/* VIEW 3: DOSSIÊ & TRANSPARÊNCIA (Abusos Wikipédia / Marco Civil / LGPD) */}
         {currentTab === "dossie" && (
-          <div className="space-y-6">
-            <div className="bg-white border-2 border-[#141414] p-6 sm:p-8 shadow-[6px_6px_0px_0px_rgba(20,20,20,1)]">
-              <div className="border-b-2 border-[#141414] pb-4 mb-6">
-                <div className="flex items-center gap-2 text-red-700 font-mono text-xs font-bold uppercase tracking-widest mb-1">
-                  <Scale className="w-4 h-4" />
-                  <span>TRANSPARÊNCIA PÚBLICA & REGISTRO FORENSE</span>
-                </div>
-                <h2 className="text-3xl sm:text-4xl font-editorial font-bold text-[#141414]">
-                  Dossiê: Abusos e Assédio na Wikipédia Lusófona
-                </h2>
-                <p className="text-xs font-mono text-stone-700 mt-2 leading-relaxed">
-                  Compilação oficial de relatórios, registros e evidências de perseguição sistemática, abusos de privilégios de moderação e tentativas ilegais de doxxing perpetradas contra o projeto WazzimaGiygg.
-                </p>
-              </div>
-
-              <div className="space-y-4 text-xs font-serif text-stone-800 leading-relaxed">
-                <div className="p-4 bg-amber-50 border-l-4 border-amber-600">
-                  <h4 className="font-mono font-bold text-xs uppercase text-amber-900 mb-1">
-                    Conformidade com a Lei Geral de Proteção de Dados (Lei 13.709/2018)
-                  </h4>
-                  <p>
-                    A divulgação de dados privados de usuários, históricos escolares, nomes de familiares e endereços IP sem ordem judicial expressa constitui violação direta do art. 5º da CF/88 e da LGPD. Este portal atua na preservação dos direitos civis e digitais dos cidadãos.
-                  </p>
-                </div>
-
-                <div className="p-4 bg-stone-100 border-l-4 border-stone-800">
-                  <h4 className="font-mono font-bold text-xs uppercase text-stone-900 mb-1">
-                    Marco Civil da Internet (Lei nº 12.965/2014)
-                  </h4>
-                  <p>
-                    Reiteramos a obrigação legal das plataformas de respeitarem a neutralidade e não utilizarem mecanismos algorítmicos ou conluio de editores para silenciar a pluralidade de conhecimento e vozes independentes na web.
-                  </p>
-                </div>
-              </div>
-
-              {/* Sanctioned Cities & Moderators Table */}
-              <div className="mt-8 border-t-2 border-[#141414] pt-6">
-                <h3 className="font-mono font-bold text-sm uppercase tracking-wider mb-2 flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 text-red-600" />
-                  <span>Cidades & Moderadores sob Observação Forense</span>
-                </h3>
-                <p className="text-xs font-mono text-stone-600 mb-4">
-                  Origens geográficas e credenciais associadas a incidentes documentados de alteração indevida de dados.
-                </p>
-
-                <div className="overflow-x-auto border border-[#141414]">
-                  <table className="w-full text-left text-xs font-mono">
-                    <thead className="bg-[#141414] text-white uppercase text-[10px] tracking-wider">
-                      <tr>
-                        <th className="py-2.5 px-4 border-r border-stone-700">Município / Localidade</th>
-                        <th className="py-2.5 px-4 border-r border-stone-700">Identificador / Moderador</th>
-                        <th className="py-2.5 px-4">Status de Monitoramento</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-stone-200">
-                      {sanctionsList.map((item, idx) => (
-                        <tr key={idx} className="hover:bg-stone-50">
-                          <td className="py-2 px-4 font-bold border-r border-stone-200">{item.cidade}</td>
-                          <td className="py-2 px-4 border-r border-stone-200">{item.moderador}</td>
-                          <td className="py-2 px-4 text-red-700 font-bold">Documentado</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          </div>
+          <DossieAbusosView
+            sanctionsList={sanctionsList}
+            showToast={showToast}
+            onOpenTicketForm={(tipo) => {
+              setCurrentTab("tickets");
+              if (tipo) {
+                setTicketForm((prev) => ({ ...prev, tipo }));
+              }
+            }}
+          />
         )}
 
         {/* VIEW 4: OUVIDORIA & TICKETS */}
