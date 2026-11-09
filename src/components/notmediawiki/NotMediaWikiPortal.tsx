@@ -56,6 +56,7 @@ import {
 import jsPDF from 'jspdf';
 import ExtensionConfigModal from '../ExtensionConfigModal';
 import AddExtensionCatalogModal from '../AddExtensionCatalogModal';
+import { exportWikiArticleFormattedPdf } from '../../utils/pdfExport';
 import {
   WikiArticle,
   WikiRevision,
@@ -794,7 +795,7 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
     }
   };
 
-  // Export Wiki Article to PDF using jsPDF
+  // Export Wiki Article to Formatted PDF (Preserving Original Wikitext & HTML Structure)
   const handleExportWikiToPdf = async () => {
     if (!currentArticle) {
       showToast('Nenhum artigo selecionado para exportar.', true);
@@ -803,116 +804,13 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
 
     try {
       setIsExportingPdf(true);
-      showToast('Gerando documento PDF oficial NotMediaWiki...');
-
-      const doc = new jsPDF({
-        orientation: 'portrait',
-        unit: 'mm',
-        format: 'a4'
+      showToast('Renderizando verbete original com formatação em PDF...');
+      await exportWikiArticleFormattedPdf(currentArticle, parseResult.html, {
+        onProgress: (statusMsg) => showToast(statusMsg)
       });
-
-      const pageWidth = doc.internal.pageSize.getWidth();
-      const pageHeight = doc.internal.pageSize.getHeight();
-      const margin = 20;
-      const contentWidth = pageWidth - margin * 2;
-      let y = margin;
-
-      // Header Banner
-      doc.setFont('times', 'bold');
-      doc.setFontSize(14);
-      doc.setTextColor(20, 20, 20);
-      doc.text('NOTMEDIAWIKI — ENCICLOPÉDIA DIGITAL WAZZIMAGIYGG', pageWidth / 2, y, { align: 'center' });
-      y += 5;
-
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(7.5);
-      doc.setTextColor(90, 90, 90);
-      doc.text('PARSOID AST COMPILER • ZERO-TRUST ARCHITECTURE • NOTMEDIAWIKI.WAZZIMAGIYGG.COM', pageWidth / 2, y, { align: 'center' });
-      y += 4;
-
-      doc.setDrawColor(20, 20, 20);
-      doc.setLineWidth(0.6);
-      doc.line(margin, y, pageWidth - margin, y);
-      y += 1.5;
-      doc.setLineWidth(0.2);
-      doc.line(margin, y, pageWidth - margin, y);
-      y += 6;
-
-      // Article Title
-      doc.setFont('times', 'bold');
-      doc.setFontSize(18);
-      doc.setTextColor(15, 15, 15);
-      const titleLines = doc.splitTextToSize(currentArticle.title || 'Verbete', contentWidth);
-      doc.text(titleLines, margin, y);
-      y += titleLines.length * 7 + 2;
-
-      // Metadata
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(8);
-      doc.setTextColor(100, 100, 100);
-      const metaText = `Última Revisão: ${currentArticle.latestRevisionId} • Atualizado: ${new Date(currentArticle.updatedAt).toLocaleDateString('pt-BR')} • Visualizações: ${currentArticle.views}`;
-      doc.text(metaText, margin, y);
-      y += 4;
-
-      doc.setDrawColor(210, 210, 210);
-      doc.setLineWidth(0.3);
-      doc.line(margin, y, pageWidth - margin, y);
-      y += 6;
-
-      // Plain text extraction
-      const plainText = stripHtmlToPlainText(parseResult.html) || 'Sem conteúdo textual.';
-      const paragraphs = plainText
-        .split(/\n\s*\n/)
-        .map((p) => p.replace(/\s+/g, ' ').trim())
-        .filter(Boolean);
-
-      doc.setFont('times', 'normal');
-      doc.setFontSize(10);
-      doc.setTextColor(30, 30, 30);
-      const lineHeight = 5;
-
-      for (const para of paragraphs) {
-        const lines = doc.splitTextToSize(para, contentWidth);
-        const blockHeight = lines.length * lineHeight;
-
-        if (y + blockHeight > pageHeight - margin - 20) {
-          doc.addPage();
-          y = margin + 5;
-          doc.setFont('helvetica', 'italic');
-          doc.setFontSize(7.5);
-          doc.setTextColor(120, 120, 120);
-          doc.text(`NotMediaWiki • ${currentArticle.title}`, margin, y - 5);
-          doc.setDrawColor(220, 220, 220);
-          doc.line(margin, y - 3, pageWidth - margin, y - 3);
-          doc.setFont('times', 'normal');
-          doc.setFontSize(10);
-          doc.setTextColor(30, 30, 30);
-        }
-
-        doc.text(lines, margin, y);
-        y += blockHeight + 3;
-      }
-
-      // Add page numbers
-      const totalPages = doc.internal.pages.length - 1;
-      for (let i = 1; i <= totalPages; i++) {
-        doc.setPage(i);
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(7.5);
-        doc.setTextColor(130, 130, 130);
-        doc.text(
-          `Página ${i} de ${totalPages} • NotMediaWiki (WazzimaGiygg) • notmediawiki.wazzimagiygg.com`,
-          pageWidth / 2,
-          pageHeight - 10,
-          { align: 'center' }
-        );
-      }
-
-      const filename = `notmediawiki_${currentArticle.slug.toLowerCase()}.pdf`;
-      doc.save(filename);
-      showToast(`✓ PDF "${filename}" exportado com sucesso!`);
+      showToast(`✓ Documento original formatado "${currentArticle.title}" exportado em PDF com sucesso!`);
     } catch (err: any) {
-      showToast('Erro ao exportar PDF: ' + err.message, true);
+      showToast('Erro ao exportar PDF formatado: ' + err.message, true);
     } finally {
       setIsExportingPdf(false);
     }

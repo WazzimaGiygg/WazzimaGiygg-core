@@ -81,6 +81,7 @@ import MaintenanceScreen from "./components/MaintenanceScreen";
 import ExternalRedirectModal from "./components/ExternalRedirectModal";
 import ExtensionConfigModal from "./components/ExtensionConfigModal";
 import { WikiExtension } from "./data/notMediaWikiData";
+import { exportArticleFormattedPdf } from "./utils/pdfExport";
 
 export default function App() {
   // Authentication & Role States
@@ -612,175 +613,18 @@ export default function App() {
     setTimeout(() => setCitationCopied(false), 3000);
   };
 
-  // Save Article as PDF via jsPDF
+  // Save Article as Formatted PDF (Preserving Original Document Styles & Structure)
   const handleSaveArticleAsPdf = async (article: Article) => {
     try {
       setIsGeneratingPdf(true);
-      showToast("Gerando documento PDF oficial do acervo...");
-
-      const doc = new jsPDF({
-        orientation: "portrait",
-        unit: "mm",
-        format: "a4"
+      showToast("Renderizando documento original com formatação em PDF...");
+      await exportArticleFormattedPdf(article, {
+        onProgress: (statusMsg) => showToast(statusMsg)
       });
-
-      const pageWidth = doc.internal.pageSize.getWidth();
-      const pageHeight = doc.internal.pageSize.getHeight();
-      const margin = 20;
-      const contentWidth = pageWidth - margin * 2;
-      let y = margin;
-
-      // Header Banner (Vintage Newspaper Style)
-      doc.setFont("times", "bold");
-      doc.setFontSize(13);
-      doc.setTextColor(20, 20, 20);
-      doc.text("WAZZIMAGIYGG — ACERVO HISTÓRICO & DIGITAL", pageWidth / 2, y, { align: "center" });
-      y += 5;
-
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(7.5);
-      doc.setTextColor(100, 100, 100);
-      doc.text("FUNDADO SOB LEI Nº 12.965/2014 • PRESERVAÇÃO DE CONHECIMENTO E ACERVO ABERTO", pageWidth / 2, y, { align: "center" });
-      y += 4;
-
-      doc.setDrawColor(20, 20, 20);
-      doc.setLineWidth(0.6);
-      doc.line(margin, y, pageWidth - margin, y);
-      y += 1.5;
-      doc.setLineWidth(0.2);
-      doc.line(margin, y, pageWidth - margin, y);
-      y += 6;
-
-      // Section / Collection Badge
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(8.5);
-      doc.setTextColor(180, 83, 9);
-      const collectionLabel = `COLEÇÃO: ${(article.colecao || "Geral").toUpperCase()}   |   SETOR: ${(article.setor || "Geral").toUpperCase()}`;
-      doc.text(collectionLabel, margin, y);
-      y += 6;
-
-      // Article Title
-      doc.setFont("times", "bold");
-      doc.setFontSize(17);
-      doc.setTextColor(15, 15, 15);
-      const titleLines = doc.splitTextToSize(article.titulo || "Documento sem Título", contentWidth);
-      doc.text(titleLines, margin, y);
-      y += titleLines.length * 6.5 + 2;
-
-      // Metadata Bar
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(8);
-      doc.setTextColor(90, 90, 90);
-      const authorText = `Autor: ${article.criadorEmail || "Redação WZZM"}`;
-      const dateText = `Atualizado: ${article.ultimaEdicao || article.dataCriacao || "Recente"}`;
-      const viewsText = `Leituras: ${article.visualizacoes || 0}`;
-      doc.text(`${authorText}   •   ${dateText}   •   ${viewsText}`, margin, y);
-      y += 4;
-
-      doc.setDrawColor(210, 210, 210);
-      doc.setLineWidth(0.3);
-      doc.line(margin, y, pageWidth - margin, y);
-      y += 6;
-
-      // Clean HTML to text preserving paragraphs
-      const rawHtml = article.conteudo || article.descricao || "";
-      const formattedText = rawHtml
-        .replace(/<\/p>|<br\s*\/?>|<\/h[1-6]>|<\/div>|<\/li>/gi, "\n\n")
-        .replace(/<li[^>]*>/gi, "• ");
-      const plainText = stripHtmlToPlainText(formattedText) || "Sem conteúdo textual disponível.";
-
-      const paragraphs = plainText
-        .split(/\n\s*\n/)
-        .map((p) => p.replace(/\s+/g, " ").trim())
-        .filter(Boolean);
-
-      doc.setFont("times", "normal");
-      doc.setFontSize(10);
-      doc.setTextColor(30, 30, 30);
-      const lineHeight = 5;
-
-      for (const para of paragraphs) {
-        const lines = doc.splitTextToSize(para, contentWidth);
-        const blockHeight = lines.length * lineHeight;
-
-        if (y + blockHeight > pageHeight - margin - 22) {
-          doc.addPage();
-          y = margin + 5;
-          // Running header on sub-pages
-          doc.setFont("helvetica", "italic");
-          doc.setFontSize(7.5);
-          doc.setTextColor(120, 120, 120);
-          doc.text(`WazzimaGiygg • ${article.titulo.substring(0, 50)}...`, margin, y - 5);
-          doc.setDrawColor(220, 220, 220);
-          doc.line(margin, y - 3, pageWidth - margin, y - 3);
-          doc.setFont("times", "normal");
-          doc.setFontSize(10);
-          doc.setTextColor(30, 30, 30);
-        }
-
-        doc.text(lines, margin, y);
-        y += blockHeight + 3;
-      }
-
-      // Check space for ABNT citation box
-      const citationText = getAbntCitation(article);
-      const citationLines = doc.splitTextToSize(citationText, contentWidth - 8);
-      const citationBoxHeight = citationLines.length * 4.2 + 10;
-
-      if (y + citationBoxHeight > pageHeight - margin - 15) {
-        doc.addPage();
-        y = margin + 5;
-      } else {
-        y += 4;
-      }
-
-      // Draw Citation Box
-      doc.setFillColor(248, 247, 244);
-      doc.setDrawColor(180, 180, 180);
-      doc.setLineWidth(0.3);
-      doc.rect(margin, y, contentWidth, citationBoxHeight, "FD");
-
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(7.5);
-      doc.setTextColor(60, 60, 60);
-      doc.text("COMO CITAR ESTE DOCUMENTO (NORMAS ABNT):", margin + 4, y + 4.5);
-
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(7.5);
-      doc.setTextColor(40, 40, 40);
-      doc.text(citationLines, margin + 4, y + 9);
-      y += citationBoxHeight + 5;
-
-      // Add page numbers on all pages
-      const totalPages = doc.internal.pages.length - 1;
-      for (let i = 1; i <= totalPages; i++) {
-        doc.setPage(i);
-        doc.setFont("helvetica", "normal");
-        doc.setFontSize(7.5);
-        doc.setTextColor(130, 130, 130);
-        doc.text(
-          `Página ${i} de ${totalPages} • Documento Oficial WZZM • Preservado sob Lei nº 12.965/2014`,
-          pageWidth / 2,
-          pageHeight - 10,
-          { align: "center" }
-        );
-      }
-
-      // Save file
-      const safeTitle = (article.titulo || "artigo")
-        .toLowerCase()
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "")
-        .replace(/[^a-z0-9]/g, "_")
-        .replace(/_+/g, "_")
-        .substring(0, 30);
-      const filename = `wzzm_${safeTitle || "artigo"}.pdf`;
-
-      doc.save(filename);
-      showToast(`✓ PDF "${filename}" baixado com sucesso!`);
+      showToast(`✓ Documento original formatado "${article.titulo}" exportado em PDF com sucesso!`);
     } catch (err: any) {
-      console.error("Erro ao gerar PDF:", err);
-      showToast("Erro ao gerar o arquivo PDF: " + (err.message || ""), true);
+      console.error("Erro ao gerar PDF formatado:", err);
+      showToast("Erro ao gerar o arquivo PDF formatado: " + (err.message || ""), true);
     } finally {
       setIsGeneratingPdf(false);
     }
