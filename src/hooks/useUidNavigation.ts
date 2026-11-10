@@ -3,10 +3,43 @@
  * SPDX-License-Identifier: Apache-2.0
  * 
  * 3.05.6.d - Inserir o uso do retornar e avançar para navegar pelo UID presente no URL do site
- * Gerenciador de navegação sincronizado com o parâmetro `?uid=<user_id>` no URL do site.
+ * Gerenciador de navegação sincronizado com o parâmetro `?uid=<id>` no URL do site e botões nativos do navegador.
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+
+export const PORTAL_TAB_METADATA = [
+  { id: 'wikiworldweb', label: 'WikiWorldWeb', description: 'Edição Geral: Notícias & Sociedade' },
+  { id: 'materiadeensaio', label: 'Matéria de Ensaio', description: 'Matérias de Ensaio & Opinião' },
+  { id: 'academico', label: 'Acadêmico', description: 'Metodologia e Pesquisa Acadêmica' },
+  { id: 'materia', label: 'Matérias Didáticas', description: 'Ensino Fundamental e Médio' },
+  { id: 'uwgbooks', label: 'UWG Books', description: 'Acervo Digital de Livros e Obras' },
+  { id: 'wnpx', label: 'WNPX / WikiNotPedia', description: 'Enciclopédia Livre e Aberta WNPX' },
+  { id: 'dossie', label: 'Dossiê & Abusos', description: 'Dossiê de Abusos da Wikipédia' },
+  { id: 'tickets', label: 'Ouvidoria & Tickets', description: 'Central de Atendimento e LGPD' },
+  { id: 'chat', label: 'Chat & Mensagens', description: 'Comunicação em Tempo Real' },
+  { id: 'notmediawiki', label: 'NotMediaWiki (Beta)', description: 'Motor Wiki Descentralizado' },
+  { id: 'bemtevi', label: 'Bemtevi (Rede Social)', description: 'Rede Social e Microblogging' },
+  { id: 'lgpd', label: 'Regras LGPD', description: 'Conformidade Lei 13.709/2018' }
+] as const;
+
+export type PortalTabId = typeof PORTAL_TAB_METADATA[number]['id'];
+
+export const ALL_PORTAL_TAB_IDS = PORTAL_TAB_METADATA.map((t) => t.id);
+
+export function parseTabFromUid(uid: string | null | undefined): PortalTabId | null {
+  if (!uid) return null;
+  const clean = uid.trim().toLowerCase();
+  const stripped = clean.startsWith('tab_') ? clean.substring(4) : clean;
+  const match = PORTAL_TAB_METADATA.find((t) => t.id === stripped);
+  if (match) return match.id;
+  if (stripped === 'inicio' || stripped === 'home') return 'wikiworldweb';
+  return null;
+}
+
+export function isTabUid(uid: string | null | undefined): boolean {
+  return parseTabFromUid(uid) !== null;
+}
 
 export interface UidNavigationState {
   currentUid: string | null;
@@ -15,6 +48,7 @@ export interface UidNavigationState {
   canGoBack: boolean;
   canGoForward: boolean;
   navigateToUid: (uid: string) => void;
+  replaceUid: (uid: string) => void;
   navigateBack: () => void;
   navigateForward: () => void;
   jumpToIndex: (index: number) => void;
@@ -23,7 +57,7 @@ export interface UidNavigationState {
 }
 
 export function useUidNavigation(): UidNavigationState {
-  // Extract initial ?uid= from current URL
+  // Extract ?uid= from current URL
   const getUidFromUrl = (): string | null => {
     if (typeof window === 'undefined') return null;
     const params = new URLSearchParams(window.location.search);
@@ -43,7 +77,21 @@ export function useUidNavigation(): UidNavigationState {
     stateRef.current = { currentUid, uidHistory, historyIndex };
   }, [currentUid, uidHistory, historyIndex]);
 
-  // Handle URL popstate (browser back/forward or history.back()/history.forward())
+  // Sync initial state into history entry if not already set
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const currentFromUrl = getUidFromUrl();
+    if (currentFromUrl && !window.history.state?.uid) {
+      const url = new URL(window.location.href);
+      window.history.replaceState(
+        { uid: currentFromUrl, uidIndex: 0, timestamp: Date.now() },
+        '',
+        url.toString()
+      );
+    }
+  }, []);
+
+  // Handle URL popstate (triggered by native browser Back / Forward buttons and history.back/forward)
   useEffect(() => {
     const handlePopState = (event: PopStateEvent) => {
       const urlUid = getUidFromUrl();
@@ -51,8 +99,9 @@ export function useUidNavigation(): UidNavigationState {
 
       if (event.state && typeof event.state.uidIndex === 'number') {
         const targetIndex = event.state.uidIndex;
+        const targetUid = event.state.uid !== undefined ? event.state.uid : urlUid;
         setHistoryIndex(targetIndex);
-        setCurrentUid(event.state.uid || urlUid);
+        setCurrentUid(targetUid);
       } else if (urlUid) {
         // Find if this UID is already in our history stack
         const existingIdx = currentRef.uidHistory.lastIndexOf(urlUid);
@@ -60,13 +109,13 @@ export function useUidNavigation(): UidNavigationState {
           setHistoryIndex(existingIdx);
           setCurrentUid(urlUid);
         } else {
-          // New UID encountered via external navigation
+          // New UID encountered via direct navigation or external change
           setUidHistory((prev) => [...prev, urlUid]);
           setHistoryIndex(currentRef.uidHistory.length);
           setCurrentUid(urlUid);
         }
       } else {
-        // URL has no UID
+        // URL has no UID parameter
         setCurrentUid(null);
         setHistoryIndex(-1);
       }
@@ -100,7 +149,7 @@ export function useUidNavigation(): UidNavigationState {
 
     const { currentUid: cur, uidHistory: hist, historyIndex: idx } = stateRef.current;
 
-    // If clicking on the currently active UID, do nothing to avoid duplicate history noise
+    // If clicking on the currently active UID, do nothing to avoid duplicate history entries
     if (cur === cleanUid && idx >= 0) {
       return;
     }
@@ -117,50 +166,64 @@ export function useUidNavigation(): UidNavigationState {
     setUrlUid(cleanUid, newIndex);
   }, [setUrlUid]);
 
-  // Navigate Back (Retornar)
+  // Replace current UID in URL and history without creating a new history step
+  const replaceUid = useCallback((uid: string) => {
+    if (!uid || typeof window === 'undefined') return;
+    const cleanUid = uid.trim();
+    if (!cleanUid) return;
+
+    const url = new URL(window.location.href);
+    url.searchParams.set('uid', cleanUid);
+
+    const nextState = { uid: cleanUid, uidIndex: 0, timestamp: Date.now() };
+    window.history.replaceState(nextState, '', url.toString());
+
+    setCurrentUid(cleanUid);
+    setUidHistory([cleanUid]);
+    setHistoryIndex(0);
+  }, []);
+
+  // Navigate Back (Retornar) - delegates to native window.history.back()
   const navigateBack = useCallback(() => {
-    const { historyIndex: idx, uidHistory: hist } = stateRef.current;
+    if (typeof window === 'undefined') return;
+    const { historyIndex: idx } = stateRef.current;
     if (idx > 0) {
-      const prevIndex = idx - 1;
-      const prevUid = hist[prevIndex];
-      setHistoryIndex(prevIndex);
-      setCurrentUid(prevUid);
-      setUrlUid(prevUid, prevIndex);
-      // Also notify window history
       try {
         window.history.back();
-      } catch {
-        // Safe fallback
+      } catch (e) {
+        console.warn('history.back error:', e);
       }
     }
-  }, [setUrlUid]);
+  }, []);
 
-  // Navigate Forward (Avançar)
+  // Navigate Forward (Avançar) - delegates to native window.history.forward()
   const navigateForward = useCallback(() => {
+    if (typeof window === 'undefined') return;
     const { historyIndex: idx, uidHistory: hist } = stateRef.current;
     if (idx >= 0 && idx < hist.length - 1) {
-      const nextIndex = idx + 1;
-      const nextUid = hist[nextIndex];
-      setHistoryIndex(nextIndex);
-      setCurrentUid(nextUid);
-      setUrlUid(nextUid, nextIndex);
-      // Also notify window history
       try {
         window.history.forward();
-      } catch {
-        // Safe fallback
+      } catch (e) {
+        console.warn('history.forward error:', e);
       }
     }
-  }, [setUrlUid]);
+  }, []);
 
   // Jump directly to an index in the stack
   const jumpToIndex = useCallback((targetIndex: number) => {
-    const { uidHistory: hist } = stateRef.current;
-    if (targetIndex >= 0 && targetIndex < hist.length) {
-      const targetUid = hist[targetIndex];
-      setHistoryIndex(targetIndex);
-      setCurrentUid(targetUid);
-      setUrlUid(targetUid, targetIndex);
+    if (typeof window === 'undefined') return;
+    const { historyIndex: curIdx, uidHistory: hist } = stateRef.current;
+    if (targetIndex >= 0 && targetIndex < hist.length && targetIndex !== curIdx) {
+      const delta = targetIndex - curIdx;
+      try {
+        window.history.go(delta);
+      } catch {
+        // Fallback if history.go fails
+        const targetUid = hist[targetIndex];
+        setHistoryIndex(targetIndex);
+        setCurrentUid(targetUid);
+        setUrlUid(targetUid, targetIndex);
+      }
     }
   }, [setUrlUid]);
 
@@ -192,6 +255,7 @@ export function useUidNavigation(): UidNavigationState {
     canGoBack,
     canGoForward,
     navigateToUid,
+    replaceUid,
     navigateBack,
     navigateForward,
     jumpToIndex,

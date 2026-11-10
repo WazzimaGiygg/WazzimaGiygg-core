@@ -4,22 +4,27 @@
  * 
  * 3.05.6.d - Inserir o uso do retornar e avançar para navegar pelo UID presente no URL do site
  * Barra de Navegação por UID com controles Retornar (⬅️) e Avançar (➡️), histórico visual e integração com URL.
+ * Suporta navegação entre abas por UID, artigos e perfis de usuário com suporte total aos botões nativos do navegador.
  */
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   ArrowLeft,
   ArrowRight,
-  Link as LinkIcon,
   Copy,
   Check,
   X,
   User,
   History,
   Compass,
-  ChevronDown
+  ChevronDown,
+  LayoutGrid
 } from 'lucide-react';
-import { UidNavigationState } from '../hooks/useUidNavigation';
+import {
+  UidNavigationState,
+  PORTAL_TAB_METADATA,
+  parseTabFromUid
+} from '../hooks/useUidNavigation';
 
 interface UidNavigationBarProps {
   nav: UidNavigationState;
@@ -37,6 +42,15 @@ export default function UidNavigationBar({
   const [copied, setCopied] = useState(false);
   const [isQuickMenuOpen, setIsQuickMenuOpen] = useState(false);
   const [customInputUid, setCustomInputUid] = useState('');
+
+  const activeTabId = useMemo(() => {
+    return parseTabFromUid(nav.currentUid);
+  }, [nav.currentUid]);
+
+  const activeTabInfo = useMemo(() => {
+    if (!activeTabId) return null;
+    return PORTAL_TAB_METADATA.find((t) => t.id === activeTabId) || null;
+  }, [activeTabId]);
 
   const handleCopyUrl = () => {
     const ok = nav.copyShareableUrl();
@@ -71,7 +85,7 @@ export default function UidNavigationBar({
             3.05.6.d • UID URL
           </span>
 
-          {/* Navigation Controls: Retornar & Avançar */}
+          {/* Navigation Controls: Retornar & Avançar (also synced with native browser buttons) */}
           <div className="inline-flex rounded-none border border-stone-600 bg-stone-900 overflow-hidden shadow-[2px_2px_0px_0px_rgba(0,0,0,0.8)]">
             {/* RETORNAR (VOLTAR) */}
             <button
@@ -85,8 +99,8 @@ export default function UidNavigationBar({
               }`}
               title={
                 nav.canGoBack
-                  ? 'Retornar ao UID anterior no histórico do URL (Alt + ⬅️)'
-                  : 'Sem UID anterior para retornar'
+                  ? 'Retornar ao UID anterior no histórico (ou use botão Voltar do navegador / Alt+⬅️)'
+                  : 'Sem UID anterior no histórico para retornar'
               }
             >
               <ArrowLeft className="w-3.5 h-3.5 stroke-[2.5]" />
@@ -108,8 +122,8 @@ export default function UidNavigationBar({
               }`}
               title={
                 nav.canGoForward
-                  ? 'Avançar ao próximo UID no histórico do URL (Alt + ➡️)'
-                  : 'Sem UID posterior para avançar'
+                  ? 'Avançar ao próximo UID no histórico (ou use botão Avançar do navegador / Alt+➡️)'
+                  : 'Sem UID posterior no histórico para avançar'
               }
             >
               <span>Avançar</span>
@@ -135,12 +149,22 @@ export default function UidNavigationBar({
             </span>
             {nav.currentUid ? (
               <div className="flex items-center gap-1.5">
-                <span className="bg-amber-500/10 text-amber-300 font-bold px-1.5 py-0.2 border border-amber-500/30 text-[11px] max-w-[160px] sm:max-w-[220px] truncate">
+                {activeTabInfo ? (
+                  <span className="bg-amber-400 text-black font-bold px-1.5 py-0.2 text-[9px] uppercase tracking-wider">
+                    ABA: {activeTabInfo.label}
+                  </span>
+                ) : (
+                  <span className="bg-indigo-500/20 text-indigo-300 font-bold px-1.5 py-0.2 text-[9px] uppercase tracking-wider border border-indigo-500/30">
+                    UID
+                  </span>
+                )}
+
+                <span className="bg-amber-500/10 text-amber-300 font-bold px-1.5 py-0.2 border border-amber-500/30 text-[11px] max-w-[160px] sm:max-w-[200px] truncate">
                   ?uid={nav.currentUid}
                 </span>
 
-                {/* Open Profile Button */}
-                {onOpenUserProfile && (
+                {/* Open Profile Button (shown only if not a tab) */}
+                {!activeTabInfo && onOpenUserProfile && (
                   <button
                     type="button"
                     onClick={() => onOpenUserProfile(nav.currentUid!)}
@@ -182,13 +206,13 @@ export default function UidNavigationBar({
             )}
           </div>
 
-          {/* Quick Dropdown Menu for testing UIDs from Database */}
+          {/* Quick Dropdown Menu for testing UIDs (Tabs, History, Database Users) */}
           <div className="relative">
             <button
               type="button"
               onClick={() => setIsQuickMenuOpen(!isQuickMenuOpen)}
               className="flex items-center gap-1 bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-600 px-2 py-1 text-[11px] font-bold uppercase tracking-wider cursor-pointer"
-              title="Testar navegação rápida entre UIDs do banco de dados"
+              title="Testar navegação rápida entre abas e UIDs"
             >
               <Compass className="w-3 h-3 text-amber-400" />
               <span>Trocar UID</span>
@@ -196,15 +220,15 @@ export default function UidNavigationBar({
             </button>
 
             {isQuickMenuOpen && (
-              <div className="absolute right-0 mt-1 w-72 bg-[#16161B] border-2 border-stone-600 shadow-2xl z-50 p-3 text-left">
-                <div className="flex items-center justify-between border-b border-stone-700 pb-1.5 mb-2">
+              <div className="absolute right-0 mt-1 w-80 max-h-[85vh] overflow-y-auto bg-[#16161B] border-2 border-stone-600 shadow-2xl z-50 p-3 text-left">
+                <div className="flex items-center justify-between border-b border-stone-700 pb-1.5 mb-2.5">
                   <span className="font-bold text-[10px] uppercase text-stone-300 tracking-wider flex items-center gap-1.5">
                     <History className="w-3 h-3 text-amber-400" />
                     Pilha e Seleção de UID
                   </span>
                   <button
                     onClick={() => setIsQuickMenuOpen(false)}
-                    className="text-stone-400 hover:text-white p-0.5"
+                    className="text-stone-400 hover:text-white p-0.5 cursor-pointer"
                   >
                     <X className="w-3 h-3" />
                   </button>
@@ -212,7 +236,7 @@ export default function UidNavigationBar({
 
                 {/* Custom UID Input Form */}
                 <form onSubmit={handleCustomNavigate} className="mb-3">
-                  <label className="block text-[9px] text-stone-400 uppercase mb-1">
+                  <label className="block text-[9px] text-stone-400 uppercase mb-1 font-bold">
                     Digitar UID Manualmente:
                   </label>
                   <div className="flex gap-1">
@@ -220,8 +244,8 @@ export default function UidNavigationBar({
                       type="text"
                       value={customInputUid}
                       onChange={(e) => setCustomInputUid(e.target.value)}
-                      placeholder="Ex: usr_pedro ou convid_..."
-                      className="w-full bg-[#101014] border border-stone-700 px-2 py-1 text-[10px] text-white focus:outline-none focus:border-amber-500"
+                      placeholder="Ex: dossie, chat, usr_pedro..."
+                      className="w-full bg-[#101014] border border-stone-700 px-2 py-1 text-[10px] text-white focus:outline-none focus:border-amber-500 font-mono"
                     />
                     <button
                       type="submit"
@@ -232,9 +256,42 @@ export default function UidNavigationBar({
                   </div>
                 </form>
 
-                {/* UID History Pills */}
+                {/* Portal Tabs as UIDs */}
+                <div className="mb-3 border-t border-stone-800 pt-2">
+                  <span className="block text-[9px] text-amber-400 uppercase mb-1.5 font-bold flex items-center gap-1">
+                    <LayoutGrid className="w-3 h-3" />
+                    Abas do Portal como UIDs (12 abas):
+                  </span>
+                  <div className="grid grid-cols-2 gap-1 max-h-32 overflow-y-auto">
+                    {PORTAL_TAB_METADATA.map((tab) => {
+                      const isActive = activeTabId === tab.id;
+                      return (
+                        <button
+                          key={tab.id}
+                          type="button"
+                          onClick={() => {
+                            nav.navigateToUid(tab.id);
+                            setIsQuickMenuOpen(false);
+                            if (showToast) showToast(`Navegando para aba ?uid=${tab.id}`);
+                          }}
+                          className={`text-left p-1 text-[9px] border font-mono truncate cursor-pointer transition-colors ${
+                            isActive
+                              ? 'bg-amber-500 text-black font-bold border-amber-400'
+                              : 'bg-stone-900 text-stone-300 border-stone-800 hover:border-stone-600 hover:text-white'
+                          }`}
+                          title={`Abrir ${tab.label} via ?uid=${tab.id}`}
+                        >
+                          <span className="block font-bold truncate">{tab.label}</span>
+                          <span className="text-[8px] opacity-75 truncate block">?uid={tab.id}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* UID History Stack */}
                 {nav.uidHistory.length > 0 && (
-                  <div className="mb-3">
+                  <div className="mb-3 border-t border-stone-800 pt-2">
                     <span className="block text-[9px] text-stone-400 uppercase mb-1 font-bold">
                       Histórico Recente ({nav.uidHistory.length}):
                     </span>
@@ -244,6 +301,7 @@ export default function UidNavigationBar({
                         return (
                           <button
                             key={`${itemUid}-${idx}`}
+                            type="button"
                             onClick={() => {
                               nav.jumpToIndex(idx);
                               setIsQuickMenuOpen(false);
@@ -265,11 +323,11 @@ export default function UidNavigationBar({
                 )}
 
                 {/* Users from Database */}
-                <div>
+                <div className="border-t border-stone-800 pt-2">
                   <span className="block text-[9px] text-stone-400 uppercase mb-1 font-bold">
                     Usuários Sincronizados do Banco ({availableUsers.length}):
                   </span>
-                  <div className="max-h-36 overflow-y-auto space-y-1">
+                  <div className="max-h-32 overflow-y-auto space-y-1">
                     {availableUsers.length === 0 ? (
                       <p className="text-[10px] text-stone-500 italic py-1">
                         Carregando usuários do banco...

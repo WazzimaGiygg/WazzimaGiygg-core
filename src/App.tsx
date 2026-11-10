@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useCallback } from "react";
 import { onAuthStateChanged, signInWithPopup, signOut } from "firebase/auth";
 import DOMPurify from "dompurify";
 import {
@@ -64,6 +64,8 @@ import {
   UserNotification,
   AUTHORIZED_BUROCRATA_EMAIL,
   isAuthorizedBurocrata,
+  AUTHORIZED_PUBLISHER_EMAILS,
+  isAuthorizedPublisher,
   listAllUsersFromFirestore,
   AppUser
 } from "./firebase";
@@ -71,7 +73,7 @@ import { stripHtmlToPlainText } from "./utils/text";
 import AdminPanel from "./components/AdminPanel";
 import NotMediaWikiPortal from "./components/notmediawiki/NotMediaWikiPortal";
 import BemteviHub from "./components/bemtevi/BemteviHub";
-import { useUidNavigation } from "./hooks/useUidNavigation";
+import { useUidNavigation, PortalTabId, parseTabFromUid } from "./hooks/useUidNavigation";
 import UidNavigationBar from "./components/UidNavigationBar";
 import UserProfileModal from "./components/UserProfileModal";
 import LgpdRulesShowcase from "./components/LgpdRulesShowcase";
@@ -93,21 +95,15 @@ export default function App() {
   const [banReason] = useState("Violação dos Termos ou Conta sob Moderação");
   const [isLgpdModalOpen, setIsLgpdModalOpen] = useState(false);
 
-  // Navigation & Content States
-  const [currentTab, setCurrentTab] = useState<
-    | "wikiworldweb"
-    | "materiadeensaio"
-    | "academico"
-    | "materia"
-    | "uwgbooks"
-    | "wnpx"
-    | "dossie"
-    | "tickets"
-    | "chat"
-    | "notmediawiki"
-    | "bemtevi"
-    | "lgpd"
-  >("wikiworldweb");
+  // Navigation & Content States (initialized from URL ?uid= if present)
+  const [currentTab, setCurrentTab] = useState<PortalTabId>(() => {
+    if (typeof window !== "undefined") {
+      const urlUid = new URLSearchParams(window.location.search).get("uid");
+      const parsed = parseTabFromUid(urlUid);
+      if (parsed) return parsed;
+    }
+    return "wikiworldweb";
+  });
 
   const [articles, setArticles] = useState<{ [key: string]: Article[] }>({
     wikiworldweb: [],
@@ -228,14 +224,42 @@ export default function App() {
     return user?.email?.toLowerCase() === "pedrohenriquecardonaperes@gmail.com";
   }, [user]);
 
+  const isAuthorizedPublisherUser = useMemo(() => {
+    return isAuthorizedPublisher(user?.email);
+  }, [user]);
+
+  // 3.05.6.d - Inserir o uso do retornar e avançar para navegar pelo UID presente no URL do site
+  const uidNav = useUidNavigation();
+  const [allUsersList, setAllUsersList] = useState<AppUser[]>([]);
+  const [isUserProfileModalOpen, setIsUserProfileModalOpen] = useState(false);
+
+  // Unified tab switcher that keeps currentTab, address bar ?uid= and history stack in sync
+  const switchTab = useCallback((tabId: PortalTabId, bypassRedirect = false) => {
+    if (tabId === "tickets" && !bypassRedirect) {
+      const url = supportConfig.supportUrl || "https://support.wazzimagiygg.com/";
+      if (supportConfig.openMode === "redirect") {
+        window.open(url, supportConfig.openInNewTab !== false ? "_blank" : "_self");
+        showToast(`Redirecionando para Central de Suporte & Tickets: ${url}`);
+        return;
+      }
+    }
+
+    setCurrentTab(tabId);
+    setSelectedArticle(null);
+    setSelectedSector("todos");
+    setIsUserProfileModalOpen(false);
+
+    // Push tab UID to URL and browser history
+    uidNav.navigateToUid(tabId);
+  }, [supportConfig, uidNav]);
+
   const handleTicketsTabClick = () => {
     const url = supportConfig.supportUrl || "https://support.wazzimagiygg.com/";
     if (supportConfig.openMode === "redirect") {
       window.open(url, supportConfig.openInNewTab !== false ? "_blank" : "_self");
       showToast(`Redirecionando para Central de Suporte & Tickets: ${url}`);
     } else {
-      setCurrentTab("tickets");
-      setSelectedSector("todos");
+      switchTab("tickets", true);
     }
   };
 
@@ -291,22 +315,57 @@ export default function App() {
     }
   };
 
-  // 3.05.6.d - Inserir o uso do retornar e avançar para navegar pelo UID presente no URL do site
-  const uidNav = useUidNavigation();
-  const [allUsersList, setAllUsersList] = useState<AppUser[]>([]);
-  const [isUserProfileModalOpen, setIsUserProfileModalOpen] = useState(false);
-
-  // Open user profile modal or sync when currentUid is present in URL
+  // Synchronize initial URL with default tab UID on first mount if ?uid= is absent
   useEffect(() => {
-    if (uidNav.currentUid) {
-      // If we are not currently viewing Bemtevi, open the universal profile modal
-      if (currentTab !== "bemtevi") {
-        setIsUserProfileModalOpen(true);
-      }
-    } else {
-      setIsUserProfileModalOpen(false);
+    if (!uidNav.currentUid) {
+      uidNav.replaceUid(currentTab || "wikiworldweb");
     }
-  }, [uidNav.currentUid, currentTab]);
+  }, [uidNav, currentTab]);
+
+  // Synchronize view state when currentUid in URL changes (triggered by native browser Back / Forward buttons and internal navigation)
+  useEffect(() => {
+    if (!uidNav.currentUid) {
+      setCurrentTab("wikiworldweb");
+      setSelectedArticle(null);
+      setIsUserProfileModalOpen(false);
+      return;
+    }
+
+    const rawUid = uidNav.currentUid;
+    const tabMatch = parseTabFromUid(rawUid);
+
+    if (tabMatch) {
+      // It is a Tab page UID!
+      setCurrentTab(tabMatch);
+      setSelectedArticle(null);
+      setIsUserProfileModalOpen(false);
+      return;
+    }
+
+    // Check if it's an article ID
+    let foundArticle: Article | null = null;
+    for (const list of Object.values(articles)) {
+      const art = list.find((a) => a.id === rawUid);
+      if (art) {
+        foundArticle = art;
+        break;
+      }
+    }
+
+    if (foundArticle) {
+      setSelectedArticle(foundArticle);
+      if (foundArticle.colecao && parseTabFromUid(foundArticle.colecao)) {
+        setCurrentTab(foundArticle.colecao as PortalTabId);
+      }
+      setIsUserProfileModalOpen(false);
+      return;
+    }
+
+    // Otherwise it is a user profile UID (e.g. usr_* or convid_*)
+    if (currentTab !== "bemtevi") {
+      setIsUserProfileModalOpen(true);
+    }
+  }, [uidNav.currentUid, articles, currentTab]);
 
   // Load all registered users from database for UID navigation switcher
   useEffect(() => {
@@ -596,6 +655,14 @@ export default function App() {
       );
       return { ...prev, [col]: updatedList };
     });
+
+    // Synchronize article UID with URL history
+    uidNav.navigateToUid(article.id);
+  };
+
+  const handleCloseArticle = () => {
+    setSelectedArticle(null);
+    uidNav.navigateToUid(currentTab);
   };
 
   // Generate ABNT Citation
@@ -890,7 +957,7 @@ export default function App() {
                   </span>
                 )}
                 <button
-                  onClick={() => setCurrentTab("bemtevi")}
+                  onClick={() => switchTab("bemtevi")}
                   className="bg-[#667eea]/20 text-indigo-300 border border-[#667eea]/40 hover:bg-[#667eea]/40 text-[9px] px-1.5 py-0.2 rounded font-mono font-bold flex items-center gap-1 cursor-pointer"
                   title="Abrir perfil social no Bemtevi"
                 >
@@ -976,13 +1043,21 @@ export default function App() {
               <span>•</span>
               <button
                 onClick={() => {
-                  if (!user || !isAuthorizedBurocrata(user.email)) {
-                    showToast("🚨 Correção emergencial: Somente o usuário com o e-mail pedrohenriquecardonaperes@gmail.com pode fazer alterações e edições.", true);
+                  if (!user || !isAuthorizedPublisher(user.email)) {
+                    showToast(
+                      "🚨 Permissão negada: Qualquer publicação de artigo só deve ser feita pelas contas dos e-mails wazzimagiygg@gmail.com e pedrohenriquecardonaperes@gmail.com.",
+                      true
+                    );
                     return;
                   }
                   setIsCreateModalOpen(true);
                 }}
-                className="bg-[#141414] text-white hover:bg-stone-800 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 cursor-pointer"
+                className={`px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 cursor-pointer transition-colors ${
+                  isAuthorizedPublisherUser
+                    ? "bg-[#141414] text-white hover:bg-stone-800"
+                    : "bg-stone-800/80 text-amber-300 border border-amber-600/50 hover:bg-stone-800"
+                }`}
+                title="Publicar Artigo (Exclusivo para wazzimagiygg@gmail.com e pedrohenriquecardonaperes@gmail.com)"
               >
                 <PlusCircle className="w-3 h-3 text-amber-400" />
                 <span>Publicar Artigo</span>
@@ -1021,8 +1096,7 @@ export default function App() {
                     if (tab.id === "tickets") {
                       handleTicketsTabClick();
                     } else {
-                      setCurrentTab(tab.id as any);
-                      setSelectedSector("todos");
+                      switchTab(tab.id as any);
                     }
                   }}
                   className={`flex items-center gap-1.5 px-3 py-2 text-xs font-mono font-bold uppercase tracking-wider whitespace-nowrap transition-all cursor-pointer border ${
@@ -1176,13 +1250,17 @@ export default function App() {
                 </p>
                 <button
                   onClick={() => {
-                    if (!user || !isAuthorizedBurocrata(user.email)) {
-                      showToast("🚨 Correção emergencial: Somente o usuário com o e-mail pedrohenriquecardonaperes@gmail.com pode fazer alterações e edições.", true);
+                    if (!user || !isAuthorizedPublisher(user.email)) {
+                      showToast(
+                        "🚨 Permissão negada: Qualquer publicação de artigo só deve ser feita pelas contas dos e-mails wazzimagiygg@gmail.com e pedrohenriquecardonaperes@gmail.com.",
+                        true
+                      );
                       return;
                     }
                     setIsCreateModalOpen(true);
                   }}
                   className="mt-5 paper-button px-4 py-2 font-mono text-xs font-bold uppercase tracking-wider cursor-pointer inline-flex items-center gap-2"
+                  title="Publicar Documento (Restrito a wazzimagiygg@gmail.com e pedrohenriquecardonaperes@gmail.com)"
                 >
                   <PlusCircle className="w-4 h-4 text-amber-400" />
                   <span>Publicar Agora</span>
@@ -1339,7 +1417,7 @@ export default function App() {
                     className="p-3 bg-white border border-[#141414] hover:bg-amber-50 cursor-pointer flex items-center justify-between"
                     onClick={() => {
                       showToast(`Carregando artigo: ${item}`);
-                      setCurrentTab("wikiworldweb");
+                      switchTab("wikiworldweb");
                       setSearchTerm(item.split(" - ")[0]);
                     }}
                   >
@@ -1358,7 +1436,7 @@ export default function App() {
             sanctionsList={sanctionsList}
             showToast={showToast}
             onOpenTicketForm={(tipo) => {
-              setCurrentTab("tickets");
+              switchTab("tickets");
               if (tipo) {
                 setTicketForm((prev) => ({ ...prev, tipo }));
               }
@@ -1603,7 +1681,7 @@ export default function App() {
             currentUser={user}
             showToast={showToast}
             onOpenTicketForm={(tipo) => {
-              setCurrentTab("tickets");
+              switchTab("tickets");
               if (tipo) {
                 setTicketForm((prev) => ({ ...prev, tipo }));
               }
@@ -1629,8 +1707,8 @@ export default function App() {
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => {
-                    setSelectedArticle(null);
-                    setCurrentTab("bemtevi");
+                    handleCloseArticle();
+                    switchTab("bemtevi");
                     showToast(`Abrindo Bemtevi para debater "${selectedArticle.titulo}"! 🐦`);
                   }}
                   className="bg-[#667eea] hover:bg-[#5a6fd6] text-white px-2.5 py-1 text-[11px] font-mono font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer border border-[#4d63d6] shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]"
@@ -1650,7 +1728,7 @@ export default function App() {
                   <span>{isGeneratingPdf ? "Gerando..." : "Salvar como PDF"}</span>
                 </button>
                 <button
-                  onClick={() => setSelectedArticle(null)}
+                  onClick={handleCloseArticle}
                   className="text-stone-400 hover:text-white p-1 cursor-pointer"
                   aria-label="Fechar artigo"
                 >
@@ -1740,7 +1818,7 @@ export default function App() {
               </div>
 
               <button
-                onClick={() => setSelectedArticle(null)}
+                onClick={handleCloseArticle}
                 className="paper-button px-5 py-2 text-xs font-mono font-bold uppercase tracking-wider cursor-pointer"
               >
                 Concluir Leitura
@@ -1768,11 +1846,39 @@ export default function App() {
               </button>
             </div>
 
+            {/* Banner de Restrição Rigorosa de Publicação */}
+            <div className={`p-3 border-2 mb-4 font-mono text-xs ${
+              isAuthorizedPublisherUser
+                ? "bg-emerald-50 border-emerald-600 text-emerald-950"
+                : "bg-amber-50 border-amber-600 text-amber-950"
+            }`}>
+              <div className="flex items-center gap-1.5 font-bold mb-1">
+                <Shield className="w-4 h-4 text-amber-600" />
+                <span className="uppercase tracking-wider">Regra de Publicação Oficial de Artigos:</span>
+              </div>
+              <p className="text-[11px] leading-relaxed">
+                Qualquer publicação de artigo só deve ser feita pelas contas dos e-mails autorizados:
+                <br />
+                <strong className="text-black font-mono">wazzimagiygg@gmail.com</strong> e <strong className="text-black font-mono">pedrohenriquecardonaperes@gmail.com</strong>
+              </p>
+              <div className="mt-2 text-[10px] pt-1.5 border-t border-current/20 flex items-center justify-between">
+                <span>Conta ativa: <strong>{user?.email || "Nenhum usuário logado"}</strong></span>
+                {isAuthorizedPublisherUser ? (
+                  <span className="bg-emerald-600 text-white px-1.5 py-0.5 font-bold uppercase">Autorizado</span>
+                ) : (
+                  <span className="bg-red-600 text-white px-1.5 py-0.5 font-bold uppercase">Publicação Bloqueada</span>
+                )}
+              </div>
+            </div>
+
             <form
               onSubmit={async (e) => {
                 e.preventDefault();
-                if (!user || !isAuthorizedBurocrata(user.email)) {
-                  showToast("🚨 Correção emergencial: Somente o usuário oficial pedrohenriquecardonaperes@gmail.com pode fazer alterações e edições.", true);
+                if (!user || !isAuthorizedPublisher(user.email)) {
+                  showToast(
+                    "🚨 Permissão negada: Qualquer publicação de artigo só deve ser feita pelas contas dos e-mails wazzimagiygg@gmail.com e pedrohenriquecardonaperes@gmail.com.",
+                    true
+                  );
                   return;
                 }
                 const formData = new FormData(e.currentTarget);
@@ -1791,30 +1897,34 @@ export default function App() {
                   titulo,
                   descricao,
                   setor: setor || "Geral",
-                  criadorEmail: user?.email || (isGuestUser ? "convidado@wazzimagiygg.local" : "anonimo@wazzimagiygg.com"),
+                  criadorEmail: user.email,
                   colecao,
                   dataCriacao: new Date().toLocaleDateString("pt-BR"),
                   ultimaEdicao: new Date().toLocaleDateString("pt-BR"),
                   visualizacoes: 1
                 };
 
-                // Save to Firestore collections
-                await createArticle({
-                  titulo,
-                  descricao,
-                  setor: setor || "Geral",
-                  criadorEmail: newArt.criadorEmail,
-                  colecao
-                });
+                try {
+                  // Save to Firestore collections
+                  await createArticle({
+                    titulo,
+                    descricao,
+                    setor: setor || "Geral",
+                    criadorEmail: user.email,
+                    colecao
+                  });
 
-                // Update local state
-                setArticles((prev) => ({
-                  ...prev,
-                  [colecao]: [newArt, ...(prev[colecao] || [])]
-                }));
+                  // Update local state
+                  setArticles((prev) => ({
+                    ...prev,
+                    [colecao]: [newArt, ...(prev[colecao] || [])]
+                  }));
 
-                setIsCreateModalOpen(false);
-                showToast("Artigo publicado com sucesso no acervo!");
+                  setIsCreateModalOpen(false);
+                  showToast("Artigo publicado com sucesso no acervo!");
+                } catch (publishErr: any) {
+                  showToast(publishErr.message || "Erro ao publicar artigo.", true);
+                }
               }}
               className="space-y-4 font-mono text-xs"
             >
@@ -1877,9 +1987,10 @@ export default function App() {
                 </button>
                 <button
                   type="submit"
-                  className="paper-button px-5 py-2 font-mono text-xs font-bold uppercase tracking-wider cursor-pointer"
+                  disabled={!isAuthorizedPublisherUser}
+                  className="paper-button px-5 py-2 font-mono text-xs font-bold uppercase tracking-wider cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Publicar Artigo
+                  {isAuthorizedPublisherUser ? "Publicar Artigo" : "Publicação Bloqueada"}
                 </button>
               </div>
             </form>
@@ -2041,19 +2152,19 @@ export default function App() {
 
           {/* Quick Links */}
           <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 mb-8 text-[11px] font-bold uppercase text-stone-300">
-            <button onClick={() => setCurrentTab("wikiworldweb")} className="hover:text-amber-400">
+            <button onClick={() => switchTab("wikiworldweb")} className="hover:text-amber-400">
               Notícias
             </button>
             <span className="text-stone-700">•</span>
-            <button onClick={() => setCurrentTab("academico")} className="hover:text-amber-400">
+            <button onClick={() => switchTab("academico")} className="hover:text-amber-400">
               Metodologia Científica
             </button>
             <span className="text-stone-700">•</span>
-            <button onClick={() => setCurrentTab("wnpx")} className="hover:text-amber-400">
+            <button onClick={() => switchTab("wnpx")} className="hover:text-amber-400">
               WNPX NotPedia
             </button>
             <span className="text-stone-700">•</span>
-            <button onClick={() => setCurrentTab("dossie")} className="hover:text-amber-400">
+            <button onClick={() => switchTab("dossie")} className="hover:text-amber-400">
               Marco Civil & LGPD
             </button>
             <span className="text-stone-700">•</span>
@@ -2109,7 +2220,7 @@ export default function App() {
           }}
           onNavigateToTab={(tab) => {
             setIsAdminPanelOpen(false);
-            setCurrentTab(tab as any);
+            switchTab(tab as any);
           }}
           showToast={showToast}
           activeUid={uidNav.currentUid}
@@ -2124,10 +2235,11 @@ export default function App() {
           nav={uidNav}
           onClose={() => {
             setIsUserProfileModalOpen(false);
+            uidNav.navigateToUid(currentTab);
           }}
-          onOpenInBemtevi={(targetUid) => {
+          onOpenInBemtevi={(_targetUid) => {
             setIsUserProfileModalOpen(false);
-            setCurrentTab("bemtevi");
+            switchTab("bemtevi");
           }}
           showToast={showToast}
         />
@@ -2147,7 +2259,7 @@ export default function App() {
           showToast={showToast}
           onClose={() => setIsLgpdModalOpen(false)}
           onOpenTicketForm={(tipo) => {
-            setCurrentTab("tickets");
+            switchTab("tickets");
             setIsLgpdModalOpen(false);
             if (tipo) {
               setTicketForm((prev) => ({ ...prev, tipo }));

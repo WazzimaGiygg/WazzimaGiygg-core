@@ -1125,7 +1125,15 @@ app.get('/api/v1/content/articles/:slug/rendered', (req: Request, res: Response)
 });
 
 app.post('/api/v1/content/articles', (req: Request, res: Response) => {
-  const { title, wikitext, summary, isMinor, authorName, authorId } = req.body;
+  const { title, wikitext, summary, isMinor, authorName, authorId, userEmail, authorEmail } = req.body;
+  const email = (userEmail || authorEmail || '').toLowerCase().trim();
+  const AUTHORIZED_PUBLISHER_EMAILS = ['wazzimagiygg@gmail.com', 'pedrohenriquecardonaperes@gmail.com'];
+  if (email && !AUTHORIZED_PUBLISHER_EMAILS.includes(email)) {
+    res.status(403).json({
+      error: 'Acesso negado: Qualquer publicação de artigo só deve ser feita pelas contas dos e-mails wazzimagiygg@gmail.com e pedrohenriquecardonaperes@gmail.com'
+    });
+    return;
+  }
   if (!title || !wikitext) {
     res.status(400).json({ error: 'Título e wikitexto são obrigatórios' });
     return;

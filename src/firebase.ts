@@ -95,6 +95,22 @@ export function isAuthorizedBurocrata(email?: string | null): boolean {
   return email.toLowerCase().trim() === AUTHORIZED_BUROCRATA_EMAIL.toLowerCase().trim();
 }
 
+// ============================================
+// AUTHORIZED ARTICLE PUBLISHER ACCOUNTS
+// Qualquer publicação de artigo só deve ser feita pelas contas dos e-mails:
+// wazzimagiygg@gmail.com e pedrohenriquecardonaperes@gmail.com
+// ============================================
+export const AUTHORIZED_PUBLISHER_EMAILS = [
+  "wazzimagiygg@gmail.com",
+  "pedrohenriquecardonaperes@gmail.com"
+] as const;
+
+export function isAuthorizedPublisher(email?: string | null): boolean {
+  if (!email) return false;
+  const clean = email.toLowerCase().trim();
+  return AUTHORIZED_PUBLISHER_EMAILS.some((allowed) => allowed.toLowerCase().trim() === clean);
+}
+
 export interface DeletionRequest {
   id: string;
   name: string;
@@ -241,6 +257,14 @@ export async function createArticle(articleData: {
   criadorEmail: string;
   colecao: string;
 }): Promise<string | null> {
+  const criador = articleData.criadorEmail?.toLowerCase().trim();
+  if (!isAuthorizedPublisher(criador)) {
+    console.error("Tentativa de publicação não autorizada pelo e-mail:", criador);
+    throw new Error(
+      "Acesso negado: Qualquer publicação de artigo só deve ser feita pelas contas dos e-mails wazzimagiygg@gmail.com e pedrohenriquecardonaperes@gmail.com"
+    );
+  }
+
   const payload = {
     ...articleData,
     visualizacoes: 1,
