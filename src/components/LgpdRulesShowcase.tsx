@@ -355,43 +355,46 @@ export default function LgpdRulesShowcase({
     <div
       className={
         isModal
-          ? "fixed inset-0 bg-stone-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-5 overflow-y-auto animate-fade-in font-sans"
+          ? "fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-5 overflow-y-auto animate-fade-in font-sans"
           : "w-full my-6 font-sans"
       }
     >
       <div
-        className={`bg-white text-stone-900 rounded-2xl border border-stone-200 shadow-2xl w-full max-w-5xl flex flex-col overflow-hidden text-left ${
+        className={`bg-[#F8F7F4] text-[#141414] border-4 border-[#141414] shadow-[10px_10px_0px_0px_rgba(20,20,20,1)] w-full max-w-5xl flex flex-col overflow-hidden text-left ${
           isModal ? "max-h-[92vh]" : ""
         }`}
       >
         {/* ======================================================== */}
         {/* HEADER: DIÁRIO OFICIAL / CONFORMIDADE LGPD               */}
         {/* ======================================================== */}
-        <header className="px-6 py-4 border-b border-stone-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+        <header className="bg-[#141414] text-white p-4 border-b-2 border-black flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-emerald-50 text-emerald-700 flex items-center justify-center shrink-0">
+            <div className="w-9 h-9 bg-emerald-500 text-black flex items-center justify-center font-bold font-mono shadow-[2px_2px_0px_0px_rgba(255,255,255,0.4)]">
               <Scale className="w-5 h-5" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-[10px] font-mono font-medium text-emerald-700 flex items-center gap-1">
-                  <ShieldCheck className="w-3.5 h-3.5" /> Conformidade Ativa (Lei 13.709/18)
+                <span className="bg-[#D97706] text-black font-bold text-[9px] uppercase px-1.5 py-0.2 font-mono">
+                  TRANSPARÊNCIA PÚBLICA
+                </span>
+                <span className="text-[10px] font-mono text-emerald-400 font-bold flex items-center gap-1">
+                  <ShieldCheck className="w-3 h-3" /> CONFORMIDADE 100% ATIVA
                 </span>
               </div>
-              <h2 className="text-lg sm:text-xl font-editorial font-bold tracking-tight text-stone-900 mt-0.5">
-                Regras da LGPD à Amostra
+              <h2 className="text-xl sm:text-2xl font-editorial font-bold tracking-tight text-white mt-0.5">
+                Regras da LGPD à Amostra • Ciência Absoluta do Cumprimento
               </h2>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 self-end sm:self-auto font-mono text-xs">
+          <div className="flex items-center gap-2 self-end sm:self-auto">
             <button
               type="button"
               onClick={handleDownloadCertificadoPdf}
-              className="px-3.5 py-1.5 rounded-lg border border-stone-200 bg-stone-50 hover:bg-stone-100 text-stone-700 font-medium uppercase tracking-wider flex items-center gap-1.5 cursor-pointer transition-colors"
+              className="bg-stone-800 hover:bg-stone-700 text-amber-300 border border-stone-600 px-3 py-1.5 text-xs font-mono font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer shadow-sm transition-colors"
               title="Baixar Certidão Oficial de Conformidade LGPD em PDF"
             >
-              <Download className="w-3.5 h-3.5 text-stone-500" />
+              <Download className="w-3.5 h-3.5" />
               <span>Certidão PDF</span>
             </button>
 
@@ -399,10 +402,10 @@ export default function LgpdRulesShowcase({
               <button
                 type="button"
                 onClick={onClose}
-                className="p-1.5 rounded-lg hover:bg-stone-100 text-stone-400 hover:text-stone-700 cursor-pointer transition-colors"
+                className="bg-stone-800 hover:bg-red-700 text-white p-1.5 border border-stone-600 cursor-pointer transition-colors"
                 title="Fechar Painel LGPD"
               >
-                <X className="w-5 h-5" />
+                <X className="w-4 h-4" />
               </button>
             )}
           </div>
@@ -411,21 +414,21 @@ export default function LgpdRulesShowcase({
         {/* ======================================================== */}
         {/* COMPLIANCE STATUS BANNER                                  */}
         {/* ======================================================== */}
-        <div className="bg-emerald-50/70 border-b border-emerald-100 px-6 py-3 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 text-xs">
+        <div className="bg-emerald-50 border-b-2 border-emerald-700 p-3.5 px-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 text-xs">
           <div className="flex items-center gap-2.5">
-            <div className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
-            <p className="font-serif text-emerald-950 text-xs leading-relaxed">
-              <strong>Compromisso de Transparência:</strong> O portal <em>WazzimaGiygg</em> opera em obediência à 
+            <div className="w-2.5 h-2.5 rounded-full bg-emerald-600 animate-pulse shrink-0" />
+            <p className="font-serif text-emerald-950 leading-snug">
+              <strong>Compromisso de Ciência Absoluta:</strong> O portal <em>WazzimaGiygg</em> opera em estrita obediência à 
               <strong> Lei Geral de Proteção de Dados (Lei Federal nº 13.709/2018)</strong> e ao 
-              <strong> Marco Civil da Internet (Lei nº 12.965/2014)</strong>.
+              <strong> Marco Civil da Internet (Lei nº 12.965/2014)</strong>. Todas as diretrizes de tratamento, retenção e direitos dos titulares estão expostas abaixo para consulta pública universal.
             </p>
           </div>
 
-          <div className="shrink-0 flex items-center gap-2 font-mono text-[10px]">
-            <span className="uppercase font-medium bg-white text-emerald-800 px-2 py-0.5 rounded-full border border-emerald-200">
+          <div className="shrink-0 flex items-center gap-2">
+            <span className="font-mono text-[10px] uppercase font-bold bg-emerald-200 text-emerald-900 px-2 py-0.5 border border-emerald-400">
               Auditoria: Válida
             </span>
-            <span className="uppercase font-medium bg-stone-900 text-white px-2 py-0.5 rounded-full">
+            <span className="font-mono text-[10px] uppercase font-bold bg-black text-amber-300 px-2 py-0.5">
               DPO Ativo
             </span>
           </div>
@@ -434,8 +437,8 @@ export default function LgpdRulesShowcase({
         {/* ======================================================== */}
         {/* NAVIGATION TABS INSIDE LGPD SHOWCASE                    */}
         {/* ======================================================== */}
-        <div className="bg-stone-50/80 border-b border-stone-100 px-6 flex flex-wrap items-center justify-between gap-2 py-2 font-mono text-xs">
-          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+        <div className="bg-[#EBEAE5] border-b-2 border-[#141414] px-4 flex flex-wrap items-center justify-between gap-2 py-1.5 font-mono text-xs">
+          <div className="flex items-center gap-1 overflow-x-auto no-scrollbar">
             {[
               { id: 'principios', label: '10 Princípios (Art. 6º)', count: 10 },
               { id: 'direitos', label: 'Direitos do Titular (Art. 18)', count: 8 },
@@ -446,10 +449,10 @@ export default function LgpdRulesShowcase({
               <button
                 key={tab.id}
                 onClick={() => setActiveSubTab(tab.id as any)}
-                className={`px-3 py-1.5 font-medium rounded-lg text-xs transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
+                className={`px-3 py-1.5 font-bold uppercase tracking-wider text-[11px] border-b-2 transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
                   activeSubTab === tab.id
-                    ? 'bg-white text-stone-900 shadow-xs border border-stone-200 font-semibold'
-                    : 'text-stone-500 hover:text-stone-800 hover:bg-stone-100'
+                    ? 'border-amber-600 bg-white text-black shadow-sm'
+                    : 'border-transparent text-stone-600 hover:text-black hover:bg-stone-200'
                 }`}
               >
                 <span>{tab.label}</span>

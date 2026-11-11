@@ -26,22 +26,22 @@ export default function LgpdFloatingComplianceBadge({
       <button
         type="button"
         onClick={onOpen}
-        className="group bg-white/95 backdrop-blur-md hover:bg-white text-stone-800 border border-stone-200/80 shadow-md rounded-full pl-2 pr-3 py-1.5 flex items-center gap-2 cursor-pointer transition-all hover:shadow-lg hover:border-stone-300"
+        className="group bg-[#141414] hover:bg-stone-900 text-stone-100 border-2 border-emerald-500 shadow-[4px_4px_0px_0px_rgba(16,185,129,0.8)] px-3 py-1.5 flex items-center gap-2 cursor-pointer transition-all hover:-translate-y-0.5 active:translate-y-0 active:shadow-none"
         title="Regras da LGPD (Lei 13.709/18) permanentemente à mostra para ciência absoluta de cumprimento. Clique para inspecionar."
       >
-        <div className="w-5 h-5 rounded-full bg-emerald-50 border border-emerald-200 flex items-center justify-center shrink-0">
-          <Scale className="w-3 h-3 text-emerald-600 group-hover:rotate-6 transition-transform" />
+        <div className="w-5 h-5 rounded-full bg-emerald-500/20 border border-emerald-400 flex items-center justify-center shrink-0">
+          <Scale className="w-3 h-3 text-emerald-400 group-hover:rotate-12 transition-transform" />
         </div>
 
         <div className="text-left font-mono leading-tight">
           <div className="flex items-center gap-1.5">
-            <span className="text-[10px] font-medium uppercase tracking-wider text-stone-900">
-              Regras LGPD
+            <span className="text-[10px] font-bold uppercase tracking-wider text-white">
+              Regras LGPD à Amostra
             </span>
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
           </div>
-          <span className="text-[9px] text-stone-500 font-normal block">
-            {hasCiencia ? "Ciência Registrada" : "Lei 13.709/18"}
+          <span className="text-[9px] text-emerald-400 font-bold block">
+            {hasCiencia ? "✓ Ciência Absoluta Registrada" : "Lei 13.709/18 • 100% Cumprida"}
           </span>
         </div>
       </button>

@@ -146,31 +146,29 @@ export default function ExtensionConfigModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/40 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="bg-white rounded-2xl border border-stone-200 max-w-2xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="bg-[#FAF9F5] border-4 border-[#141414] max-w-2xl w-full max-h-[90vh] flex flex-col shadow-[10px_10px_0px_0px_rgba(20,20,20,1)]">
         {/* Header */}
-        <div className="px-6 py-4 flex items-center justify-between border-b border-stone-100">
+        <div className="bg-[#141414] text-white p-4 flex items-center justify-between border-b-2 border-stone-800">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-full bg-stone-100 flex items-center justify-center">
-              <Sliders className="w-4 h-4 text-stone-700" />
-            </div>
+            <Sliders className="w-5 h-5 text-amber-400" />
             <div>
               <div className="flex items-center gap-2">
-                <h3 className="font-editorial text-base font-bold text-stone-900">
-                  {extension.namePt || extension.name}
+                <h3 className="font-editorial text-lg font-bold tracking-tight">
+                  Configurações da Extensão: {extension.namePt || extension.name}
                 </h3>
-                <span className="bg-stone-100 text-stone-600 font-mono text-[10px] px-2 py-0.5 rounded-full">
+                <span className="bg-stone-800 text-stone-300 font-mono text-[10px] px-2 py-0.5 border border-stone-700">
                   {extension.id}
                 </span>
               </div>
-              <p className="text-[11px] font-mono text-stone-500">
+              <p className="text-[11px] font-mono text-stone-400">
                 Dispositivo de Governança de Extensões (3.05.3.a)
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg hover:bg-stone-100 text-stone-400 hover:text-stone-700 transition-colors cursor-pointer"
+            className="p-1.5 hover:bg-stone-800 text-stone-300 hover:text-white transition-colors cursor-pointer"
             title="Fechar"
           >
             <X className="w-5 h-5" />
@@ -178,30 +176,30 @@ export default function ExtensionConfigModal({
         </div>
 
         {/* Sub-tab navigation */}
-        <div className="bg-stone-50 border-b border-stone-100 px-6 pt-2 flex items-center gap-1.5 font-mono text-xs">
+        <div className="bg-stone-200 border-b-2 border-[#141414] px-4 pt-2 flex items-center gap-1 font-mono text-xs">
           <button
             onClick={() => setActiveSubTab('config')}
-            className={`px-3 py-1.5 font-medium rounded-t-lg transition-colors ${
-              activeSubTab === 'config' ? 'bg-white text-stone-900 border-t border-x border-stone-200 font-semibold' : 'text-stone-500 hover:text-stone-800'
+            className={`px-3 py-1.5 font-bold border-t-2 border-x-2 border-[#141414] -mb-[2px] transition-colors ${
+              activeSubTab === 'config' ? 'bg-[#FAF9F5] text-stone-950' : 'bg-stone-300 text-stone-600 hover:bg-stone-200'
             }`}
           >
-            Parâmetros Operacionais
+            ⚙️ Parâmetros Operacionais
           </button>
           <button
             onClick={() => setActiveSubTab('metadata')}
-            className={`px-3 py-1.5 font-medium rounded-t-lg transition-colors ${
-              activeSubTab === 'metadata' ? 'bg-white text-stone-900 border-t border-x border-stone-200 font-semibold' : 'text-stone-500 hover:text-stone-800'
+            className={`px-3 py-1.5 font-bold border-t-2 border-x-2 border-[#141414] -mb-[2px] transition-colors ${
+              activeSubTab === 'metadata' ? 'bg-[#FAF9F5] text-stone-950' : 'bg-stone-300 text-stone-600 hover:bg-stone-200'
             }`}
           >
-            Metadados & Título
+            📝 Metadados & Título
           </button>
           <button
             onClick={() => setActiveSubTab('code')}
-            className={`px-3 py-1.5 font-medium rounded-t-lg transition-colors ${
-              activeSubTab === 'code' ? 'bg-white text-stone-900 border-t border-x border-stone-200 font-semibold' : 'text-stone-500 hover:text-stone-800'
+            className={`px-3 py-1.5 font-bold border-t-2 border-x-2 border-[#141414] -mb-[2px] transition-colors ${
+              activeSubTab === 'code' ? 'bg-[#FAF9F5] text-stone-950' : 'bg-stone-300 text-stone-600 hover:bg-stone-200'
             }`}
           >
-            Código TypeScript ({extension.files?.[0]?.name || 'index.ts'})
+            💻 Código TypeScript ({extension.files?.[0]?.name || 'index.ts'})
           </button>
         </div>
 
@@ -641,14 +639,14 @@ export default function ExtensionConfigModal({
         </div>
 
         {/* Footer Actions */}
-        <div className="bg-stone-50/80 border-t border-stone-100 px-6 py-3.5 flex flex-col sm:flex-row items-center justify-between gap-3 font-mono text-xs">
+        <div className="bg-stone-100 border-t-2 border-[#141414] p-4 flex flex-col sm:flex-row items-center justify-between gap-3 font-mono text-xs">
           <button
             type="button"
             onClick={handleRestoreDefaults}
             disabled={!isBureaucrat || isSaving}
-            className="text-stone-500 hover:text-stone-800 font-medium flex items-center gap-1.5 cursor-pointer disabled:opacity-50 transition-colors"
+            className="text-stone-600 hover:text-stone-900 font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
           >
-            <RotateCcw className="w-3.5 h-3.5" /> Restaurar Padrões
+            <RotateCcw className="w-3.5 h-3.5" /> Restaurar Padrões da Extensão
           </button>
 
           <div className="flex items-center gap-2">
@@ -656,7 +654,7 @@ export default function ExtensionConfigModal({
               type="button"
               onClick={onClose}
               disabled={isSaving}
-              className="px-4 py-2 rounded-lg text-stone-600 hover:bg-stone-100 font-medium cursor-pointer transition-colors"
+              className="px-4 py-2 bg-stone-200 hover:bg-stone-300 text-stone-800 font-bold border-2 border-stone-400 cursor-pointer"
             >
               Cancelar
             </button>
@@ -664,10 +662,10 @@ export default function ExtensionConfigModal({
               type="button"
               onClick={handleSubmit}
               disabled={!isBureaucrat || isSaving}
-              className="px-5 py-2 rounded-lg bg-stone-900 hover:bg-stone-800 text-white font-medium uppercase tracking-wider flex items-center gap-2 cursor-pointer disabled:opacity-50 transition-colors"
+              className="px-5 py-2 bg-stone-900 hover:bg-stone-800 text-white font-bold uppercase tracking-wider border-2 border-black shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] flex items-center gap-2 cursor-pointer disabled:opacity-50 active:translate-x-0.5 active:translate-y-0.5"
             >
-              <Save className="w-3.5 h-3.5 text-stone-300" />
-              <span>{isSaving ? 'Salvando...' : 'Salvar Configurações'}</span>
+              <Save className="w-4 h-4 text-amber-400" />
+              <span>{isSaving ? 'Salvando & Assinando...' : 'Salvar Configurações'}</span>
             </button>
           </div>
         </div>
