@@ -1571,39 +1571,39 @@ export default function AdminPanel({
               <>
                 {/* Metrics Cards */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 font-mono">
-              <div className="bg-white border-2 border-[#141414] p-4 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]">
-                <span className="text-[10px] text-stone-500 font-bold uppercase">Total de Pedidos</span>
-                <div className="text-3xl font-bold mt-1 text-stone-900">{deletionRequestsList.length}</div>
-                <span className="text-[10px] text-stone-600 block mt-1">Coleção Firestore: deletion_requests</span>
+              <div className="bg-white rounded-xl border border-stone-200 p-4 shadow-xs">
+                <span className="text-[10px] text-stone-500 font-medium uppercase">Total de Pedidos</span>
+                <div className="text-2xl font-bold mt-1 text-stone-900">{deletionRequestsList.length}</div>
+                <span className="text-[10px] text-stone-400 block mt-1">Coleção: deletion_requests</span>
               </div>
 
-              <div className="bg-white border-2 border-[#141414] p-4 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]">
-                <span className="text-[10px] text-amber-700 font-bold uppercase">Pendentes de Triagem</span>
-                <div className="text-3xl font-bold mt-1 text-amber-600">
+              <div className="bg-white rounded-xl border border-stone-200 p-4 shadow-xs">
+                <span className="text-[10px] text-amber-700 font-medium uppercase">Pendentes de Triagem</span>
+                <div className="text-2xl font-bold mt-1 text-amber-600">
                   {deletionRequestsList.filter((r) => r.status === "pending").length}
                 </div>
-                <span className="text-[10px] text-stone-500 block mt-1">Prazo legal: até 15 dias</span>
+                <span className="text-[10px] text-stone-400 block mt-1">Prazo legal: até 15 dias</span>
               </div>
 
-              <div className="bg-white border-2 border-[#141414] p-4 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]">
-                <span className="text-[10px] text-blue-700 font-bold uppercase">Em Processamento</span>
-                <div className="text-3xl font-bold mt-1 text-blue-600">
+              <div className="bg-white rounded-xl border border-stone-200 p-4 shadow-xs">
+                <span className="text-[10px] text-blue-700 font-medium uppercase">Em Processamento</span>
+                <div className="text-2xl font-bold mt-1 text-blue-600">
                   {deletionRequestsList.filter((r) => r.status === "processing").length}
                 </div>
-                <span className="text-[10px] text-stone-500 block mt-1">Varredura de acervo em curso</span>
+                <span className="text-[10px] text-stone-400 block mt-1">Varredura em curso</span>
               </div>
 
-              <div className="bg-white border-2 border-[#141414] p-4 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]">
-                <span className="text-[10px] text-emerald-700 font-bold uppercase">Concluídas (Expurgadas)</span>
-                <div className="text-3xl font-bold mt-1 text-emerald-600">
+              <div className="bg-white rounded-xl border border-stone-200 p-4 shadow-xs">
+                <span className="text-[10px] text-emerald-700 font-medium uppercase">Concluídas (Expurgadas)</span>
+                <div className="text-2xl font-bold mt-1 text-emerald-600">
                   {deletionRequestsList.filter((r) => r.status === "completed").length}
                 </div>
-                <span className="text-[10px] text-emerald-700 block mt-1">Com certificado de expurgo emitido</span>
+                <span className="text-[10px] text-emerald-600 block mt-1">Com certificado de expurgo</span>
               </div>
             </div>
 
             {/* Filter and Search Bar */}
-            <div className="bg-white border-2 border-[#141414] p-4 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] flex flex-col md:flex-row items-center justify-between gap-4 font-mono text-xs">
+            <div className="bg-white rounded-xl border border-stone-200 p-4 shadow-xs flex flex-col md:flex-row items-center justify-between gap-4 font-mono text-xs">
               <div className="relative w-full md:w-80">
                 <Search className="w-4 h-4 absolute left-3 top-2.5 text-stone-400" />
                 <input
@@ -1611,7 +1611,7 @@ export default function AdminPanel({
                   placeholder="Buscar por protocolo, nome, email ou CPF..."
                   value={deletionSearchTerm}
                   onChange={(e) => setDeletionSearchTerm(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2 border border-[#141414] bg-[#F8F7F4] focus:outline-none"
+                  className="w-full pl-9 pr-3 py-2 rounded-lg border border-stone-200 bg-stone-50 focus:bg-white focus:outline-none focus:border-stone-400 text-xs transition-colors"
                 />
               </div>
 
@@ -1626,10 +1626,10 @@ export default function AdminPanel({
                   <button
                     key={st.id}
                     onClick={() => setDeletionStatusFilter(st.id)}
-                    className={`px-3 py-1.5 font-bold uppercase border cursor-pointer transition-all ${
+                    className={`px-3 py-1.5 rounded-lg font-medium uppercase text-xs cursor-pointer transition-all ${
                       deletionStatusFilter === st.id
-                        ? "bg-[#141414] text-white border-[#141414]"
-                        : "bg-[#F8F7F4] text-stone-700 border-stone-300 hover:bg-stone-200"
+                        ? "bg-stone-900 text-white"
+                        : "bg-stone-100 text-stone-600 hover:bg-stone-200"
                     }`}
                   >
                     {st.label}
@@ -1639,7 +1639,7 @@ export default function AdminPanel({
             </div>
 
             {/* Deletion Requests Table */}
-            <div className="bg-white border-2 border-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] overflow-x-auto">
+            <div className="bg-white rounded-xl border border-stone-200 shadow-xs overflow-x-auto">
               <table className="w-full text-left font-mono text-xs border-collapse">
                 <thead>
                   <tr className="bg-[#141414] text-white uppercase text-[10px] tracking-wider">

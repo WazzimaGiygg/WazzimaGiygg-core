@@ -53,24 +53,26 @@ export default function ExternalRedirectModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="bg-[#FAF9F5] border-4 border-[#141414] max-w-lg w-full shadow-[10px_10px_0px_0px_rgba(20,20,20,1)] flex flex-col">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/40 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="bg-white rounded-2xl border border-stone-200 max-w-lg w-full shadow-2xl overflow-hidden flex flex-col">
         {/* Header */}
-        <div className="bg-[#141414] text-white p-4 flex items-center justify-between border-b-2 border-stone-800">
+        <div className="px-6 py-4 flex items-center justify-between border-b border-stone-100">
           <div className="flex items-center gap-2.5">
-            <ShieldAlert className="w-5 h-5 text-amber-400" />
+            <div className="w-8 h-8 rounded-full bg-amber-50 flex items-center justify-center">
+              <ShieldAlert className="w-4 h-4 text-amber-600" />
+            </div>
             <div>
-              <h3 className="font-editorial text-lg font-bold tracking-tight">
-                Aviso de Segurança — Link Externo
+              <h3 className="font-editorial text-base font-bold text-stone-900">
+                Aviso — Link Externo
               </h3>
-              <p className="text-[11px] font-mono text-stone-400">
+              <p className="text-[11px] font-mono text-stone-500">
                 Extensão Redirecionador com UID (3.05.3.c)
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 hover:bg-stone-800 text-stone-300 hover:text-white transition-colors cursor-pointer"
+            className="p-1.5 rounded-lg hover:bg-stone-100 text-stone-400 hover:text-stone-700 transition-colors cursor-pointer"
             title="Cancelar e Fechar"
           >
             <X className="w-5 h-5" />
@@ -79,67 +81,64 @@ export default function ExternalRedirectModal({
 
         {/* Content */}
         <div className="p-6 space-y-4 font-mono text-xs">
-          <p className="font-serif text-sm text-stone-800 leading-relaxed">
-            Você está prestes a sair do ambiente do portal <strong>WazzimaGiygg</strong> para acessar um endereço web externo.
+          <p className="font-serif text-sm text-stone-700 leading-relaxed">
+            Você está prestes a sair do portal <strong>WazzimaGiygg</strong> para acessar um endereço web externo.
           </p>
 
-          <div className="space-y-2">
-            <span className="font-bold text-stone-700 uppercase text-[10px]">Destino Solicitado:</span>
-            <div className="p-3 bg-stone-100 border-2 border-stone-300 text-stone-900 font-mono text-[11px] break-all">
+          <div className="space-y-1.5">
+            <span className="font-medium text-stone-500 uppercase text-[10px]">Destino Solicitado:</span>
+            <div className="p-3 bg-stone-50 rounded-lg border border-stone-200 text-stone-800 font-mono text-[11px] break-all">
               {targetUrl}
             </div>
           </div>
 
           {/* Redirector Details */}
-          <div className="p-3 bg-amber-50/80 border-2 border-amber-500 shadow-[2px_2px_0px_0px_rgba(217,119,6,1)] space-y-2 text-[11px]">
+          <div className="p-3.5 bg-stone-50 rounded-xl border border-stone-200 space-y-2 text-[11px]">
             <div className="flex items-center justify-between">
-              <span className="font-bold text-amber-950 uppercase flex items-center gap-1.5">
-                <Globe className="w-3.5 h-3.5 text-amber-700" /> Dispositivo Redirecionador:
+              <span className="font-medium text-stone-700 uppercase flex items-center gap-1.5 text-[10px]">
+                <Globe className="w-3.5 h-3.5 text-stone-500" /> Dispositivo Redirecionador:
               </span>
-              <span className={`px-1.5 py-0.5 font-bold text-[9px] uppercase ${
-                isRedirectorEnabled ? 'bg-emerald-700 text-white' : 'bg-stone-300 text-stone-700'
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium uppercase ${
+                isRedirectorEnabled ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-stone-100 text-stone-500'
               }`}>
-                {isRedirectorEnabled ? 'Extensão Ativa' : 'Extensão Desativada'}
+                {isRedirectorEnabled ? 'Extensão Ativa' : 'Desativada'}
               </span>
             </div>
 
             {isRedirectorEnabled ? (
-              <div className="space-y-1 text-stone-700">
+              <div className="space-y-1 text-stone-600">
                 <div>
-                  <strong>URL Redirecionadora:</strong>{' '}
-                  <code className="text-amber-950 font-bold">{baseUrl}</code>
+                  <span className="text-stone-500">URL Redirecionadora:</span>{' '}
+                  <code className="text-stone-900 font-semibold">{baseUrl}</code>
                 </div>
                 <div>
-                  <strong>UID Ativo em Sessão:</strong>{' '}
-                  <code className="text-stone-900 font-bold">{activeUid}</code>
-                </div>
-                <div className="text-[10px] text-stone-500 pt-1 border-t border-amber-200">
-                  Rastreio seguro habilitado conforme parâmetros de governança técnica da extensão.
+                  <span className="text-stone-500">UID Ativo:</span>{' '}
+                  <code className="text-stone-900 font-semibold">{activeUid}</code>
                 </div>
               </div>
             ) : (
-              <p className="text-stone-600 text-[10px]">
-                O redirecionador foi desativado nas configurações da extensão. O navegador seguirá diretamente para o endereço alvo.
+              <p className="text-stone-500 text-[10px]">
+                O redirecionador está desativado nas configurações. O navegador seguirá diretamente para o endereço alvo.
               </p>
             )}
           </div>
         </div>
 
         {/* Footer Actions */}
-        <div className="bg-stone-100 border-t-2 border-[#141414] p-4 flex flex-col sm:flex-row items-center justify-between gap-3 font-mono text-xs">
+        <div className="bg-stone-50/70 border-t border-stone-100 px-6 py-3.5 flex flex-col sm:flex-row items-center justify-end gap-2.5 font-mono text-xs">
           <button
             onClick={onClose}
-            className="w-full sm:w-auto px-4 py-2 bg-stone-200 hover:bg-stone-300 text-stone-800 font-bold border-2 border-stone-400 cursor-pointer"
+            className="w-full sm:w-auto px-4 py-2 rounded-lg text-stone-600 hover:bg-stone-200/60 font-medium cursor-pointer transition-colors"
           >
-            Cancelar e Permanecer
+            Cancelar
           </button>
 
           <button
             onClick={handleContinue}
-            className="w-full sm:w-auto px-5 py-2.5 bg-stone-900 hover:bg-stone-800 text-white font-bold uppercase tracking-wider border-2 border-black shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] flex items-center justify-center gap-2 cursor-pointer active:translate-x-0.5 active:translate-y-0.5"
+            className="w-full sm:w-auto px-5 py-2 rounded-lg bg-stone-900 hover:bg-stone-800 text-white font-medium uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer transition-colors"
           >
-            <span>Prosseguir para Link Externo</span>
-            <ArrowRight className="w-4 h-4 text-amber-400" />
+            <span>Prosseguir</span>
+            <ArrowRight className="w-3.5 h-3.5 text-stone-300" />
           </button>
         </div>
       </div>

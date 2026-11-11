@@ -807,13 +807,13 @@ export default function App() {
           <div className="flex items-center gap-2 shrink-0">
             <button
               onClick={() => handleQuickToggleMaintenance(false)}
-              className="px-2.5 py-1 bg-white text-rose-900 hover:bg-stone-100 font-mono font-bold text-[11px] uppercase border border-rose-950 cursor-pointer shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]"
+              className="px-3 py-1 bg-white text-rose-900 hover:bg-stone-100 rounded-md font-mono font-medium text-[11px] uppercase transition-colors cursor-pointer"
             >
               Desativar Manutenção
             </button>
             <button
               onClick={() => setEditingExtensionConfig(maintenanceExtension || null)}
-              className="px-2.5 py-1 bg-rose-900 text-white hover:bg-rose-800 font-mono font-bold text-[11px] uppercase border border-white cursor-pointer shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]"
+              className="px-3 py-1 bg-rose-950/60 hover:bg-rose-950 text-white rounded-md font-mono font-medium text-[11px] uppercase transition-colors cursor-pointer"
             >
               Configurar Extensão
             </button>
@@ -822,50 +822,28 @@ export default function App() {
       )}
 
       {/* ============================================ */}
-      {/* 1. TOP TICKER & COMPLIANCE BAR */}
       {/* ============================================ */}
-      <header className="bg-[#141414] text-[#E5E5E5] text-[11px] font-mono border-b border-[#262626] py-1.5 px-4 tracking-wider">
-        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
-          <div className="flex items-center gap-2.5">
+      {/* 1. MINIMAL TOP BAR */}
+      {/* ============================================ */}
+      <header className="bg-stone-900 text-stone-300 text-xs border-b border-stone-800 py-2 px-4 sm:px-6">
+        <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
+          <div className="flex items-center gap-2.5 truncate">
             <img src="/favicom.png" alt="Emblema WZZM" className="w-4 h-4 object-contain shrink-0" />
-            <span className="bg-[#D97706] text-black font-bold px-1.5 py-0.5 text-[9px] uppercase tracking-widest">
-              DIÁRIO OFICIAL
-            </span>
-            <span className="capitalize">{formattedDate}</span>
-            <span className="hidden md:inline text-stone-500">•</span>
-            <span className="hidden md:inline text-stone-400">
-              Edição nº 2.418 • Brasília / São Paulo / Rede Global
-            </span>
+            <span className="font-semibold text-white tracking-wide text-xs">WAZZIMA GIYGG</span>
+            <span className="text-stone-500 hidden sm:inline">·</span>
+            <span className="text-stone-400 text-[11px] hidden sm:inline capitalize">{formattedDate}</span>
           </div>
 
-          <div className="flex items-center gap-4">
-            {/* REGRAS LGPD À AMOSTRA (CIÊNCIA ABSOLUTA) */}
+          <div className="flex items-center gap-3 shrink-0 text-xs">
+            {/* REGRAS LGPD (LEI 13.709/18) */}
             <button
               onClick={() => setIsLgpdModalOpen(true)}
-              className="flex items-center gap-1.5 bg-emerald-950/90 hover:bg-emerald-900 text-emerald-300 border border-emerald-500 px-2.5 py-0.5 text-[10px] font-bold font-mono uppercase tracking-wider transition-all cursor-pointer shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]"
-              title="Regras da LGPD (Lei 13.709/18) à mostra para ciência absoluta de cumprimento"
+              className="flex items-center gap-1.5 text-stone-300 hover:text-emerald-400 text-xs transition-colors cursor-pointer"
+              title="Regras da LGPD (Lei 13.709/18)"
             >
-              <Scale className="w-3 h-3 text-emerald-400 shrink-0" />
-              <span>REGRAS LGPD</span>
-              <span className="bg-emerald-500 text-black text-[8px] font-black px-1 py-0.2 uppercase">
-                À AMOSTRA
-              </span>
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+              <Scale className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+              <span>Regras LGPD</span>
             </button>
-
-            <span className="text-stone-700">|</span>
-
-            <button
-              onClick={() => setIsDiagnosticsOpen(!isDiagnosticsOpen)}
-              className="flex items-center gap-1.5 hover:text-white text-stone-400 transition-colors cursor-pointer text-[10px]"
-              title="Ver status da API e banco de dados"
-            >
-              <Database className="w-3 h-3 text-emerald-400" />
-              <span>API TS: 2.0.0</span>
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-            </button>
-
-            <span className="text-stone-700">|</span>
 
             {/* Notification Bell */}
             <div className="relative">
@@ -876,7 +854,7 @@ export default function App() {
               >
                 <Bell className="w-3.5 h-3.5" />
                 {unreadNotificationsCount > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-red-600 text-white font-bold text-[9px] w-4 h-4 rounded-full flex items-center justify-center border border-black">
+                  <span className="absolute -top-1 -right-1 bg-red-600 text-white font-bold text-[9px] w-4 h-4 rounded-full flex items-center justify-center">
                     {unreadNotificationsCount}
                   </span>
                 )}
@@ -884,15 +862,15 @@ export default function App() {
 
               {/* Notification Popover */}
               {isNotifDropdownOpen && (
-                <div className="absolute right-0 mt-2 w-80 bg-white text-[#141414] border-2 border-[#141414] shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] z-50 p-4">
-                  <div className="flex items-center justify-between border-b pb-2 mb-3">
-                    <span className="font-bold text-xs uppercase tracking-wider font-mono">
+                <div className="absolute right-0 mt-2 w-80 bg-white text-stone-900 rounded-xl border border-stone-200 shadow-xl z-50 p-4">
+                  <div className="flex items-center justify-between border-b border-stone-100 pb-2 mb-3">
+                    <span className="font-semibold text-xs text-stone-900">
                       Notificações ({notifications.length})
                     </span>
                     {unreadNotificationsCount > 0 && (
                       <button
                         onClick={() => markAllNotificationsAsRead(notifications)}
-                        className="text-[10px] text-amber-700 hover:underline font-mono"
+                        className="text-[11px] text-stone-500 hover:text-stone-900"
                       >
                         Marcar lidas
                       </button>
@@ -901,21 +879,21 @@ export default function App() {
 
                   <div className="max-h-64 overflow-y-auto space-y-2">
                     {notifications.length === 0 ? (
-                      <p className="text-xs text-stone-500 py-3 text-center">Nenhuma notificação.</p>
+                      <p className="text-xs text-stone-500 py-4 text-center">Nenhuma notificação.</p>
                     ) : (
                       notifications.map((n) => (
                         <div
                           key={n.id}
                           onClick={() => markNotificationAsRead(n.id)}
-                          className={`p-2.5 border text-xs cursor-pointer transition-colors ${
-                            n.lida ? "bg-stone-50 border-stone-200" : "bg-amber-50 border-amber-300 font-medium"
+                          className={`p-2.5 rounded-lg border text-xs cursor-pointer transition-colors ${
+                            n.lida ? "bg-stone-50 border-stone-150 text-stone-600" : "bg-amber-50/60 border-amber-200 font-medium text-stone-900"
                           }`}
                         >
                           <div className="flex items-center justify-between text-[10px] text-stone-500 mb-1">
-                            <span className="font-bold uppercase tracking-wider">{n.titulo}</span>
+                            <span className="font-semibold uppercase tracking-wider">{n.titulo}</span>
                             <span>{n.timestamp}</span>
                           </div>
-                          <p className="text-[11px] text-stone-800 leading-snug">{n.mensagem}</p>
+                          <p className="text-xs leading-snug">{n.mensagem}</p>
                         </div>
                       ))
                     )}
@@ -924,51 +902,36 @@ export default function App() {
               )}
             </div>
 
-            <span className="text-stone-700">|</span>
-
             {/* Burocrata / Admin Access Button */}
             <button
               onClick={() => setIsAdminPanelOpen(true)}
-              className={`flex items-center gap-1.5 px-2 py-0.5 text-[10px] font-mono font-bold uppercase tracking-wider transition-all cursor-pointer border ${
+              className={`flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-md font-medium transition-colors cursor-pointer ${
                 isAdmin
-                  ? "bg-red-700 text-white border-red-500 hover:bg-red-600 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]"
-                  : "bg-stone-800 text-amber-300 border-stone-700 hover:bg-stone-700"
+                  ? "bg-red-700 hover:bg-red-600 text-white"
+                  : "bg-stone-800 hover:bg-stone-700 text-stone-300"
               }`}
-              title="Acesso exclusivo da administração (burocrata)"
+              title="Acesso da administração (burocrata)"
             >
-              <Crown className="w-3 h-3 text-amber-400" />
-              <span>{isAdmin ? "PAINEL BUROCRATA" : "ACESSO BUROCRATA"}</span>
+              <Crown className="w-3.5 h-3.5 text-amber-400" />
+              <span>{isAdmin ? "Burocrata" : "Admin"}</span>
             </button>
-
-            <span className="text-stone-700">|</span>
 
             {/* Auth Indicator */}
             {user ? (
-              <div className="flex items-center gap-2">
-                <span className="text-stone-300 font-bold max-w-[130px] truncate text-[10px]">
+              <div className="flex items-center gap-2 pl-1 border-l border-stone-800">
+                <span className="text-stone-300 font-medium max-w-[120px] truncate text-xs">
                   {user.displayName || user.email || "Leitor"}
                 </span>
-                {isAdmin && (
-                  <span className="bg-red-700 text-white text-[9px] px-1 py-0.2 font-bold uppercase">
-                    ADMIN
-                  </span>
-                )}
-                {isGuestUser && (
-                  <span className="bg-stone-700 text-stone-200 text-[9px] px-1 py-0.2 uppercase">
-                    24h
-                  </span>
-                )}
                 <button
                   onClick={() => switchTab("bemtevi")}
-                  className="bg-[#667eea]/20 text-indigo-300 border border-[#667eea]/40 hover:bg-[#667eea]/40 text-[9px] px-1.5 py-0.2 rounded font-mono font-bold flex items-center gap-1 cursor-pointer"
-                  title="Abrir perfil social no Bemtevi"
+                  className="text-stone-400 hover:text-stone-200 text-xs flex items-center gap-1 cursor-pointer transition-colors"
+                  title="Abrir Bemtevi"
                 >
-                  <Award className="w-2.5 h-2.5 text-amber-400" />
-                  <span>Bemtevi</span>
+                  <MessageCircle className="w-3.5 h-3.5" />
                 </button>
                 <button
                   onClick={handleLogout}
-                  className="hover:text-red-400 text-stone-400 transition-colors cursor-pointer ml-1"
+                  className="text-stone-400 hover:text-red-400 transition-colors cursor-pointer p-0.5"
                   title="Sair"
                 >
                   <LogOut className="w-3.5 h-3.5" />
@@ -977,10 +940,10 @@ export default function App() {
             ) : (
               <button
                 onClick={() => setIsLoginModalOpen(true)}
-                className="flex items-center gap-1.5 bg-[#EBEAE8] hover:bg-white text-black font-bold px-2 py-0.5 text-[10px] transition-colors cursor-pointer"
+                className="flex items-center gap-1.5 bg-stone-800 hover:bg-stone-700 text-white font-medium px-3 py-1 rounded-md text-xs transition-colors cursor-pointer"
               >
-                <LogIn className="w-3 h-3" />
-                <span>ENTRAR</span>
+                <LogIn className="w-3.5 h-3.5" />
+                <span>Entrar</span>
               </button>
             )}
           </div>
@@ -1000,81 +963,60 @@ export default function App() {
       />
 
       {/* ============================================ */}
-      {/* 2. MAIN NEWSPAPER MASTHEAD */}
+      {/* 2. MINIMAL EDITORIAL MASTHEAD */}
       {/* ============================================ */}
-      <section className="bg-[#F8F7F4] border-b-4 border-[#141414] pt-8 pb-5 px-4">
-        <div className="max-w-7xl mx-auto text-center">
-          {/* Top Vintage Ornaments */}
-          <div className="flex items-center justify-center gap-4 text-xs font-mono uppercase tracking-widest text-stone-600 mb-2">
-            <span>Volume VII</span>
-            <span>•</span>
-            <span>Liberdade de Expressão & Conhecimento Aberto</span>
-            <span>•</span>
-            <span>Edição Web & TypeScript</span>
+      <section className="bg-white border-b border-stone-200 pt-8 pb-6 px-4">
+        <div className="max-w-5xl mx-auto text-center">
+          <div className="flex items-center justify-center mb-3">
+            <img
+              src="/favicom.png"
+              alt="WazzimaGiygg Emblem"
+              className="w-10 h-10 object-contain"
+            />
           </div>
 
-          <div className="border-t border-b border-[#141414] py-1 my-2">
-            <div className="border-t border-b border-[#141414] py-3">
-              <div className="flex items-center justify-center mb-2">
-                <img
-                  src="/favicom.png"
-                  alt="WazzimaGiygg Emblem"
-                  className="w-12 h-12 object-contain drop-shadow-sm"
-                />
-              </div>
-              <h1 className="text-4xl sm:text-6xl md:text-7xl lg:text-8xl font-black font-editorial tracking-tight uppercase leading-none text-[#141414]">
-                WAZZIMA<span className="text-[#B91C1C]">GIYGG</span>
-              </h1>
-              <p className="mt-2 text-xs sm:text-sm font-mono uppercase tracking-[0.25em] text-stone-800 font-bold">
-                Jornal, Acervo Acadêmico & Enciclopédia Colaborativa WZZM
-              </p>
-            </div>
-          </div>
+          <h1 className="text-4xl sm:text-5xl md:text-6xl font-bold font-editorial tracking-tight text-stone-950 leading-none">
+            WAZZIMA<span className="text-red-700">GIYGG</span>
+          </h1>
 
-          {/* Subheader bar with quick metrics */}
-          <div className="flex flex-wrap items-center justify-between text-[11px] font-mono text-stone-700 pt-2 border-t border-stone-300">
-            <div className="flex items-center gap-4">
-              <span>FUNDADO SOB LEI Nº 12.965/2014 (MARCO CIVIL)</span>
-              <span className="hidden sm:inline">•</span>
-              <span className="hidden sm:inline">BASE FIRESTORE ORIGINAL MANTIDA</span>
-            </div>
-            <div className="flex items-center gap-4">
-              <span className="font-bold text-stone-900">
-                {Object.values(articles).reduce((acc, curr) => acc + curr.length, 0)} DOCUMENTOS NO ACERVO
-              </span>
-              <span>•</span>
-              <button
-                onClick={() => {
-                  if (!user || !isAuthorizedPublisher(user.email)) {
-                    showToast(
-                      "🚨 Permissão negada: Qualquer publicação de artigo só deve ser feita pelas contas dos e-mails wazzimagiygg@gmail.com e pedrohenriquecardonaperes@gmail.com.",
-                      true
-                    );
-                    return;
-                  }
-                  setIsCreateModalOpen(true);
-                }}
-                className={`px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 cursor-pointer transition-colors ${
-                  isAuthorizedPublisherUser
-                    ? "bg-[#141414] text-white hover:bg-stone-800"
-                    : "bg-stone-800/80 text-amber-300 border border-amber-600/50 hover:bg-stone-800"
-                }`}
-                title="Publicar Artigo (Exclusivo para wazzimagiygg@gmail.com e pedrohenriquecardonaperes@gmail.com)"
-              >
-                <PlusCircle className="w-3 h-3 text-amber-400" />
-                <span>Publicar Artigo</span>
-              </button>
-            </div>
+          <p className="mt-2 text-xs sm:text-sm font-sans text-stone-600 font-medium">
+            Jornal Independente, Acervo Acadêmico & Enciclopédia Colaborativa
+          </p>
+
+          <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-4 text-xs text-stone-500 mt-4 pt-4 border-t border-stone-100">
+            <span>{Object.values(articles).reduce((acc, curr) => acc + curr.length, 0)} publicações indexadas</span>
+            <span aria-hidden="true">·</span>
+            <span>Marco Civil da Internet</span>
+            <span aria-hidden="true">·</span>
+            <span>Conformidade LGPD (Lei 13.709)</span>
+            <span aria-hidden="true">·</span>
+            <button
+              onClick={() => {
+                if (!user || !isAuthorizedPublisher(user.email)) {
+                  showToast(
+                    "🚨 Permissão negada: Qualquer publicação de artigo só deve ser feita pelas contas dos e-mails wazzimagiygg@gmail.com e pedrohenriquecardonaperes@gmail.com.",
+                    true
+                  );
+                  return;
+                }
+                setIsCreateModalOpen(true);
+              }}
+              className="paper-button px-3 py-1 text-xs inline-flex items-center gap-1.5 cursor-pointer ml-1"
+              title="Publicar Artigo (Exclusivo para wazzimagiygg@gmail.com e pedrohenriquecardonaperes@gmail.com)"
+            >
+              <PlusCircle className="w-3.5 h-3.5 text-amber-300" />
+              <span>Publicar Artigo</span>
+            </button>
           </div>
         </div>
       </section>
 
       {/* ============================================ */}
-      {/* 3. NAVIGATION TAB BAR */}
+      {/* 3. MINIMAL TAB NAVIGATION BAR */}
       {/* ============================================ */}
-      <nav className="bg-[#EBE8E1] border-b-2 border-[#141414] sticky top-0 z-40 px-4">
-        <div className="max-w-7xl mx-auto flex items-center justify-between overflow-x-auto no-scrollbar py-1">
-          <div className="flex items-center gap-1 sm:gap-2">
+      <nav className="bg-white/90 backdrop-blur-md border-b border-stone-200 sticky top-0 z-40 px-4 py-1.5">
+        <div className="max-w-7xl mx-auto flex items-center justify-between overflow-x-auto no-scrollbar gap-1.5">
+          <div className="flex items-center gap-1">
             {[
               { id: "wikiwazzimagiygg", label: "WikiWazzimaGiygg", icon: Sparkles },
               { id: "wikiworldweb", label: "WikiWorldWeb", icon: Globe },
@@ -1082,13 +1024,13 @@ export default function App() {
               { id: "academico", label: "Acadêmico", icon: GraduationCap },
               { id: "materia", label: "Matérias Didáticas", icon: BookOpen },
               { id: "uwgbooks", label: "UWG Books", icon: Book },
-              { id: "wnpx", label: "WNPX / WikiNotPedia", icon: Newspaper },
-              { id: "dossie", label: "Dossiê & Abusos Wikipédia", icon: Scale },
-              { id: "tickets", label: supportConfig.buttonLabel || "Ouvidoria & Tickets", icon: Ticket },
-              { id: "chat", label: "Chat & Mensagens", icon: MessageSquare },
-              { id: "notmediawiki", label: "NotMediaWiki (Beta)", icon: Database },
-              { id: "bemtevi", label: "Bemtevi (Rede Social)", icon: MessageCircle },
-              { id: "lgpd", label: "Regras LGPD (Lei 13.709)", icon: Scale }
+              { id: "wnpx", label: "WNPX", icon: Newspaper },
+              { id: "dossie", label: "Dossiê & Abusos", icon: Scale },
+              { id: "tickets", label: supportConfig.buttonLabel || "Ouvidoria", icon: Ticket },
+              { id: "chat", label: "Chat", icon: MessageSquare },
+              { id: "notmediawiki", label: "NotMediaWiki", icon: Database },
+              { id: "bemtevi", label: "Bemtevi", icon: MessageCircle },
+              { id: "lgpd", label: "Regras LGPD", icon: Scale }
             ].map((tab) => {
               const Icon = tab.icon;
               const isActive = currentTab === tab.id;
@@ -1102,13 +1044,13 @@ export default function App() {
                       switchTab(tab.id as any);
                     }
                   }}
-                  className={`flex items-center gap-1.5 px-3 py-2 text-xs font-mono font-bold uppercase tracking-wider whitespace-nowrap transition-all cursor-pointer border ${
+                  className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg whitespace-nowrap transition-all cursor-pointer ${
                     isActive
-                      ? "bg-[#141414] text-white border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,0.4)]"
-                      : "bg-transparent text-stone-800 border-transparent hover:bg-stone-200 hover:border-stone-400"
+                      ? "bg-stone-900 text-white font-medium shadow-sm"
+                      : "text-stone-600 hover:text-stone-950 hover:bg-stone-100"
                   }`}
                 >
-                  <Icon className={`w-3.5 h-3.5 ${isActive ? "text-amber-400" : "text-stone-600"}`} />
+                  <Icon className={`w-3.5 h-3.5 ${isActive ? "text-amber-400" : "text-stone-500"}`} />
                   <span>{tab.label}</span>
                 </button>
               );
@@ -1117,11 +1059,11 @@ export default function App() {
             {/* Direct Burocrata Admin Tab */}
             <button
               onClick={() => setIsAdminPanelOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-2 text-xs font-mono font-bold uppercase tracking-wider whitespace-nowrap bg-red-800 hover:bg-red-700 text-white border border-red-950 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] cursor-pointer"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg whitespace-nowrap bg-red-700 hover:bg-red-800 text-white transition-colors cursor-pointer ml-1"
               title="Acesso exclusivo da administração (burocrata)"
             >
               <Crown className="w-3.5 h-3.5 text-amber-300" />
-              <span>Burocrata (Admin)</span>
+              <span>Burocrata</span>
             </button>
           </div>
         </div>
@@ -1131,22 +1073,22 @@ export default function App() {
       {/* 4. SEARCH & SECTOR FILTER BAR */}
       {/* ============================================ */}
       {["wikiworldweb", "materiadeensaio", "academico", "materia", "uwgbooks"].includes(currentTab) && (
-        <div className="bg-white border-b border-stone-300 py-3 px-4">
+        <div className="bg-white border-b border-stone-200 py-3 px-4">
           <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-3">
             {/* Search Input */}
             <div className="relative w-full md:w-96">
               <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
               <input
                 type="text"
-                placeholder="Pesquisar artigos, tópicos, autores ou palavras-chave..."
+                placeholder="Pesquisar artigos, autores ou palavras-chave..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-9 pr-4 py-2 text-xs font-mono bg-[#F8F7F4] border border-[#141414] focus:outline-none focus:ring-2 focus:ring-[#141414]"
+                className="w-full pl-9 pr-4 py-2 text-xs rounded-lg bg-stone-50 border border-stone-200 focus:bg-white focus:outline-none focus:ring-1 focus:ring-stone-400"
               />
               {searchTerm && (
                 <button
                   onClick={() => setSearchTerm("")}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400 hover:text-black"
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-700"
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>
@@ -1154,14 +1096,14 @@ export default function App() {
             </div>
 
             {/* Sector Tags */}
-            <div className="flex items-center gap-1.5 overflow-x-auto w-full md:w-auto text-xs font-mono">
-              <span className="text-[10px] text-stone-500 uppercase font-bold shrink-0">Filtrar:</span>
+            <div className="flex items-center gap-1.5 overflow-x-auto w-full md:w-auto text-xs">
+              <span className="text-[11px] text-stone-400 uppercase font-semibold shrink-0">Filtrar:</span>
               <button
                 onClick={() => setSelectedSector("todos")}
-                className={`px-2.5 py-1 text-[11px] font-bold border transition-colors cursor-pointer ${
+                className={`px-3 py-1 text-xs rounded-lg transition-colors cursor-pointer ${
                   selectedSector === "todos"
-                    ? "bg-[#141414] text-white border-[#141414]"
-                    : "bg-[#F8F7F4] text-stone-700 border-stone-300 hover:border-black"
+                    ? "bg-stone-900 text-white font-medium"
+                    : "text-stone-600 hover:bg-stone-100 hover:text-stone-900"
                 }`}
               >
                 Todos
@@ -1170,10 +1112,10 @@ export default function App() {
                 <button
                   key={sector}
                   onClick={() => setSelectedSector(sector)}
-                  className={`px-2.5 py-1 text-[11px] font-bold border whitespace-nowrap transition-colors cursor-pointer ${
+                  className={`px-3 py-1 text-xs rounded-lg whitespace-nowrap transition-colors cursor-pointer ${
                     selectedSector === sector
-                      ? "bg-[#141414] text-white border-[#141414]"
-                      : "bg-[#F8F7F4] text-stone-700 border-stone-300 hover:border-black"
+                      ? "bg-stone-900 text-white font-medium"
+                      : "text-stone-600 hover:bg-stone-100 hover:text-stone-900"
                   }`}
                 >
                   {sector}
@@ -1190,12 +1132,12 @@ export default function App() {
       <main className="max-w-7xl mx-auto px-4 py-8 flex-1 w-full">
         {/* Banned Alert Banner */}
         {isBanned && (
-          <div className="mb-6 p-4 bg-red-100 border-2 border-red-700 text-red-950 flex items-start gap-3 shadow-[4px_4px_0px_0px_rgba(185,28,28,1)]">
-            <AlertCircle className="w-6 h-6 text-red-700 shrink-0 mt-0.5" />
+          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl text-red-900 flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-red-700 shrink-0 mt-0.5" />
             <div>
-              <h3 className="font-bold font-mono text-sm uppercase">CONTA SUSPENSA / RESTRITA</h3>
-              <p className="text-xs mt-1">
-                Motivo: {banReason}. De acordo com as diretrizes do ecossistema WazzimaGiygg, certas ações de edição estão desabilitadas. Entre em contato pela Ouvidoria para contestação.
+              <h3 className="font-semibold text-sm">Conta Suspensa / Restrita</h3>
+              <p className="text-xs mt-1 text-red-800">
+                Motivo: {banReason}. As ações de edição estão desabilitadas. Entre em contato pela Ouvidoria para contestação.
               </p>
             </div>
           </div>
@@ -1205,16 +1147,16 @@ export default function App() {
         {["wikiworldweb", "materiadeensaio", "academico", "materia", "uwgbooks"].includes(currentTab) && (
           <div>
             {/* Header info */}
-            <div className="flex items-center justify-between border-b-2 border-[#141414] pb-2 mb-6">
+            <div className="flex items-center justify-between border-b border-stone-200 pb-3 mb-6">
               <div>
-                <h2 className="text-2xl font-editorial font-bold text-[#141414] capitalize">
+                <h2 className="text-xl sm:text-2xl font-bold font-editorial text-stone-900 capitalize">
                   {currentTab === "wikiworldweb" && "Edição Geral: Notícias & Sociedade"}
                   {currentTab === "materiadeensaio" && "Matérias de Ensaio & Opinião"}
                   {currentTab === "academico" && "Acervo de Metodologia e Pesquisa Acadêmica"}
                   {currentTab === "materia" && "Matérias Escolares e Ensino Fundamental/Médio"}
                   {currentTab === "uwgbooks" && "UWG Books: Acervo Digital de Livros e Obras"}
                 </h2>
-                <p className="text-xs font-mono text-stone-600 mt-0.5">
+                <p className="text-xs text-stone-500 mt-0.5">
                   Exibindo {currentTabArticles.length} publicações indexadas
                 </p>
               </div>
@@ -1228,7 +1170,7 @@ export default function App() {
                     showToast("Acervo atualizado.");
                   });
                 }}
-                className="flex items-center gap-1.5 text-xs font-mono font-bold bg-[#EBEAE8] hover:bg-stone-300 px-3 py-1.5 border border-[#141414] transition-colors cursor-pointer"
+                className="paper-button-secondary text-xs px-3 py-1.5 flex items-center gap-1.5 cursor-pointer"
                 title="Sincronizar com banco de dados"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? "animate-spin" : ""}`} />
@@ -1240,15 +1182,15 @@ export default function App() {
             {isLoading ? (
               <div className="py-20 text-center">
                 <RefreshCw className="w-8 h-8 animate-spin mx-auto text-stone-400 mb-3" />
-                <p className="font-mono text-xs text-stone-600 uppercase tracking-widest">
+                <p className="text-xs text-stone-500 uppercase tracking-widest">
                   Carregando acervo do banco de dados...
                 </p>
               </div>
             ) : currentTabArticles.length === 0 ? (
-              <div className="bg-white border-2 border-[#141414] p-12 text-center shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]">
-                <Newspaper className="w-12 h-12 text-stone-400 mx-auto mb-3" />
-                <h3 className="text-lg font-editorial font-bold">Nenhum artigo encontrado nesta categoria</h3>
-                <p className="text-xs font-mono text-stone-600 max-w-md mx-auto mt-2">
+              <div className="bg-white border border-stone-200 rounded-xl p-12 text-center shadow-sm">
+                <Newspaper className="w-10 h-10 text-stone-400 mx-auto mb-3" />
+                <h3 className="text-base font-semibold text-stone-900">Nenhum artigo encontrado nesta categoria</h3>
+                <p className="text-xs text-stone-500 max-w-md mx-auto mt-2">
                   Seja o primeiro colaborador a publicar um novo documento nesta seção usando o botão "Publicar Artigo".
                 </p>
                 <button
@@ -1262,27 +1204,27 @@ export default function App() {
                     }
                     setIsCreateModalOpen(true);
                   }}
-                  className="mt-5 paper-button px-4 py-2 font-mono text-xs font-bold uppercase tracking-wider cursor-pointer inline-flex items-center gap-2"
+                  className="mt-4 paper-button px-4 py-2 text-xs inline-flex items-center gap-2 cursor-pointer"
                   title="Publicar Documento (Restrito a wazzimagiygg@gmail.com e pedrohenriquecardonaperes@gmail.com)"
                 >
-                  <PlusCircle className="w-4 h-4 text-amber-400" />
+                  <PlusCircle className="w-4 h-4 text-amber-300" />
                   <span>Publicar Agora</span>
                 </button>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
                 {currentTabArticles.map((article, idx) => (
                   <article
                     key={article.id || idx}
-                    className="paper-card flex flex-col justify-between p-5 text-left group"
+                    className="paper-card p-5 text-left flex flex-col justify-between group"
                   >
                     <div>
-                      {/* Top tag & views */}
-                      <div className="flex items-center justify-between text-[10px] font-mono mb-2 text-stone-600">
-                        <span className="bg-[#EBEAE8] text-[#141414] font-bold px-2 py-0.5 border border-stone-300 uppercase tracking-wider">
+                      {/* Top tag & views (unboxed clean metadata) */}
+                      <div className="flex items-center justify-between text-xs text-stone-500 mb-2.5">
+                        <span className="font-semibold text-stone-700 uppercase tracking-wider text-[11px]">
                           {article.setor || "Geral"}
                         </span>
-                        <span className="flex items-center gap-1 font-mono text-stone-500">
+                        <span className="flex items-center gap-1 text-[11px] text-stone-400">
                           <Eye className="w-3 h-3" />
                           <span>{article.visualizacoes || 0}</span>
                         </span>
@@ -1291,27 +1233,27 @@ export default function App() {
                       {/* Title */}
                       <h3
                         onClick={() => handleOpenArticle(article)}
-                        className="text-lg font-editorial font-bold text-stone-950 group-hover:text-amber-800 transition-colors leading-snug cursor-pointer mb-2"
+                        className="text-base font-semibold text-stone-900 group-hover:text-red-700 transition-colors leading-snug cursor-pointer mb-2"
                       >
                         {article.titulo}
                       </h3>
 
                       {/* Excerpt */}
-                      <p className="text-xs text-stone-700 leading-relaxed font-serif line-clamp-4 mb-4">
+                      <p className="text-xs text-stone-600 leading-relaxed font-sans line-clamp-3 mb-4">
                         {stripHtmlToPlainText(article.descricao) || "Sem resumo disponível."}
                       </p>
                     </div>
 
-                    <div className="pt-3 border-t border-stone-200 mt-2">
-                      <div className="flex items-center justify-between text-[10px] font-mono text-stone-500 mb-3">
-                        <span>Autor: {article.criadorEmail?.split("@")[0] || "Redação"}</span>
+                    <div className="pt-3 border-t border-stone-100 mt-2">
+                      <div className="flex items-center justify-between text-[11px] text-stone-400 mb-3">
+                        <span>{article.criadorEmail?.split("@")[0] || "Redação"}</span>
                         <span>{article.ultimaEdicao || "Recente"}</span>
                       </div>
 
                       <div className="flex items-center gap-2">
                         <button
                           onClick={() => handleOpenArticle(article)}
-                          className="flex-1 bg-[#141414] hover:bg-stone-800 text-white font-mono font-bold text-[11px] py-2 px-3 text-center transition-colors uppercase tracking-wider flex items-center justify-center gap-1 cursor-pointer"
+                          className="flex-1 paper-button py-2 px-3 text-xs inline-flex items-center justify-center gap-1 cursor-pointer"
                         >
                           <span>Ler Artigo</span>
                           <ChevronRight className="w-3.5 h-3.5" />
@@ -1322,11 +1264,11 @@ export default function App() {
                             handleSaveArticleAsPdf(article);
                           }}
                           disabled={isGeneratingPdf}
-                          className="bg-stone-100 hover:bg-stone-200 text-stone-800 border border-stone-400 p-2 text-center transition-colors cursor-pointer disabled:opacity-50"
-                          title="Salvar como PDF (jsPDF)"
+                          className="paper-button-secondary p-2 text-stone-700 hover:text-red-700 cursor-pointer disabled:opacity-50"
+                          title="Salvar como PDF"
                           aria-label="Salvar artigo como PDF"
                         >
-                          <FileDown className="w-3.5 h-3.5 text-red-700" />
+                          <FileDown className="w-3.5 h-3.5" />
                         </button>
                       </div>
                     </div>
@@ -1340,16 +1282,16 @@ export default function App() {
         {/* VIEW 2: WNPX / WIKINOTPEDIA (Alternative Encyclopedia) */}
         {currentTab === "wnpx" && (
           <div className="space-y-6">
-            <div className="bg-white border-2 border-[#141414] p-6 sm:p-8 shadow-[6px_6px_0px_0px_rgba(20,20,20,1)]">
-              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border-b-2 border-[#141414] pb-4 mb-6">
+            <div className="bg-white border border-stone-200 rounded-xl p-6 sm:p-8 shadow-sm">
+              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border-b border-stone-100 pb-4 mb-6">
                 <div>
-                  <span className="bg-[#B91C1C] text-white font-mono text-[10px] font-bold px-2 py-0.5 uppercase tracking-widest">
-                    PROJETO ESPECIAL
+                  <span className="text-red-700 font-semibold text-xs uppercase tracking-wider">
+                    Projeto Especial
                   </span>
-                  <h2 className="text-3xl sm:text-4xl font-editorial font-bold mt-1 text-[#141414]">
+                  <h2 className="text-2xl sm:text-3xl font-bold font-editorial text-stone-900 mt-1">
                     WNPX — A Enciclopédia NotPedia
                   </h2>
-                  <p className="text-xs font-mono text-stone-700 mt-1">
+                  <p className="text-xs text-stone-500 mt-1">
                     Iniciativa editorial independente para documentação irrestrita de artigos, verbetes e história digital.
                   </p>
                 </div>
@@ -1357,7 +1299,7 @@ export default function App() {
                   <a
                     href="https://wazzimagiygg.com/wikinotpedia.html"
                     onClick={(e) => handleExternalLinkClick("https://wazzimagiygg.com/wikinotpedia.html", e)}
-                    className="paper-button px-3 py-2 text-xs font-mono font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer"
+                    className="paper-button px-3.5 py-2 text-xs flex items-center gap-1.5 cursor-pointer"
                   >
                     <span>Abrir Portal WNPX</span>
                     <ExternalLink className="w-3.5 h-3.5" />
@@ -1365,42 +1307,42 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 font-serif text-xs text-stone-800 leading-relaxed">
-                <div className="p-4 bg-[#F8F7F4] border border-stone-300">
-                  <h4 className="font-editorial font-bold text-sm mb-2 text-[#141414] uppercase font-mono">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-5 text-xs text-stone-600 leading-relaxed">
+                <div className="p-4 bg-stone-50 border border-stone-200/80 rounded-lg">
+                  <h4 className="font-semibold text-stone-900 mb-1.5 text-sm">
                     1. Imparcialidade Real
                   </h4>
                   <p>
-                    Diferente de wikis controladas por pequenos oligopólios de moderadores com interesses corporativos ou conflitos de interesse, o WNPX assegura o direito de resposta e a preservação de dados históricos.
+                    Diferente de wikis com interesses corporativos ou conflitos de interesse, o WNPX assegura o direito de resposta e a preservação de dados históricos.
                   </p>
                 </div>
 
-                <div className="p-4 bg-[#F8F7F4] border border-stone-300">
-                  <h4 className="font-editorial font-bold text-sm mb-2 text-[#141414] uppercase font-mono">
+                <div className="p-4 bg-stone-50 border border-stone-200/80 rounded-lg">
+                  <h4 className="font-semibold text-stone-900 mb-1.5 text-sm">
                     2. Garantia do Marco Civil
                   </h4>
                   <p>
-                    Preservação de registros conforme Lei 12.965/2014, transparência nas edições e proibição de perseguição editorial sistemática ou doxxing.
+                    Preservação de registros conforme Lei 12.965/2014, transparência nas edições e proibição de perseguição editorial sistemática.
                   </p>
                 </div>
 
-                <div className="p-4 bg-[#F8F7F4] border border-stone-300">
-                  <h4 className="font-editorial font-bold text-sm mb-2 text-[#141414] uppercase font-mono">
+                <div className="p-4 bg-stone-50 border border-stone-200/80 rounded-lg">
+                  <h4 className="font-semibold text-stone-900 mb-1.5 text-sm">
                     3. Acervo Indexado
                   </h4>
                   <p>
-                    Mais de 28 matérias acadêmicas, relatórios de mobilidade urbana (Metrô de São Paulo, Trens Intercidades) e artigos da reforma psiquiátrica brasileira.
+                    Mais de 28 matérias acadêmicas, relatórios de mobilidade urbana e artigos da reforma psiquiátrica brasileira.
                   </p>
                 </div>
               </div>
             </div>
 
             {/* Quick search inside WNPX articles */}
-            <div className="bg-[#EBE8E1] border-2 border-[#141414] p-6">
-              <h3 className="font-mono font-bold text-xs uppercase tracking-wider mb-3">
+            <div className="rounded-xl border border-stone-200 bg-stone-50/70 p-6">
+              <h3 className="font-mono font-medium text-xs uppercase tracking-wider text-stone-600 mb-3">
                 Verbetes & Artigos Históricos Catalogados
               </h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 font-mono text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 font-mono text-xs">
                 {[
                   "Ano de 2025 - Cronologia",
                   "Ano de 2024 - Cronologia",
@@ -1417,15 +1359,15 @@ export default function App() {
                 ].map((item, idx) => (
                   <div
                     key={idx}
-                    className="p-3 bg-white border border-[#141414] hover:bg-amber-50 cursor-pointer flex items-center justify-between"
+                    className="p-3 bg-white border border-stone-200 rounded-lg hover:border-stone-400 hover:shadow-xs cursor-pointer flex items-center justify-between transition-all"
                     onClick={() => {
                       showToast(`Carregando artigo: ${item}`);
                       switchTab("wikiworldweb");
                       setSearchTerm(item.split(" - ")[0]);
                     }}
                   >
-                    <span className="font-bold">{item}</span>
-                    <ChevronRight className="w-3.5 h-3.5 text-stone-500" />
+                    <span className="font-medium text-stone-800">{item}</span>
+                    <ChevronRight className="w-3.5 h-3.5 text-stone-400" />
                   </div>
                 ))}
               </div>
@@ -1449,16 +1391,16 @@ export default function App() {
 
         {/* VIEW 4: OUVIDORIA & TICKETS */}
         {currentTab === "tickets" && (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             {/* 3.05.3.b: Banner da Extensão de Suporte & Tickets */}
-            <div className="lg:col-span-12 p-4 bg-sky-50 border-2 border-sky-600 shadow-[4px_4px_0px_0px_rgba(2,132,199,1)] flex flex-col sm:flex-row sm:items-center justify-between gap-4 font-mono text-xs">
+            <div className="lg:col-span-12 p-4 bg-sky-50/70 border border-sky-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-xs">
               <div>
-                <div className="flex items-center gap-2 text-sky-950 font-bold text-sm">
+                <div className="flex items-center gap-2 text-sky-950 font-semibold text-sm">
                   <Ticket className="w-4 h-4 text-sky-700" />
-                  <span>Extensão de Suporte & Central de Tickets WZZM (3.05.3.b)</span>
+                  <span>Central de Atendimento e Ouvidoria WZZM</span>
                 </div>
-                <p className="text-stone-700 font-serif text-xs mt-1 leading-relaxed">
-                  Canal oficial parametrizado: <strong className="text-sky-900 break-all">{supportConfig.supportUrl}</strong> • Modo atual: <span className="font-bold">{supportConfig.openMode === 'redirect' ? 'Redirecionamento Externo' : 'Aba Interna'}</span>
+                <p className="text-stone-600 text-xs mt-1 leading-relaxed">
+                  Canal oficial parametrizado: <strong className="text-sky-900 break-all">{supportConfig.supportUrl}</strong>
                 </p>
               </div>
               <div className="flex items-center gap-2 flex-wrap">
@@ -1466,63 +1408,63 @@ export default function App() {
                   href={supportConfig.supportUrl}
                   target={supportConfig.openInNewTab !== false ? "_blank" : "_self"}
                   rel="noopener noreferrer"
-                  className="px-3.5 py-2 bg-sky-700 hover:bg-sky-800 text-white font-bold uppercase tracking-wider flex items-center gap-1.5 border-2 border-sky-950 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] text-xs cursor-pointer"
+                  className="paper-button px-3.5 py-2 text-xs flex items-center gap-1.5 cursor-pointer"
                 >
                   <ExternalLink className="w-3.5 h-3.5" /> Abrir Link de Suporte
                 </a>
                 {isAdmin && (
                   <button
                     onClick={() => setEditingExtensionConfig(supportExtension || null)}
-                    className="px-3.5 py-2 bg-white hover:bg-stone-100 text-stone-900 font-bold uppercase tracking-wider flex items-center gap-1.5 border-2 border-stone-800 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] text-xs cursor-pointer"
+                    className="paper-button-secondary px-3 py-2 text-xs flex items-center gap-1.5 cursor-pointer"
                   >
-                    <Sliders className="w-3.5 h-3.5 text-amber-600" /> Configurar Link
+                    <Sliders className="w-3.5 h-3.5 text-stone-600" /> Configurar Link
                   </button>
                 )}
               </div>
             </div>
 
-            <div className="lg:col-span-6 bg-white border-2 border-[#141414] p-6 shadow-[6px_6px_0px_0px_rgba(20,20,20,1)]">
-              <div className="flex items-center gap-2 text-stone-900 border-b-2 border-[#141414] pb-3 mb-5">
+            <div className="lg:col-span-6 bg-white border border-stone-200 rounded-xl p-6 shadow-sm">
+              <div className="flex items-center gap-2 text-stone-900 border-b border-stone-100 pb-3 mb-5">
                 <Ticket className="w-5 h-5 text-amber-600" />
-                <h3 className="font-mono font-bold text-sm uppercase tracking-wider">
-                  Central de Ouvidoria & Tickets de Privacidade
+                <h3 className="font-semibold text-sm">
+                  Ouvidoria & Tickets de Privacidade
                 </h3>
               </div>
-              <p className="text-xs font-serif text-stone-700 mb-5 leading-relaxed">
+              <p className="text-xs text-stone-600 mb-5 leading-relaxed">
                 Abra uma solicitação formal referente a direitos da LGPD (exclusão de dados, retificação de nome), comunicação de erro editorial ou denúncia de abusos.
               </p>
 
-              <form onSubmit={handleSubmitTicket} className="space-y-4 font-mono text-xs">
+              <form onSubmit={handleSubmitTicket} className="space-y-4 text-xs">
                 <div>
-                  <label className="block text-stone-700 uppercase font-bold mb-1">Seu Nome / Razão Social:</label>
+                  <label className="block text-stone-700 font-medium mb-1">Seu Nome / Razão Social:</label>
                   <input
                     type="text"
                     required
                     value={ticketForm.nome}
                     onChange={(e) => setTicketForm({ ...ticketForm, nome: e.target.value })}
                     placeholder="Nome completo ou pseudônimo"
-                    className="w-full p-2.5 border border-[#141414] bg-[#F8F7F4] focus:outline-none"
+                    className="w-full p-2.5 rounded-lg border border-stone-200 bg-stone-50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-stone-400 text-xs"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-stone-700 uppercase font-bold mb-1">E-mail para Resposta:</label>
+                  <label className="block text-stone-700 font-medium mb-1">E-mail para Resposta:</label>
                   <input
                     type="email"
                     required
                     value={ticketForm.email}
                     onChange={(e) => setTicketForm({ ...ticketForm, email: e.target.value })}
                     placeholder="seu.email@exemplo.com"
-                    className="w-full p-2.5 border border-[#141414] bg-[#F8F7F4] focus:outline-none"
+                    className="w-full p-2.5 rounded-lg border border-stone-200 bg-stone-50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-stone-400 text-xs"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-stone-700 uppercase font-bold mb-1">Tipo de Solicitação:</label>
+                  <label className="block text-stone-700 font-medium mb-1">Tipo de Solicitação:</label>
                   <select
                     value={ticketForm.tipo}
                     onChange={(e) => setTicketForm({ ...ticketForm, tipo: e.target.value })}
-                    className="w-full p-2.5 border border-[#141414] bg-[#F8F7F4] focus:outline-none"
+                    className="w-full p-2.5 rounded-lg border border-stone-200 bg-stone-50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-stone-400 text-xs"
                   >
                     <option value="Direito de Esquecimento (LGPD)">Direito de Esquecimento (LGPD - Exclusão de Dados)</option>
                     <option value="Retificação de Conteúdo">Retificação de Conteúdo / Direito de Resposta</option>
@@ -1532,45 +1474,45 @@ export default function App() {
                 </div>
 
                 <div>
-                  <label className="block text-stone-700 uppercase font-bold mb-1">Mensagem Detalhada:</label>
+                  <label className="block text-stone-700 font-medium mb-1">Mensagem Detalhada:</label>
                   <textarea
                     rows={4}
                     required
                     value={ticketForm.mensagem}
                     onChange={(e) => setTicketForm({ ...ticketForm, mensagem: e.target.value })}
                     placeholder="Descreva detalhadamente sua solicitação, páginas envolvidas ou justificativa legal..."
-                    className="w-full p-2.5 border border-[#141414] bg-[#F8F7F4] focus:outline-none"
+                    className="w-full p-2.5 rounded-lg border border-stone-200 bg-stone-50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-stone-400 text-xs"
                   ></textarea>
                 </div>
 
                 <button
                   type="submit"
                   disabled={isSubmittingTicket}
-                  className="paper-button w-full py-3 text-xs font-mono font-bold uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer"
+                  className="paper-button w-full py-2.5 text-xs flex items-center justify-center gap-2 cursor-pointer"
                 >
-                  <Send className="w-3.5 h-3.5 text-amber-400" />
+                  <Send className="w-3.5 h-3.5 text-amber-300" />
                   <span>{isSubmittingTicket ? "Enviando Protocolo..." : "Registrar Chamado Oficial"}</span>
                 </button>
               </form>
             </div>
 
-            <div className="lg:col-span-6 bg-[#EBE8E1] border-2 border-[#141414] p-6 shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] flex flex-col justify-between">
+            <div className="lg:col-span-6 bg-stone-50 border border-stone-200 rounded-xl p-6 shadow-sm flex flex-col justify-between">
               <div>
-                <h3 className="font-mono font-bold text-sm uppercase tracking-wider border-b-2 border-[#141414] pb-3 mb-4">
+                <h3 className="font-semibold text-sm border-b border-stone-200 pb-3 mb-4 text-stone-900">
                   Protocolos Registrados no Sistema
                 </h3>
                 <div className="space-y-3 max-h-96 overflow-y-auto">
                   {ticketsList.map((ticket, idx) => (
-                    <div key={idx} className="bg-white border border-[#141414] p-4 font-mono text-xs">
-                      <div className="flex items-center justify-between text-[10px] text-stone-500 mb-1">
-                        <span className="font-bold text-amber-800">{ticket.id}</span>
-                        <span className="bg-stone-100 px-2 py-0.5 border border-stone-300 font-bold uppercase">
+                    <div key={idx} className="bg-white border border-stone-200 rounded-lg p-4 text-xs shadow-xs">
+                      <div className="flex items-center justify-between text-[11px] text-stone-500 mb-1">
+                        <span className="font-mono font-semibold text-amber-800">{ticket.id}</span>
+                        <span className="bg-stone-100 px-2 py-0.5 rounded text-[10px] font-semibold uppercase">
                           {ticket.status}
                         </span>
                       </div>
-                      <h4 className="font-bold text-stone-900 mb-1">{ticket.tipo}</h4>
-                      <p className="text-[11px] text-stone-700 font-serif line-clamp-2">{ticket.mensagem}</p>
-                      <div className="mt-2 text-[10px] text-stone-500">
+                      <h4 className="font-semibold text-stone-900 mb-1">{ticket.tipo}</h4>
+                      <p className="text-xs text-stone-600 line-clamp-2">{ticket.mensagem}</p>
+                      <div className="mt-2 text-[10px] text-stone-400">
                         Aberto em: {new Date(ticket.criadoEm).toLocaleDateString("pt-BR")}
                       </div>
                     </div>
@@ -1578,8 +1520,8 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="mt-6 pt-4 border-t border-stone-400 text-[10px] font-mono text-stone-600">
-                Os prazos de resposta seguem os termos do Marco Civil da Internet e resoluções da ANPD (Autoridade Nacional de Proteção de Dados).
+              <div className="mt-6 pt-4 border-t border-stone-200 text-xs text-stone-500">
+                Prazos em conformidade com a LGPD e resoluções da ANPD.
               </div>
             </div>
           </div>
@@ -1587,28 +1529,28 @@ export default function App() {
 
         {/* VIEW 5: CHAT & MENSAGENS (JSONBin + Firestore Compatibility) */}
         {currentTab === "chat" && (
-          <div className="max-w-3xl mx-auto bg-white border-2 border-[#141414] shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] overflow-hidden">
-            <div className="bg-[#141414] text-white p-4 flex items-center justify-between">
-              <div className="flex items-center gap-2">
+          <div className="max-w-3xl mx-auto bg-white border border-stone-200 rounded-xl shadow-sm overflow-hidden">
+            <div className="bg-stone-900 text-white p-4 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
                 <MessageSquare className="w-5 h-5 text-amber-400" />
                 <div>
-                  <h3 className="font-mono font-bold text-xs uppercase tracking-wider">
+                  <h3 className="font-semibold text-sm">
                     Canal Interno de Mensagens & Colaboração
                   </h3>
-                  <p className="text-[10px] text-stone-400">
-                    Protocolo compatível com JSONBin API (ID: 684c71428960c979a5a95fd5) & Firestore
+                  <p className="text-[11px] text-stone-400">
+                    Comunicação em tempo real entre leitores e redatores
                   </p>
                 </div>
               </div>
-              <span className="text-[10px] font-mono bg-emerald-900 text-emerald-200 px-2 py-0.5 border border-emerald-500 uppercase">
+              <span className="text-[10px] bg-emerald-950 text-emerald-300 px-2 py-0.5 rounded border border-emerald-800">
                 Online
               </span>
             </div>
 
             {/* Messages Scroll Area */}
-            <div className="p-4 h-96 overflow-y-auto space-y-3 bg-[#F8F7F4] border-b-2 border-[#141414]">
+            <div className="p-4 h-96 overflow-y-auto space-y-3 bg-stone-50/70 border-b border-stone-200">
               {chatMessages.length === 0 ? (
-                <p className="text-center text-xs font-mono text-stone-500 py-12">
+                <p className="text-center text-xs text-stone-500 py-12">
                   Nenhuma mensagem registrada no canal. Inicie o diálogo abaixo.
                 </p>
               ) : (
@@ -1619,13 +1561,15 @@ export default function App() {
                       key={msg.id || i}
                       className={`flex flex-col ${isMe ? "items-end" : "items-start"}`}
                     >
-                      <div className="text-[10px] font-mono text-stone-500 mb-0.5">
-                        <span className="font-bold">{msg.senderName || "Anônimo"}</span> •{" "}
+                      <div className="text-[10px] text-stone-400 mb-1">
+                        <span className="font-medium text-stone-600">{msg.senderName || "Anônimo"}</span> ·{" "}
                         {new Date(msg.timestamp).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
                       </div>
                       <div
-                        className={`max-w-md p-3 border border-[#141414] text-xs font-mono shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] ${
-                          isMe ? "bg-amber-100 text-stone-900" : "bg-white text-stone-900"
+                        className={`max-w-md p-3 rounded-xl text-xs leading-relaxed ${
+                          isMe
+                            ? "bg-stone-900 text-white shadow-xs"
+                            : "bg-white text-stone-900 border border-stone-200 shadow-xs"
                         }`}
                       >
                         {msg.text}
@@ -1643,14 +1587,14 @@ export default function App() {
                 placeholder={user ? "Digite sua mensagem..." : "Faça login ou envie como leitor convidado..."}
                 value={chatInput}
                 onChange={(e) => setChatInput(e.target.value)}
-                className="flex-1 p-2.5 border border-[#141414] text-xs font-mono bg-[#F8F7F4] focus:outline-none"
+                className="flex-1 p-2.5 rounded-lg border border-stone-200 bg-stone-50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-stone-400 text-xs"
               />
               <button
                 type="submit"
                 disabled={isSendingMessage || !chatInput.trim()}
-                className="paper-button px-5 py-2.5 text-xs font-mono font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                className="paper-button px-4 py-2.5 text-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
               >
-                <Send className="w-3.5 h-3.5 text-amber-400" />
+                <Send className="w-3.5 h-3.5 text-amber-300" />
                 <span>Enviar</span>
               </button>
             </form>
@@ -1694,7 +1638,7 @@ export default function App() {
 
         {/* VIEW 9: WIKIWAZZIMAGIYGG (WIKI ZERO / WIKIWORLDWEB INTEGRATION) */}
         {currentTab === "wikiwazzimagiygg" && (
-          <div className="w-full bg-[#FAF9F5] shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] border-2 border-[#141414] overflow-hidden">
+          <div className="w-full bg-white rounded-xl border border-stone-200 shadow-sm overflow-hidden">
             <WikiWazzimaGiyggPortal />
           </div>
         )}
@@ -1704,15 +1648,16 @@ export default function App() {
       {/* 6. ARTICLE READER MODAL */}
       {/* ============================================ */}
       {selectedArticle && (
-        <div className="fixed inset-0 bg-stone-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#FAF9F5] border-4 border-[#141414] shadow-[12px_12px_0px_0px_rgba(20,20,20,1)] max-w-4xl w-full max-h-[90vh] flex flex-col overflow-hidden text-left">
+        <div className="fixed inset-0 bg-stone-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl border border-stone-200 shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col overflow-hidden text-left">
             {/* Modal Top Bar */}
-            <div className="bg-[#141414] text-white p-4 flex items-center justify-between border-b-2 border-black">
-              <div className="flex items-center gap-2 text-xs font-mono">
-                <span className="bg-[#D97706] text-black font-bold px-2 py-0.5 text-[10px] uppercase">
+            <div className="bg-white px-6 py-4 flex items-center justify-between border-b border-stone-200">
+              <div className="flex items-center gap-2 text-xs">
+                <span className="font-semibold text-stone-700 uppercase tracking-wider text-[11px]">
                   {selectedArticle.setor || "Geral"}
                 </span>
-                <span className="text-stone-300">Coleção: {selectedArticle.colecao}</span>
+                <span className="text-stone-300">·</span>
+                <span className="text-stone-500">Coleção: {selectedArticle.colecao}</span>
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -1721,25 +1666,24 @@ export default function App() {
                     switchTab("bemtevi");
                     showToast(`Abrindo Bemtevi para debater "${selectedArticle.titulo}"! 🐦`);
                   }}
-                  className="bg-[#667eea] hover:bg-[#5a6fd6] text-white px-2.5 py-1 text-[11px] font-mono font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer border border-[#4d63d6] shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]"
-                  title="Compartilhar e debater na rede social Bemtevi"
+                  className="paper-button-secondary px-3 py-1.5 text-xs flex items-center gap-1.5 cursor-pointer"
+                  title="Compartilhar no Bemtevi"
                 >
-                  <MessageCircle className="w-3.5 h-3.5 text-white" />
-                  <span className="hidden sm:inline">Compartilhar no Bemtevi</span>
-                  <span className="sm:hidden">Bemtevi</span>
+                  <MessageCircle className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Bemtevi</span>
                 </button>
                 <button
                   onClick={() => handleSaveArticleAsPdf(selectedArticle)}
                   disabled={isGeneratingPdf}
-                  className="bg-red-700 hover:bg-red-800 text-white px-2.5 py-1 text-[11px] font-mono font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer border border-red-500 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] disabled:opacity-50"
-                  title="Baixar artigo em PDF via jsPDF"
+                  className="paper-button bg-red-700 hover:bg-red-800 text-white px-3 py-1.5 text-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  title="Baixar artigo em PDF"
                 >
-                  <FileDown className="w-3.5 h-3.5 text-amber-300" />
-                  <span>{isGeneratingPdf ? "Gerando..." : "Salvar como PDF"}</span>
+                  <FileDown className="w-3.5 h-3.5" />
+                  <span>{isGeneratingPdf ? "Gerando..." : "Salvar PDF"}</span>
                 </button>
                 <button
                   onClick={handleCloseArticle}
-                  className="text-stone-400 hover:text-white p-1 cursor-pointer"
+                  className="text-stone-400 hover:text-stone-800 p-1.5 rounded-lg hover:bg-stone-100 transition-colors cursor-pointer"
                   aria-label="Fechar artigo"
                 >
                   <X className="w-5 h-5" />
@@ -1749,18 +1693,18 @@ export default function App() {
 
             {/* Article Content Area */}
             <div className="p-6 sm:p-10 overflow-y-auto flex-1 font-serif text-stone-900">
-              <div className="border-b-2 border-[#141414] pb-4 mb-6">
-                <h1 className="text-3xl sm:text-4xl lg:text-5xl font-editorial font-bold text-stone-950 leading-tight">
+              <div className="border-b border-stone-100 pb-4 mb-6">
+                <h1 className="text-2xl sm:text-3xl lg:text-4xl font-editorial font-bold text-stone-950 leading-tight">
                   {selectedArticle.titulo}
                 </h1>
 
-                <div className="flex flex-wrap items-center gap-4 text-xs font-mono text-stone-600 mt-4 pt-3 border-t border-stone-300">
+                <div className="flex flex-wrap items-center gap-3 text-xs text-stone-500 mt-4 pt-3 border-t border-stone-100">
                   <span>Autor: <strong>{selectedArticle.criadorEmail || "Redação WZZM"}</strong></span>
-                  <span>•</span>
+                  <span>·</span>
                   <span>Atualizado: {selectedArticle.ultimaEdicao || "Recente"}</span>
-                  <span>•</span>
-                  <span className="flex items-center gap-1 font-bold text-stone-800">
-                    <Eye className="w-3.5 h-3.5" />
+                  <span>·</span>
+                  <span className="flex items-center gap-1 text-stone-700 font-medium">
+                    <Eye className="w-3.5 h-3.5 text-stone-400" />
                     <span>{selectedArticle.visualizacoes || 0} leituras</span>
                   </span>
                 </div>
@@ -1777,40 +1721,40 @@ export default function App() {
               />
 
               {/* ABNT Citation Box */}
-              <div className="mt-10 p-4 bg-white border-2 border-[#141414] font-mono text-xs">
+              <div className="mt-10 p-4 bg-stone-50 rounded-xl border border-stone-200 text-xs">
                 <div className="flex items-center justify-between mb-2">
-                  <span className="font-bold text-stone-800 uppercase tracking-wider text-[11px]">
-                    Como Citar Este Documento (Normas ABNT):
+                  <span className="font-semibold text-stone-800">
+                    Como Citar Este Documento (Norma ABNT NBR 6023):
                   </span>
                   <button
                     onClick={() => handleCopyCitation(selectedArticle)}
-                    className="paper-button px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 cursor-pointer"
+                    className="paper-button-secondary px-2.5 py-1 text-xs flex items-center gap-1 cursor-pointer"
                   >
-                    {citationCopied ? <CheckCircle className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3 text-amber-400" />}
-                    <span>{citationCopied ? "Copiado!" : "Copiar Citação"}</span>
+                    {citationCopied ? <CheckCircle className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5 text-stone-600" />}
+                    <span>{citationCopied ? "Copiado" : "Copiar"}</span>
                   </button>
                 </div>
-                <p className="text-stone-700 select-all bg-stone-50 p-2.5 border border-stone-300 text-[11px]">
+                <p className="text-stone-600 select-all font-mono text-[11px] leading-relaxed">
                   {getAbntCitation(selectedArticle)}
                 </p>
               </div>
             </div>
 
             {/* Modal Bottom Controls */}
-            <div className="bg-[#EBE8E1] border-t-2 border-[#141414] p-4 flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-2.5 flex-wrap">
+            <div className="bg-stone-50 border-t border-stone-200 px-6 py-3.5 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2 flex-wrap">
                 <button
                   onClick={() => handleSaveArticleAsPdf(selectedArticle)}
                   disabled={isGeneratingPdf}
-                  className="paper-button bg-red-700 hover:bg-red-800 text-white px-3.5 py-1.5 text-xs font-mono font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] disabled:opacity-50"
-                  title="Exportar este artigo para arquivo PDF formatado com jsPDF"
+                  className="paper-button bg-red-700 hover:bg-red-800 text-white px-3.5 py-1.5 text-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  title="Exportar PDF"
                 >
-                  <FileDown className="w-3.5 h-3.5 text-amber-300" />
-                  <span>{isGeneratingPdf ? "Gerando PDF..." : "Salvar como PDF"}</span>
+                  <FileDown className="w-3.5 h-3.5" />
+                  <span>{isGeneratingPdf ? "Gerando..." : "Salvar PDF"}</span>
                 </button>
                 <button
                   onClick={() => window.print()}
-                  className="paper-button-secondary px-3 py-1.5 text-xs font-mono font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer"
+                  className="paper-button-secondary px-3.5 py-1.5 text-xs flex items-center gap-1.5 cursor-pointer"
                 >
                   <Printer className="w-3.5 h-3.5" />
                   <span>Imprimir</span>
@@ -1820,7 +1764,7 @@ export default function App() {
                     navigator.clipboard.writeText(window.location.href);
                     showToast("Link copiado para a área de transferência!");
                   }}
-                  className="paper-button-secondary px-3 py-1.5 text-xs font-mono font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer"
+                  className="paper-button-secondary px-3.5 py-1.5 text-xs flex items-center gap-1.5 cursor-pointer"
                 >
                   <Share2 className="w-3.5 h-3.5" />
                   <span>Compartilhar</span>
@@ -1829,7 +1773,7 @@ export default function App() {
 
               <button
                 onClick={handleCloseArticle}
-                className="paper-button px-5 py-2 text-xs font-mono font-bold uppercase tracking-wider cursor-pointer"
+                className="paper-button px-4 py-2 text-xs cursor-pointer"
               >
                 Concluir Leitura
               </button>
@@ -1842,41 +1786,41 @@ export default function App() {
       {/* 7. CREATE ARTICLE MODAL (Colaborativo) */}
       {/* ============================================ */}
       {isCreateModalOpen && (
-        <div className="fixed inset-0 bg-stone-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white border-4 border-[#141414] shadow-[10px_10px_0px_0px_rgba(20,20,20,1)] max-w-xl w-full p-6 text-left">
-            <div className="flex items-center justify-between border-b-2 border-[#141414] pb-3 mb-4">
-              <h3 className="font-editorial text-2xl font-bold text-[#141414]">
+        <div className="fixed inset-0 bg-stone-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl border border-stone-200 shadow-2xl max-w-xl w-full p-6 text-left">
+            <div className="flex items-center justify-between border-b border-stone-100 pb-3 mb-4">
+              <h3 className="text-xl font-bold font-editorial text-stone-900">
                 Publicar Novo Documento / Artigo
               </h3>
               <button
                 onClick={() => setIsCreateModalOpen(false)}
-                className="text-stone-500 hover:text-black cursor-pointer"
+                className="text-stone-400 hover:text-stone-700 p-1 rounded-lg hover:bg-stone-100 transition-colors cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* Banner de Restrição Rigorosa de Publicação */}
-            <div className={`p-3 border-2 mb-4 font-mono text-xs ${
+            {/* Banner de Restrição de Publicação */}
+            <div className={`p-3 rounded-xl border mb-4 text-xs ${
               isAuthorizedPublisherUser
-                ? "bg-emerald-50 border-emerald-600 text-emerald-950"
-                : "bg-amber-50 border-amber-600 text-amber-950"
+                ? "bg-emerald-50 border-emerald-200 text-emerald-950"
+                : "bg-amber-50 border-amber-200 text-amber-950"
             }`}>
-              <div className="flex items-center gap-1.5 font-bold mb-1">
+              <div className="flex items-center gap-1.5 font-semibold mb-1">
                 <Shield className="w-4 h-4 text-amber-600" />
-                <span className="uppercase tracking-wider">Regra de Publicação Oficial de Artigos:</span>
+                <span>Regra Oficial de Publicação:</span>
               </div>
-              <p className="text-[11px] leading-relaxed">
-                Qualquer publicação de artigo só deve ser feita pelas contas dos e-mails autorizados:
+              <p className="text-xs leading-relaxed text-stone-700">
+                Qualquer publicação de artigo só deve ser feita pelas contas autorizadas:
                 <br />
-                <strong className="text-black font-mono">wazzimagiygg@gmail.com</strong> e <strong className="text-black font-mono">pedrohenriquecardonaperes@gmail.com</strong>
+                <strong className="text-stone-900 font-mono">wazzimagiygg@gmail.com</strong> e <strong className="text-stone-900 font-mono">pedrohenriquecardonaperes@gmail.com</strong>
               </p>
-              <div className="mt-2 text-[10px] pt-1.5 border-t border-current/20 flex items-center justify-between">
+              <div className="mt-2 text-[11px] pt-1.5 border-t border-stone-200/50 flex items-center justify-between">
                 <span>Conta ativa: <strong>{user?.email || "Nenhum usuário logado"}</strong></span>
                 {isAuthorizedPublisherUser ? (
-                  <span className="bg-emerald-600 text-white px-1.5 py-0.5 font-bold uppercase">Autorizado</span>
+                  <span className="bg-emerald-600 text-white px-2 py-0.5 rounded text-[10px] font-semibold uppercase">Autorizado</span>
                 ) : (
-                  <span className="bg-red-600 text-white px-1.5 py-0.5 font-bold uppercase">Publicação Bloqueada</span>
+                  <span className="bg-red-600 text-white px-2 py-0.5 rounded text-[10px] font-semibold uppercase">Publicação Bloqueada</span>
                 )}
               </div>
             </div>
@@ -1936,26 +1880,26 @@ export default function App() {
                   showToast(publishErr.message || "Erro ao publicar artigo.", true);
                 }
               }}
-              className="space-y-4 font-mono text-xs"
+              className="space-y-4 text-xs"
             >
               <div>
-                <label className="block text-stone-700 uppercase font-bold mb-1">Título da Publicação:</label>
+                <label className="block text-stone-700 uppercase font-mono font-medium text-[11px] mb-1.5">Título da Publicação:</label>
                 <input
                   name="titulo"
                   type="text"
                   required
                   placeholder="Ex: Metodologia e Impactos da Inteligência Artificial"
-                  className="w-full p-2.5 border border-[#141414] bg-[#F8F7F4] focus:outline-none"
+                  className="w-full px-3 py-2.5 rounded-lg border border-stone-200 bg-stone-50 focus:bg-white focus:border-stone-400 focus:outline-none transition-colors"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-stone-700 uppercase font-bold mb-1">Coleção / Seção:</label>
+                  <label className="block text-stone-700 uppercase font-mono font-medium text-[11px] mb-1.5">Coleção / Seção:</label>
                   <select
                     name="colecao"
                     defaultValue={currentTab}
-                    className="w-full p-2.5 border border-[#141414] bg-[#F8F7F4] focus:outline-none"
+                    className="w-full px-3 py-2.5 rounded-lg border border-stone-200 bg-stone-50 focus:bg-white focus:border-stone-400 focus:outline-none transition-colors"
                   >
                     <option value="wikiworldweb">WikiWorldWeb (Notícias)</option>
                     <option value="materiadeensaio">Matéria de Ensaio</option>
@@ -1966,39 +1910,39 @@ export default function App() {
                 </div>
 
                 <div>
-                  <label className="block text-stone-700 uppercase font-bold mb-1">Setor / Disciplina:</label>
+                  <label className="block text-stone-700 uppercase font-mono font-medium text-[11px] mb-1.5">Setor / Disciplina:</label>
                   <input
                     name="setor"
                     type="text"
                     placeholder="Ex: Epistemologia, Saúde Mental"
-                    className="w-full p-2.5 border border-[#141414] bg-[#F8F7F4] focus:outline-none"
+                    className="w-full px-3 py-2.5 rounded-lg border border-stone-200 bg-stone-50 focus:bg-white focus:border-stone-400 focus:outline-none transition-colors"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-stone-700 uppercase font-bold mb-1">Conteúdo do Artigo (Texto ou HTML):</label>
+                <label className="block text-stone-700 uppercase font-mono font-medium text-[11px] mb-1.5">Conteúdo do Artigo (Texto ou HTML):</label>
                 <textarea
                   name="descricao"
                   rows={6}
                   required
                   placeholder="Redija o texto do artigo ou ensaio..."
-                  className="w-full p-2.5 border border-[#141414] bg-[#F8F7F4] focus:outline-none font-serif text-sm"
+                  className="w-full p-3 rounded-lg border border-stone-200 bg-stone-50 focus:bg-white focus:border-stone-400 focus:outline-none font-serif text-sm transition-colors"
                 ></textarea>
               </div>
 
-              <div className="flex items-center justify-end gap-3 pt-3 border-t">
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-stone-100">
                 <button
                   type="button"
                   onClick={() => setIsCreateModalOpen(false)}
-                  className="paper-button-secondary px-4 py-2 font-mono text-xs font-bold uppercase cursor-pointer"
+                  className="px-4 py-2 rounded-lg text-stone-600 hover:bg-stone-100 font-mono text-xs font-medium uppercase cursor-pointer transition-colors"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
                   disabled={!isAuthorizedPublisherUser}
-                  className="paper-button px-5 py-2 font-mono text-xs font-bold uppercase tracking-wider cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-5 py-2 rounded-lg bg-stone-900 hover:bg-stone-800 text-white font-mono text-xs font-medium uppercase tracking-wider cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
                   {isAuthorizedPublisherUser ? "Publicar Artigo" : "Publicação Bloqueada"}
                 </button>
@@ -2012,37 +1956,37 @@ export default function App() {
       {/* 8. LOGIN MODAL */}
       {/* ============================================ */}
       {isLoginModalOpen && (
-        <div className="fixed inset-0 bg-stone-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white border-4 border-[#141414] shadow-[10px_10px_0px_0px_rgba(20,20,20,1)] max-w-sm w-full p-8 text-center relative">
+        <div className="fixed inset-0 bg-stone-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl border border-stone-200 shadow-2xl max-w-sm w-full p-6 text-center relative">
             <button
               onClick={() => setIsLoginModalOpen(false)}
-              className="absolute top-4 right-4 text-stone-500 hover:text-black cursor-pointer"
+              className="absolute top-4 right-4 text-stone-400 hover:text-stone-700 cursor-pointer transition-colors"
             >
               <X className="w-5 h-5" />
             </button>
 
-            <div className="w-12 h-12 bg-[#EBEAE8] border-2 border-[#141414] flex items-center justify-center mx-auto mb-4">
-              <User className="w-6 h-6 text-[#141414]" />
+            <div className="w-12 h-12 bg-stone-100 rounded-full flex items-center justify-center mx-auto mb-3">
+              <User className="w-5 h-5 text-stone-700" />
             </div>
 
-            <h3 className="font-editorial text-2xl font-bold uppercase mb-2">Identificação do Leitor</h3>
-            <p className="text-xs font-serif text-stone-600 mb-6 leading-relaxed">
+            <h3 className="font-editorial text-xl font-bold text-stone-900 mb-1">Identificação do Leitor</h3>
+            <p className="text-xs font-serif text-stone-500 mb-6 leading-relaxed">
               Acesse sua conta para publicar artigos, participar do canal interno e sincronizar preferências do portal.
             </p>
 
-            <div className="space-y-3 font-mono text-xs font-bold">
+            <div className="space-y-2.5 font-mono text-xs font-medium">
               <button
                 onClick={handleGoogleLogin}
-                className="w-full bg-[#4285F4] hover:bg-[#357ae8] text-white py-3 px-4 border border-[#141414] flex items-center justify-center gap-3 transition-colors cursor-pointer shadow-[3px_3px_0px_0px_rgba(20,20,20,1)]"
+                className="w-full bg-stone-900 hover:bg-stone-800 text-white py-2.5 px-4 rounded-xl flex items-center justify-center gap-2 transition-colors cursor-pointer"
               >
                 <span>ENTRAR COM GOOGLE</span>
               </button>
 
               <button
                 onClick={handleCreateGuestUser}
-                className="paper-button w-full py-3 px-4 flex items-center justify-center gap-3 cursor-pointer shadow-[3px_3px_0px_0px_rgba(20,20,20,1)]"
+                className="w-full bg-stone-100 hover:bg-stone-200 text-stone-700 py-2.5 px-4 rounded-xl flex items-center justify-center gap-2 transition-colors cursor-pointer"
               >
-                <Monitor className="w-4 h-4 text-stone-300" />
+                <Monitor className="w-4 h-4 text-stone-500" />
                 <span>ACESSO CONVIDADO (24H)</span>
               </button>
             </div>
@@ -2095,27 +2039,27 @@ export default function App() {
       {/* 10. LGPD & COOKIE CONSENT BANNER */}
       {/* ============================================ */}
       {!cookieConsent && (
-        <div className="fixed bottom-4 left-4 right-4 md:left-auto md:right-4 max-w-lg bg-white border-2 border-[#141414] shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] p-5 z-40 text-left font-sans">
+        <div className="fixed bottom-4 left-4 right-4 md:left-auto md:right-4 max-w-lg bg-white rounded-xl border border-stone-200 shadow-xl p-4 z-40 text-left font-sans">
           <div className="flex items-start gap-3">
-            <Scale className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+            <Scale className="w-5 h-5 text-stone-700 shrink-0 mt-0.5" />
             <div>
-              <h4 className="font-mono font-bold text-xs uppercase tracking-wider text-stone-900">
+              <h4 className="font-mono font-medium text-xs uppercase tracking-wider text-stone-900">
                 Aviso de Privacidade & Conformidade LGPD
               </h4>
-              <p className="text-xs font-serif text-stone-700 mt-1 leading-relaxed">
+              <p className="text-xs font-serif text-stone-600 mt-1 leading-relaxed">
                 Utilizamos cookies estritamente necessários e armazenamento local para assegurar a autenticação e conformidade com o Marco Civil da Internet (Lei nº 12.965/2014).
               </p>
-              <div className="flex flex-wrap items-center justify-between gap-2 mt-4 font-mono text-xs">
+              <div className="flex flex-wrap items-center justify-between gap-2 mt-3 font-mono text-xs">
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => handleAcceptCookies("all")}
-                    className="paper-button px-4 py-1.5 text-[11px] font-bold uppercase cursor-pointer"
+                    className="px-3 py-1.5 rounded-lg bg-stone-900 hover:bg-stone-800 text-white text-[11px] font-medium uppercase cursor-pointer transition-colors"
                   >
                     Aceitar Todos
                   </button>
                   <button
                     onClick={() => handleAcceptCookies("essential")}
-                    className="paper-button-secondary px-3 py-1.5 text-[11px] font-bold uppercase cursor-pointer"
+                    className="px-3 py-1.5 rounded-lg border border-stone-200 bg-white hover:bg-stone-50 text-stone-700 text-[11px] font-medium uppercase cursor-pointer transition-colors"
                   >
                     Apenas Essenciais
                   </button>
@@ -2123,9 +2067,9 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => setIsLgpdModalOpen(true)}
-                  className="text-[10px] text-emerald-800 hover:text-emerald-950 font-bold uppercase underline cursor-pointer flex items-center gap-1"
+                  className="text-[10px] text-stone-600 hover:text-stone-900 font-medium uppercase underline cursor-pointer flex items-center gap-1"
                 >
-                  <Scale className="w-3 h-3 text-emerald-700" />
+                  <Scale className="w-3 h-3 text-stone-500" />
                   <span>Ver Regras da LGPD à Amostra →</span>
                 </button>
               </div>
@@ -2137,8 +2081,10 @@ export default function App() {
       {/* Toast Notification */}
       {toast && (
         <div
-          className={`fixed bottom-6 left-1/2 -translate-x-1/2 px-5 py-3 border-2 border-[#141414] shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] text-xs font-mono font-bold uppercase tracking-wider z-50 ${
-            toast.isError ? "bg-red-600 text-white" : "bg-[#141414] text-white"
+          className={`fixed bottom-6 left-1/2 -translate-x-1/2 px-4 py-2.5 rounded-xl border text-xs font-mono font-medium uppercase tracking-wider z-50 shadow-xl transition-all ${
+            toast.isError
+              ? "bg-rose-600 text-white border-rose-700"
+              : "bg-stone-900 text-white border-stone-800"
           }`}
         >
           {toast.message}
@@ -2148,68 +2094,68 @@ export default function App() {
       {/* ============================================ */}
       {/* 11. EDITORIAL FOOTER */}
       {/* ============================================ */}
-      <footer className="bg-[#141414] text-stone-400 border-t-4 border-[#141414] pt-12 pb-8 px-4 text-center mt-auto font-mono text-xs">
-        <div className="max-w-7xl mx-auto">
+      <footer className="bg-stone-900 text-stone-400 border-t border-stone-800 pt-10 pb-8 px-4 text-center mt-auto font-sans text-xs">
+        <div className="max-w-6xl mx-auto">
           {/* Logo & Subtitle */}
           <div className="mb-6">
-            <h2 className="text-2xl font-editorial font-bold text-white tracking-wide">
-              WAZZIMA<span className="text-red-500">GIYGG</span>
+            <h2 className="text-xl font-editorial font-bold text-white tracking-wide">
+              WAZZIMA<span className="text-stone-400 font-light">GIYGG</span>
             </h2>
-            <p className="text-[10px] text-stone-500 uppercase tracking-widest mt-1">
+            <p className="text-[11px] text-stone-400 font-mono uppercase tracking-widest mt-1">
               Plataforma Digital de Conhecimento Livre & Defesa de Direitos Civis
             </p>
           </div>
 
           {/* Quick Links */}
-          <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 mb-8 text-[11px] font-bold uppercase text-stone-300">
-            <button onClick={() => switchTab("wikiworldweb")} className="hover:text-amber-400">
+          <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 mb-6 text-[11px] font-mono uppercase text-stone-300">
+            <button onClick={() => switchTab("wikiworldweb")} className="hover:text-white transition-colors cursor-pointer">
               Notícias
             </button>
-            <span className="text-stone-700">•</span>
-            <button onClick={() => switchTab("academico")} className="hover:text-amber-400">
+            <span className="text-stone-700">·</span>
+            <button onClick={() => switchTab("academico")} className="hover:text-white transition-colors cursor-pointer">
               Metodologia Científica
             </button>
-            <span className="text-stone-700">•</span>
-            <button onClick={() => switchTab("wnpx")} className="hover:text-amber-400">
+            <span className="text-stone-700">·</span>
+            <button onClick={() => switchTab("wnpx")} className="hover:text-white transition-colors cursor-pointer">
               WNPX NotPedia
             </button>
-            <span className="text-stone-700">•</span>
-            <button onClick={() => switchTab("dossie")} className="hover:text-amber-400">
+            <span className="text-stone-700">·</span>
+            <button onClick={() => switchTab("dossie")} className="hover:text-white transition-colors cursor-pointer">
               Marco Civil & LGPD
             </button>
-            <span className="text-stone-700">•</span>
+            <span className="text-stone-700">·</span>
             <button
               onClick={() => setIsLgpdModalOpen(true)}
-              className="text-emerald-400 hover:text-emerald-300 font-bold flex items-center gap-1 cursor-pointer"
+              className="text-stone-300 hover:text-white flex items-center gap-1 cursor-pointer transition-colors"
             >
-              <Scale className="w-3 h-3 text-emerald-400" />
-              <span>Regras da LGPD (Ciência Absoluta)</span>
+              <Scale className="w-3 h-3 text-stone-400" />
+              <span>Regras da LGPD</span>
             </button>
-            <span className="text-stone-700">•</span>
-            <button onClick={handleTicketsTabClick} className="hover:text-amber-400 cursor-pointer">
+            <span className="text-stone-700">·</span>
+            <button onClick={handleTicketsTabClick} className="hover:text-white transition-colors cursor-pointer">
               Ouvidoria & Tickets
             </button>
-            <span className="text-stone-700">•</span>
+            <span className="text-stone-700">·</span>
             <button
               onClick={() => setIsAdminPanelOpen(true)}
-              className="text-red-400 hover:text-red-300 font-bold flex items-center gap-1 cursor-pointer"
+              className="text-stone-300 hover:text-white flex items-center gap-1 cursor-pointer transition-colors"
             >
               <Crown className="w-3 h-3 text-amber-400" />
               <span>Área do Burocrata</span>
             </button>
-            <span className="text-stone-700">•</span>
+            <span className="text-stone-700">·</span>
             <a
               href="https://wazzimagiygg.com/donate/"
               onClick={(e) => handleExternalLinkClick("https://wazzimagiygg.com/donate/", e)}
-              className="text-amber-400 hover:text-amber-300 flex items-center gap-1 cursor-pointer"
+              className="text-stone-300 hover:text-white flex items-center gap-1 cursor-pointer transition-colors"
             >
               <span>💝 Doações</span>
             </a>
           </div>
 
-          <div className="border-t border-stone-800 pt-6 flex flex-col sm:flex-row items-center justify-between text-[10px] text-stone-500 gap-3">
-            <span>© 2026 WazzimaGiygg. Todos os direitos reservados sob licença CC-BY-SA 4.0.</span>
-            <span>Versão TypeScript 2.0 • Banco de Dados Firebase Integrado</span>
+          <div className="border-t border-stone-800/80 pt-6 flex flex-col sm:flex-row items-center justify-between text-[11px] text-stone-400 gap-2 font-mono">
+            <span>© 2026 WazzimaGiygg · Licença CC-BY-SA 4.0</span>
+            <span>Banco de Dados Firebase Integrado</span>
           </div>
         </div>
       </footer>
