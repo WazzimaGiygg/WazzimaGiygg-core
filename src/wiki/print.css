@@ -1,0 +1,459 @@
+/**
+ * WikiWorldWeb — Dedicated Print & PDF Export Stylesheet
+ * 
+ * Formats encyclopedia articles for clean physical printing and clean PDF export:
+ * - Hides all navigation bars, sidebars, headers, footers, toolbars, and floating UI
+ * - Strips all background images, gradients, blur filters, and drop shadows
+ * - Resets typography to crisp, ink-friendly high-contrast dark text on pure white paper
+ * - Optimizes layout: removes grid constraints, sets proper margins and page breaks
+ * - Formats infoboxes, tables, blockquotes, and code blocks for clean pagination
+ */
+
+@media print {
+  /* ========================================================================== */
+  /* 1. Page Configuration & Margins                                            */
+  /* ========================================================================== */
+  @page {
+    size: auto;
+    margin: 18mm 15mm 20mm 15mm;
+  }
+
+  @page :first {
+    margin-top: 14mm;
+  }
+
+  /* ========================================================================== */
+  /* 2. Global Resets: Strip Background Images, Shadows, Gradients & Blur       */
+  /* ========================================================================== */
+  *,
+  *::before,
+  *::after {
+    background-image: none !important;
+    background-attachment: scroll !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+    filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+    transition: none !important;
+    animation: none !important;
+  }
+
+  html,
+  body {
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+    color: #111827 !important;
+    font-size: 11pt !important;
+    line-height: 1.55 !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Reset all theme backgrounds (WinXP, Win7, Win10, Stardew, Minecraft, etc.) */
+  body,
+  .dark body,
+  html.theme-google body,
+  html.theme-google-dark body,
+  html.theme-win95 body,
+  html.theme-win31 body,
+  html.theme-winxp body,
+  html.theme-win7 body,
+  html.theme-win10 body,
+  html.theme-wikidiota body,
+  html.theme-genshin body,
+  html.theme-android15 body,
+  html.theme-stardew body,
+  html.theme-repo body,
+  html.theme-minecraft body,
+  html.theme-roblox body,
+  html.theme-nokia3310 body,
+  html.theme-win1 body,
+  html.theme-halflife body {
+    background-color: #ffffff !important;
+    background-image: none !important;
+    color: #111827 !important;
+  }
+
+  /* ========================================================================== */
+  /* 3. Hide Navigation Bars, Sidebars, Footers & Non-Article UI Components     */
+  /* ========================================================================== */
+  /* Top site header, navigation bars, and micro-strips */
+  header,
+  #header,
+  header.sticky,
+  .site-header,
+  .google-gradient-bar,
+  .genshin-accent-bar,
+  .android-accent-bar,
+  .stardew-accent-bar,
+  .repo-hazard-bar,
+  .minecraft-notice-bar,
+  .roblox-notice-bar,
+  .nokia-statusbar,
+  .nokia-accent-bar,
+  .halflife-hazard-bar,
+  .win7-titlebar,
+  .win10-titlebar,
+  .win31-titlebar,
+  .win95-titlebar,
+  .android-statusbar,
+
+  /* Navigation sidebars */
+  aside#desktop-sidebar,
+  aside.sidebar,
+  .sidebar,
+
+  /* Global site footer */
+  footer,
+  #site-footer,
+  .site-footer,
+
+  /* Mobile bottom navigation bar & modals */
+  #mobile-bottom-nav,
+  nav[aria-label="Navegação móvel principal"],
+  .mobile-bottom-nav,
+  .mobile-drawer,
+
+  /* Reading progress bar line and dashboard */
+  .reading-progress-container,
+  [data-reading-progress],
+
+  /* ArticleViewer navigation bars and toolbars */
+  .article-top-toolbar,
+  .article-tabs-nav,
+  .article-action-buttons,
+  .article-font-adjuster,
+  .article-tools-sidebar,
+  .article-right-sidebar,
+  .article-interactive-footer,
+  .article-rating-container,
+  .article-audio-banner,
+  .wikidiota-vector-header,
+  .wikidiota-notice-box,
+
+  /* Floating assistants, bots, chat triggers */
+  #wikizero-gemini-floating-trigger,
+  .gemini-chatbot-drawer,
+  .clippy-container,
+  .windows95-bot,
+  .custom-context-menu,
+  .cookie-banner,
+  .offline-indicator,
+
+  /* Boot screens, overlays, and modals */
+  .boot-screen,
+  .modal-backdrop,
+  div[role="dialog"],
+  .fixed.inset-0,
+
+  /* Generic print hiding classes */
+  .no-print,
+  .print-hidden,
+  .print\\:hidden,
+  [data-print-hide] {
+    display: none !important;
+    visibility: hidden !important;
+    height: 0 !important;
+    width: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+  }
+
+  /* Display dedicated print-only elements */
+  .print-only,
+  .only-print,
+  .print\\:block {
+    display: block !important;
+    visibility: visible !important;
+  }
+
+  .print\\:inline {
+    display: inline !important;
+    visibility: visible !important;
+  }
+
+  .print\\:flex {
+    display: flex !important;
+    visibility: visible !important;
+  }
+
+  /* ========================================================================== */
+  /* 4. Article Layout Optimization (100% Full Width, Clean Canvas)            */
+  /* ========================================================================== */
+  #root,
+  .min-h-screen,
+  main,
+  article,
+  .max-w-7xl,
+  .w-full {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    float: none !important;
+    position: static !important;
+    overflow: visible !important;
+  }
+
+  /* Override grid layout in ArticleViewer (change 3 cols + 1 col aside into single full column) */
+  .grid,
+  .lg\\:grid-cols-4,
+  .lg\\:col-span-3 {
+    display: block !important;
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  /* Clean Article Card Pane */
+  article {
+    background: transparent !important;
+    background-color: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    color: #111827 !important;
+  }
+
+  /* ========================================================================== */
+  /* 5. Typography, Headings & Page-Break Rules                                 */
+  /* ========================================================================== */
+  h1, h2, h3, h4, h5, h6 {
+    color: #000000 !important;
+    font-family: 'Linux Libertine', 'Georgia', 'Times New Roman', serif !important;
+    page-break-after: avoid;
+    break-after: avoid-page;
+    break-after: avoid;
+    orphans: 3;
+    widows: 3;
+  }
+
+  /* Main Article Title */
+  article > header h1,
+  .print-article-title {
+    font-size: 22pt !important;
+    font-weight: 700 !important;
+    line-height: 1.25 !important;
+    margin-top: 0 !important;
+    margin-bottom: 8pt !important;
+    padding-bottom: 4pt !important;
+    border-bottom: 1.5pt solid #111827 !important;
+    color: #000000 !important;
+  }
+
+  /* Article Headings */
+  .wiki-rendered-content h1,
+  article h1 {
+    font-size: 17pt !important;
+    font-weight: 600 !important;
+    margin-top: 16pt !important;
+    margin-bottom: 6pt !important;
+    padding-bottom: 3pt !important;
+    border-bottom: 1pt solid #cbd5e1 !important;
+    color: #000000 !important;
+  }
+
+  .wiki-rendered-content h2,
+  article h2 {
+    font-size: 13.5pt !important;
+    font-weight: 600 !important;
+    margin-top: 14pt !important;
+    margin-bottom: 4pt !important;
+    padding-bottom: 2pt !important;
+    border-bottom: 0.75pt solid #e2e8f0 !important;
+    color: #111827 !important;
+  }
+
+  .wiki-rendered-content h3,
+  article h3 {
+    font-size: 11.5pt !important;
+    font-weight: 700 !important;
+    margin-top: 10pt !important;
+    margin-bottom: 3pt !important;
+    color: #1f2937 !important;
+  }
+
+  /* Paragraphs and list items */
+  p,
+  li {
+    font-size: 10pt !important;
+    line-height: 1.55 !important;
+    color: #1f2937 !important;
+    orphans: 3;
+    widows: 3;
+  }
+
+  p {
+    margin-bottom: 8pt !important;
+  }
+
+  ul, ol {
+    margin-bottom: 8pt !important;
+    padding-left: 18pt !important;
+  }
+
+  /* Links: High contrast, dark ink without distracting glow */
+  a,
+  .wiki-link {
+    color: #111827 !important;
+    text-decoration: underline !important;
+    text-decoration-color: #94a3b8 !important;
+    text-underline-offset: 2px !important;
+  }
+
+  /* Blockquotes */
+  blockquote {
+    border-left: 3pt solid #475569 !important;
+    padding: 4pt 10pt !important;
+    margin: 8pt 0 !important;
+    background-color: #f8fafc !important;
+    color: #334155 !important;
+    font-style: italic !important;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  /* Code blocks & monospace */
+  pre,
+  code {
+    font-family: 'Courier New', Courier, Consolas, monospace !important;
+    background-color: #f1f5f9 !important;
+    color: #0f172a !important;
+    border: 0.75pt solid #cbd5e1 !important;
+  }
+
+  pre {
+    padding: 8pt !important;
+    border-radius: 2pt !important;
+    font-size: 8.5pt !important;
+    line-height: 1.4 !important;
+    white-space: pre-wrap !important;
+    word-break: break-word !important;
+    page-break-inside: avoid;
+    break-inside: avoid;
+    margin: 8pt 0 !important;
+  }
+
+  code {
+    padding: 1pt 3pt !important;
+    font-size: 8.5pt !important;
+  }
+
+  /* Tables: Clean, crisp border structure */
+  table,
+  .wikitable {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    margin: 10pt 0 !important;
+    font-size: 8.5pt !important;
+    page-break-inside: avoid;
+    break-inside: avoid;
+    background-color: #ffffff !important;
+  }
+
+  /* In-Article Top Table of Contents (Clean Print Layout) */
+  .article-top-toc {
+    background: #f8fafc !important;
+    background-color: #f8fafc !important;
+    border: 1pt solid #cbd5e1 !important;
+    border-radius: 4pt !important;
+    padding: 8pt 12pt !important;
+    margin: 10pt 0 14pt 0 !important;
+    page-break-inside: avoid;
+    break-inside: avoid;
+    color: #111827 !important;
+  }
+
+  .article-top-toc button,
+  .article-top-toc input {
+    display: none !important;
+  }
+
+  .article-top-toc ol {
+    margin: 4pt 0 0 0 !important;
+    padding-left: 0 !important;
+  }
+
+  .article-top-toc li {
+    margin-bottom: 2pt !important;
+  }
+
+  .article-top-toc a {
+    color: #1e293b !important;
+    text-decoration: none !important;
+  }
+
+  table th,
+  table td,
+  .wikitable th,
+  .wikitable td {
+    border: 0.75pt solid #475569 !important;
+    padding: 4pt 6pt !important;
+    color: #0f172a !important;
+    text-align: left !important;
+  }
+
+  table th,
+  .wikitable th {
+    background-color: #f1f5f9 !important;
+    font-weight: 700 !important;
+  }
+
+  tr {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  /* Infobox: Crisp floating sidebar */
+  .wiki-infobox {
+    float: right !important;
+    width: 220px !important;
+    margin: 0 0 10pt 12pt !important;
+    padding: 8pt !important;
+    border: 1pt solid #64748b !important;
+    background-color: #f8fafc !important;
+    font-size: 8pt !important;
+    page-break-inside: avoid;
+    break-inside: avoid;
+    box-shadow: none !important;
+  }
+
+  /* Images & Figures */
+  img,
+  figure {
+    max-width: 100% !important;
+    height: auto !important;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  /* Protection banners and categories */
+  .border-amber-300,
+  .border-amber-700,
+  .bg-amber-50,
+  .bg-amber-950 {
+    border: 1pt solid #b45309 !important;
+    background-color: #fffbeb !important;
+    color: #78350f !important;
+  }
+
+  /* Categories list */
+  .wiki-categories-bar {
+    border-top: 1pt solid #cbd5e1 !important;
+    padding-top: 6pt !important;
+    margin-top: 12pt !important;
+    font-size: 8pt !important;
+    color: #475569 !important;
+  }
+}

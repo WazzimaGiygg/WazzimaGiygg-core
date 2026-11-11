@@ -43,7 +43,8 @@ import {
   FileDown,
   MessageCircle,
   Flame,
-  Award
+  Award,
+  Sparkles
 } from "lucide-react";
 import jsPDF from "jspdf";
 
@@ -73,6 +74,7 @@ import { stripHtmlToPlainText } from "./utils/text";
 import AdminPanel from "./components/AdminPanel";
 import NotMediaWikiPortal from "./components/notmediawiki/NotMediaWikiPortal";
 import BemteviHub from "./components/bemtevi/BemteviHub";
+import WikiWazzimaGiyggPortal from "./wiki/WikiWazzimaGiyggPortal";
 import { useUidNavigation, PortalTabId, parseTabFromUid } from "./hooks/useUidNavigation";
 import UidNavigationBar from "./components/UidNavigationBar";
 import UserProfileModal from "./components/UserProfileModal";
@@ -1074,6 +1076,7 @@ export default function App() {
         <div className="max-w-7xl mx-auto flex items-center justify-between overflow-x-auto no-scrollbar py-1">
           <div className="flex items-center gap-1 sm:gap-2">
             {[
+              { id: "wikiwazzimagiygg", label: "WikiWazzimaGiygg", icon: Sparkles },
               { id: "wikiworldweb", label: "WikiWorldWeb", icon: Globe },
               { id: "materiadeensaio", label: "Matéria de Ensaio", icon: FileText },
               { id: "academico", label: "Acadêmico", icon: GraduationCap },
@@ -1687,6 +1690,13 @@ export default function App() {
               }
             }}
           />
+        )}
+
+        {/* VIEW 9: WIKIWAZZIMAGIYGG (WIKI ZERO / WIKIWORLDWEB INTEGRATION) */}
+        {currentTab === "wikiwazzimagiygg" && (
+          <div className="w-full bg-[#FAF9F5] shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] border-2 border-[#141414] overflow-hidden">
+            <WikiWazzimaGiyggPortal />
+          </div>
         )}
       </main>
 
