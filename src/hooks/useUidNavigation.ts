@@ -9,6 +9,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 
 export const PORTAL_TAB_METADATA = [
+  { id: 'wikiwazzimagiygg', label: 'WikiWazzimaGiygg (Wiki Zero)', description: 'Plataforma Enciclopédica WikiWazzimaGiygg & Acervo Global' },
   { id: 'wikiworldweb', label: 'WikiWorldWeb', description: 'Edição Geral: Notícias & Sociedade' },
   { id: 'materiadeensaio', label: 'Matéria de Ensaio', description: 'Matérias de Ensaio & Opinião' },
   { id: 'academico', label: 'Acadêmico', description: 'Metodologia e Pesquisa Acadêmica' },
@@ -31,6 +32,20 @@ export function parseTabFromUid(uid: string | null | undefined): PortalTabId | n
   if (!uid) return null;
   const clean = uid.trim().toLowerCase();
   const stripped = clean.startsWith('tab_') ? clean.substring(4) : clean;
+  if (
+    stripped === 'wikiwazzimagiygg' ||
+    stripped === 'wikizero' ||
+    stripped === 'wiki-zero' ||
+    stripped === 'wikibeta' ||
+    stripped === 'wiki' ||
+    stripped.startsWith('wiki:') ||
+    stripped.startsWith('artigo:') ||
+    stripped.startsWith('page:') ||
+    stripped.startsWith('user:') ||
+    stripped.startsWith('special:')
+  ) {
+    return 'wikiwazzimagiygg';
+  }
   const match = PORTAL_TAB_METADATA.find((t) => t.id === stripped);
   if (match) return match.id;
   if (stripped === 'inicio' || stripped === 'home') return 'wikiworldweb';

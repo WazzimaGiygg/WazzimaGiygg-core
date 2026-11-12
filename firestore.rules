@@ -1,0 +1,90 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isPublisher() {
+      return isSignedIn() && (
+        request.auth.token.email == "wazzimagiygg@gmail.com" ||
+        request.auth.token.email == "pedrohenriquecardonaperes@gmail.com"
+      );
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Public encyclopedic knowledge and articles are freely readable
+    match /articles/{articleId} {
+      allow read: if true;
+      allow write: if isPublisher();
+    }
+
+    match /artigos/{articleId} {
+      allow read: if true;
+      allow write: if isPublisher();
+    }
+
+    match /wikiworldweb/{articleId} {
+      allow read: if true;
+      allow write: if isPublisher();
+    }
+
+    match /academico/{articleId} {
+      allow read: if true;
+      allow write: if isPublisher();
+    }
+
+    match /materiadeensaio/{articleId} {
+      allow read: if true;
+      allow write: if isPublisher();
+    }
+
+    match /materia/{articleId} {
+      allow read: if true;
+      allow write: if isPublisher();
+    }
+
+    match /uwgbooks/{articleId} {
+      allow read: if true;
+      allow write: if isPublisher();
+    }
+
+    match /documentos/{docId} {
+      allow read: if true;
+      allow write: if isPublisher();
+    }
+
+    match /userpage/{userId} {
+      allow read: if true;
+      allow write: if isOwner(userId) || isPublisher();
+    }
+
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isPublisher();
+      allow write: if isOwner(userId) || isPublisher();
+    }
+
+    match /usuários/{userId} {
+      allow read: if isOwner(userId) || isPublisher();
+      allow write: if isOwner(userId) || isPublisher();
+    }
+
+    match /tickets/{ticketId} {
+      allow create: if true;
+      allow read, update, delete: if isPublisher();
+    }
+
+    match /audit_logs/{logId} {
+      allow create: if true;
+      allow read: if isPublisher();
+    }
+
+    match /{document=**} {
+      allow read, write: if isPublisher();
+    }
+  }
+}

@@ -69,9 +69,10 @@ function formatRawContentToHtml(raw: string): string {
 }
 
 /**
- * Gera citação formatada nas normas da ABNT NBR 6023.
+ * Gera citação formatada nas normas da ABNT NBR 6023 com link direto para o UID do artigo.
  */
 function buildAbntCitation(article: {
+  id?: string;
   titulo: string;
   criadorEmail?: string;
   dataCriacao?: string;
@@ -85,8 +86,14 @@ function buildAbntCitation(article: {
   const title = (article.titulo || 'Documento do Acervo').toUpperCase();
   const year = new Date().getFullYear();
   const collectionName = (article.colecao || 'Acervo Digital WazzimaGiygg').toUpperCase();
+  const origin = typeof window !== 'undefined' && window.location?.origin
+    ? window.location.origin
+    : 'https://wazzimagiygg.com';
+  const uidUrl = article.id
+    ? `${origin}/?uid=${encodeURIComponent(article.id)}`
+    : origin;
 
-  return `${authorName}. ${title}. In: ${collectionName}. Brasília/São Paulo: WazzimaGiygg, ${year}. Disponível sob a Lei 12.965/2014 (Marco Civil da Internet) e Lei 13.709/2018 (LGPD). Acesso em: ${new Date().toLocaleDateString('pt-BR')}.`;
+  return `${authorName}. ${title}. In: ${collectionName}. Brasília/São Paulo: WazzimaGiygg, ${year}. Disponível em: <${uidUrl}>. Acesso em: ${new Date().toLocaleDateString('pt-BR')}.`;
 }
 
 /**
@@ -189,6 +196,11 @@ function buildCompleteArticleHtml(article: Article): string {
         <div style="font-family: monospace; font-size: 9.5px; color: #333333; line-height: 1.4; word-break: break-all;">
           ${abntCitation}
         </div>
+        ${article.id ? `
+        <div style="margin-top: 8px; padding-top: 6px; border-top: 1px dashed #cccccc; font-family: monospace; font-size: 8.5px; color: #1e40af;">
+          <strong>VÍNCULO PERMANENTE UID:</strong> <a href="${typeof window !== 'undefined' && window.location?.origin ? window.location.origin : 'https://wazzimagiygg.com'}/?uid=${encodeURIComponent(article.id)}" style="color: #1d4ed8; text-decoration: underline;">${typeof window !== 'undefined' && window.location?.origin ? window.location.origin : 'https://wazzimagiygg.com'}/?uid=${encodeURIComponent(article.id)}</a>
+        </div>
+        ` : ''}
       </section>
 
       <!-- AUTENTICIDADE E SELO CRIPTOGRÁFICO -->
@@ -297,6 +309,27 @@ function buildCompleteWikiHtml(wikiArticle: WikiArticle, renderedHtml: string): 
       <main class="pdf-article-body" style="font-size: 13px; color: #222222; text-align: justify;">
         ${DOMPurify.sanitize(renderedHtml)}
       </main>
+
+      <!-- CAIXA DE CITAÇÃO ABNT NBR 6023 COM LINK DO UID -->
+      <section style="
+        margin-top: 30px;
+        padding: 14px 18px;
+        background-color: #f9f8f5;
+        border: 1.5px solid #141414;
+        box-shadow: 4px 4px 0px 0px rgba(20,20,20,1);
+        font-family: Arial, Helvetica, sans-serif;
+        font-size: 10px;
+      ">
+        <div style="font-weight: bold; text-transform: uppercase; color: #141414; margin-bottom: 6px; letter-spacing: 0.5px;">
+          Como Citar Este Verbete (Normas ABNT NBR 6023):
+        </div>
+        <div style="font-family: monospace; font-size: 9.5px; color: #333333; line-height: 1.4; word-break: break-all;">
+          NOTMEDIAWIKI. ${wikiArticle.title.toUpperCase()}. Enciclopédia NotMediaWiki WazzimaGiygg, ${new Date().getFullYear()}. Disponível em: &lt;${typeof window !== 'undefined' && window.location?.origin ? window.location.origin : 'https://wazzimagiygg.com'}/?uid=${encodeURIComponent(wikiArticle.id || wikiArticle.slug)}&gt;. Acesso em: ${new Date().toLocaleDateString('pt-BR')}.
+        </div>
+        <div style="margin-top: 8px; padding-top: 6px; border-top: 1px dashed #cccccc; font-family: monospace; font-size: 8.5px; color: #1e40af;">
+          <strong>VÍNCULO PERMANENTE UID:</strong> <a href="${typeof window !== 'undefined' && window.location?.origin ? window.location.origin : 'https://wazzimagiygg.com'}/?uid=${encodeURIComponent(wikiArticle.id || wikiArticle.slug)}" style="color: #1d4ed8; text-decoration: underline;">${typeof window !== 'undefined' && window.location?.origin ? window.location.origin : 'https://wazzimagiygg.com'}/?uid=${encodeURIComponent(wikiArticle.id || wikiArticle.slug)}</a>
+        </div>
+      </section>
 
       <!-- RODAPÉ DE CERTIFICAÇÃO NOTMEDIAWIKI -->
       <footer style="

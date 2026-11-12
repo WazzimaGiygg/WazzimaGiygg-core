@@ -1,0 +1,54 @@
+{
+  "entities": {
+    "Article": {
+      "title": "Article",
+      "description": "Public articles and encyclopedic knowledge publications",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "titulo": { "type": "string", "maxLength": 300 },
+        "descricao": { "type": "string" },
+        "setor": { "type": "string", "maxLength": 100 },
+        "criadorEmail": { "type": "string" },
+        "colecao": { "type": "string" },
+        "visualizacoes": { "type": "number" }
+      },
+      "required": ["titulo", "descricao"]
+    },
+    "User": {
+      "title": "User",
+      "description": "User profile and permissions",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "name": { "type": "string" },
+        "isAdmin": { "type": "boolean" },
+        "isBanned": { "type": "boolean" }
+      },
+      "required": ["uid"]
+    }
+  },
+  "firestore": {
+    "/articles/{articleId}": {
+      "schema": "Article",
+      "description": "Public articles readable by all visitors"
+    },
+    "/artigos/{articleId}": {
+      "schema": "Article",
+      "description": "Portal publications catalog"
+    },
+    "/wikiworldweb/{articleId}": {
+      "schema": "Article",
+      "description": "News and world web articles"
+    },
+    "/academico/{articleId}": {
+      "schema": "Article",
+      "description": "Academic and methodology papers"
+    },
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User accounts and permissions"
+    }
+  }
+}

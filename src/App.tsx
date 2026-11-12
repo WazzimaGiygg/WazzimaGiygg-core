@@ -665,18 +665,27 @@ export default function App() {
     uidNav.navigateToUid(currentTab);
   };
 
-  // Generate ABNT Citation
+  // Helper to build canonical article UID URL (?uid=...)
+  const getArticleUidUrl = (article: Article | { id: string }) => {
+    const origin = typeof window !== "undefined" && window.location?.origin
+      ? window.location.origin
+      : "https://wazzimagiygg.com";
+    return `${origin}/?uid=${encodeURIComponent(article.id)}`;
+  };
+
+  // Generate ABNT Citation linked to specific Article UID (Substituindo o link genérico do site pelo link do UID)
   const getAbntCitation = (article: Article) => {
     const author = (article.criadorEmail || "WAZZIMAGIYGG").split("@")[0].toUpperCase();
     const title = article.titulo.toUpperCase();
     const year = new Date().getFullYear();
-    return `${author}. ${title}. WazzimaGiygg Gazette & Knowledge Portal, ${year}. Disponível em: <${window.location.origin}>. Acesso em: ${new Date().toLocaleDateString("pt-BR")}.`;
+    const uidUrl = getArticleUidUrl(article);
+    return `${author}. ${title}. WazzimaGiygg Gazette & Knowledge Portal, ${year}. Disponível em: <${uidUrl}>. Acesso em: ${new Date().toLocaleDateString("pt-BR")}.`;
   };
 
   const handleCopyCitation = (article: Article) => {
     navigator.clipboard.writeText(getAbntCitation(article));
     setCitationCopied(true);
-    showToast("Citação ABNT copiada para a área de transferência!");
+    showToast("Citação ABNT com link direto do UID copiada para a área de transferência!");
     setTimeout(() => setCitationCopied(false), 3000);
   };
 
@@ -1766,23 +1775,73 @@ export default function App() {
                 }}
               />
 
-              {/* ABNT Citation Box */}
-              <div className="mt-10 p-4 bg-white border-2 border-[#141414] font-mono text-xs">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="font-bold text-stone-800 uppercase tracking-wider text-[11px]">
-                    Como Citar Este Documento (Normas ABNT):
-                  </span>
-                  <button
-                    onClick={() => handleCopyCitation(selectedArticle)}
-                    className="paper-button px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 cursor-pointer"
-                  >
-                    {citationCopied ? <CheckCircle className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3 text-amber-400" />}
-                    <span>{citationCopied ? "Copiado!" : "Copiar Citação"}</span>
-                  </button>
+              {/* ABNT Citation Box with Article UID Link */}
+              <div className="mt-10 p-4 bg-white border-2 border-[#141414] font-mono text-xs shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]">
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                  <div className="flex items-center gap-2">
+                    <FileText className="w-4 h-4 text-stone-700" />
+                    <span className="font-bold text-stone-800 uppercase tracking-wider text-[11px]">
+                      Como Citar Este Documento (Normas ABNT):
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => handleCopyCitation(selectedArticle)}
+                      className="paper-button px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 cursor-pointer"
+                      title="Copiar citação formatada para a área de transferência"
+                    >
+                      {citationCopied ? <CheckCircle className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3 text-amber-400" />}
+                      <span>{citationCopied ? "Copiado!" : "Copiar Citação"}</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        const url = getArticleUidUrl(selectedArticle);
+                        navigator.clipboard.writeText(url);
+                        showToast(`Link do UID copiado: ?uid=${selectedArticle.id}`);
+                      }}
+                      className="paper-button-secondary px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 cursor-pointer"
+                      title="Copiar apenas o link do UID"
+                    >
+                      <Share2 className="w-3 h-3 text-stone-700" />
+                      <span>Copiar Link do UID</span>
+                    </button>
+                  </div>
                 </div>
-                <p className="text-stone-700 select-all bg-stone-50 p-2.5 border border-stone-300 text-[11px]">
-                  {getAbntCitation(selectedArticle)}
-                </p>
+
+                <div className="text-stone-700 select-all bg-stone-50 p-3 border border-stone-300 text-[11px] leading-relaxed break-all">
+                  <span>
+                    {(selectedArticle.criadorEmail || "WAZZIMAGIYGG").split("@")[0].toUpperCase()}. {selectedArticle.titulo.toUpperCase()}. WazzimaGiygg Gazette & Knowledge Portal, {new Date().getFullYear()}. Disponível em: &lt;
+                  </span>
+                  <a
+                    href={getArticleUidUrl(selectedArticle)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-700 hover:text-red-700 underline font-bold"
+                    title={`Abrir UID do artigo: ${selectedArticle.id}`}
+                  >
+                    {getArticleUidUrl(selectedArticle)}
+                  </a>
+                  <span>&gt;. Acesso em: {new Date().toLocaleDateString("pt-BR")}.</span>
+                </div>
+
+                {/* Permanent UID Reference Link Badge */}
+                <div className="mt-2.5 pt-2 border-t border-stone-200 flex flex-wrap items-center justify-between gap-2 text-[10px] text-stone-600">
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-bold text-stone-800 uppercase">Referência UID:</span>
+                    <span className="bg-amber-100 text-stone-900 font-bold px-1.5 py-0.5 border border-amber-300">
+                      {selectedArticle.id}
+                    </span>
+                  </div>
+                  <a
+                    href={getArticleUidUrl(selectedArticle)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-700 hover:text-blue-900 underline font-mono flex items-center gap-1 font-semibold"
+                  >
+                    <span>Vincular por UID (?uid={selectedArticle.id})</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
               </div>
             </div>
 
