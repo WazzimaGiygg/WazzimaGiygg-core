@@ -114,6 +114,7 @@ export default function App() {
   });
 
   const [selectedArticle, setSelectedArticle] = useState<Article | null>(null);
+  const [sharedArticleForBemtevi, setSharedArticleForBemtevi] = useState<Article | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedSector, setSelectedSector] = useState<string>("todos");
 
@@ -1325,6 +1326,19 @@ export default function App() {
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
+                            setSharedArticleForBemtevi(article);
+                            switchTab("bemtevi");
+                            showToast(`Compartilhando "${article.titulo}" na rede social Bemtevi! 🐦`);
+                          }}
+                          className="bg-[#667eea] hover:bg-[#5a6fd6] text-white border border-[#4d63d6] p-2 text-center transition-colors cursor-pointer shadow-none"
+                          title="Compartilhar na rede social Bemtevi"
+                          aria-label="Compartilhar na rede social Bemtevi"
+                        >
+                          <MessageCircle className="w-3.5 h-3.5 text-white" />
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
                             handleSaveArticleAsPdf(article);
                           }}
                           disabled={isGeneratingPdf}
@@ -1680,6 +1694,29 @@ export default function App() {
             onNavigateBack={uidNav.navigateBack}
             onNavigateForward={uidNav.navigateForward}
             onOpenLgpdModal={() => setIsLgpdModalOpen(true)}
+            onOpenArticle={(art) => {
+              const all = Object.values(articles).flat();
+              const found = all.find((a) => a.id === art.id);
+              if (found) {
+                handleOpenArticle(found);
+              } else {
+                handleOpenArticle({
+                  id: art.id,
+                  titulo: art.titulo,
+                  descricao: art.descricao || "",
+                  conteudo: art.descricao || "",
+                  setor: art.setor || "Geral",
+                  criadorEmail: art.criadorEmail || "Redação",
+                  dataCriacao: "Recente",
+                  ultimaEdicao: "Recente",
+                  visualizacoes: 1,
+                  colecao: art.colecao || "wikiworldweb"
+                });
+              }
+            }}
+            initialSharedArticle={sharedArticleForBemtevi}
+            onClearInitialSharedArticle={() => setSharedArticleForBemtevi(null)}
+            availableArticles={Object.values(articles).flat()}
           />
         )}
 
@@ -1716,9 +1753,11 @@ export default function App() {
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => {
+                    const target = selectedArticle;
                     handleCloseArticle();
+                    setSharedArticleForBemtevi(target);
                     switchTab("bemtevi");
-                    showToast(`Abrindo Bemtevi para debater "${selectedArticle.titulo}"! 🐦`);
+                    showToast(`Abrindo Bemtevi para debater e compartilhar "${target.titulo}"! 🐦`);
                   }}
                   className="bg-[#667eea] hover:bg-[#5a6fd6] text-white px-2.5 py-1 text-[11px] font-mono font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer border border-[#4d63d6] shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]"
                   title="Compartilhar e debater na rede social Bemtevi"
@@ -1805,6 +1844,20 @@ export default function App() {
                       <Share2 className="w-3 h-3 text-stone-700" />
                       <span>Copiar Link do UID</span>
                     </button>
+                    <button
+                      onClick={() => {
+                        const target = selectedArticle;
+                        handleCloseArticle();
+                        setSharedArticleForBemtevi(target);
+                        switchTab("bemtevi");
+                        showToast(`Carregando "${target.titulo}" no Bemtevi para debate social! 🐦`);
+                      }}
+                      className="paper-button bg-[#667eea] hover:bg-[#5a6fd6] text-white px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 cursor-pointer shadow-none"
+                      title="Compartilhar e debater este documento na rede social Bemtevi"
+                    >
+                      <MessageCircle className="w-3 h-3 text-white" />
+                      <span>Debater no Bemtevi</span>
+                    </button>
                   </div>
                 </div>
 
@@ -1873,6 +1926,20 @@ export default function App() {
                 >
                   <Share2 className="w-3.5 h-3.5" />
                   <span>Compartilhar</span>
+                </button>
+                <button
+                  onClick={() => {
+                    const target = selectedArticle;
+                    handleCloseArticle();
+                    setSharedArticleForBemtevi(target);
+                    switchTab("bemtevi");
+                    showToast(`Abrindo Bemtevi para debater e compartilhar "${target.titulo}"! 🐦`);
+                  }}
+                  className="paper-button bg-[#667eea] hover:bg-[#5a6fd6] text-white px-3 py-1.5 text-xs font-mono font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]"
+                  title="Compartilhar na rede social Bemtevi"
+                >
+                  <MessageCircle className="w-3.5 h-3.5 text-white" />
+                  <span>Debater no Bemtevi</span>
                 </button>
               </div>
 

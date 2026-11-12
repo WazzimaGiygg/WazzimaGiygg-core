@@ -38,7 +38,9 @@ import {
   Smile,
   Hash,
   ArrowLeft,
-  ArrowRight
+  ArrowRight,
+  BookOpen,
+  FileText
 } from 'lucide-react';
 import {
   BemteviPost,
@@ -49,6 +51,7 @@ import {
   BemteviNotification,
   BemteviDirectMessage,
   BemteviCategory,
+  BemteviSharedArticle,
   BEMTEVI_CATEGORIES,
   BEMTEVI_TRANSLATIONS,
   getKarmaLevel,
@@ -72,6 +75,10 @@ interface BemteviHubProps {
   currentUser?: any;
   showToast: (msg: string, isError?: boolean) => void;
   onOpenArticleByUrl?: (url: string) => void;
+  onOpenArticle?: (article: any) => void;
+  initialSharedArticle?: BemteviSharedArticle | null;
+  onClearInitialSharedArticle?: () => void;
+  availableArticles?: any[];
   activeUid?: string | null;
   onNavigateUid?: (uid: string) => void;
   canGoBack?: boolean;
@@ -84,6 +91,10 @@ interface BemteviHubProps {
 export default function BemteviHub({
   currentUser,
   showToast,
+  onOpenArticle,
+  initialSharedArticle,
+  onClearInitialSharedArticle,
+  availableArticles = [],
   activeUid,
   onNavigateUid,
   canGoBack = false,
@@ -129,6 +140,23 @@ export default function BemteviHub({
   const [composerCategory, setComposerCategory] = useState<BemteviCategory>('Geral');
   const [composerCommunityId, setComposerCommunityId] = useState<string>('');
   const [isSubmittingPost, setIsSubmittingPost] = useState(false);
+
+  // Shared Article Attachment State (Integração de artigos do site ao Bemtevi)
+  const [attachedArticle, setAttachedArticle] = useState<BemteviSharedArticle | null>(() => initialSharedArticle || null);
+  const [isArticlePickerOpen, setIsArticlePickerOpen] = useState(false);
+  const [articlePickerSearch, setArticlePickerSearch] = useState('');
+
+  // Sincronizar artigo inicial quando compartilhado a partir do leitor ou cards do acervo
+  useEffect(() => {
+    if (initialSharedArticle) {
+      setAttachedArticle(initialSharedArticle);
+      setActiveTab('feed');
+      const hashTag = (initialSharedArticle.setor || 'Geral').replace(/[^a-zA-Z0-9À-ÿ]/g, '');
+      const prefix = `Confiram este artigo: #${hashTag} #WZZM`;
+      setComposerText(prefix.slice(0, 127));
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }, [initialSharedArticle]);
 
   // Active Modals
   const [selectedPostForComments, setSelectedPostForComments] = useState<BemteviPost | null>(null);
@@ -206,6 +234,7 @@ export default function BemteviHub({
         category: p.category || 'Geral',
         communityId: p.communityId || undefined,
         communityName: p.communityName || undefined,
+        sharedArticle: p.sharedArticle || undefined,
         likesCount: p.likesCount || (Array.isArray(p.likedBy) ? p.likedBy.length : 0),
         commentsCount: p.commentsCount || 0,
         sharesCount: p.sharesCount || 0,
@@ -312,6 +341,7 @@ export default function BemteviHub({
       category: composerCategory,
       communityId: composerCommunityId || undefined,
       communityName: targetComm?.name,
+      sharedArticle: attachedArticle || undefined,
       likesCount: 0,
       commentsCount: 0,
       sharesCount: 0,
@@ -328,7 +358,15 @@ export default function BemteviHub({
       setComposerText('');
       setComposerLink('');
       setComposerCommunityId('');
-      showToast('Post gravado com sucesso no banco de dados! (+10 Karma)', false);
+      const hadArticle = Boolean(attachedArticle);
+      setAttachedArticle(null);
+      if (onClearInitialSharedArticle) onClearInitialSharedArticle();
+      showToast(
+        hadArticle
+          ? 'Artigo compartilhado no Bemtevi com sucesso! 🐦📰'
+          : 'Post gravado com sucesso no banco de dados! (+10 Karma)',
+        false
+      );
     } catch (err) {
       console.warn('Erro ao salvar post no banco de dados:', err);
       showToast('Erro ao sincronizar post com o banco de dados.', true);
@@ -388,11 +426,20 @@ export default function BemteviHub({
     }
   };
 
-  // Share / Copy Link
+  // Share / Repost inside Bemtevi (Integração Social dos Artigos)
   const handleSharePost = (post: BemteviPost) => {
-    const shareUrl = `${window.location.origin}/#bemtevi/post/${post.id}`;
-    navigator.clipboard?.writeText(shareUrl);
-    showToast('Link do post copiado para a área de transferência! 🔗');
+    if (post.sharedArticle) {
+      setAttachedArticle(post.sharedArticle);
+      const hash = (post.sharedArticle.setor || 'Geral').replace(/[^a-zA-Z0-9À-ÿ]/g, '');
+      setComposerText(`Recomendo: #${hash} `);
+      setActiveTab('feed');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      showToast(`Artigo "${post.sharedArticle.titulo}" anexado ao seu composer para recompartilhar no Bemtevi! 🐦`);
+    } else {
+      const shareUrl = `${window.location.origin}/#bemtevi/post/${post.id}`;
+      navigator.clipboard?.writeText(shareUrl);
+      showToast('Link do post copiado para a área de transferência! 🔗');
+    }
 
     setPosts((prev) =>
       prev.map((p) => (p.id === post.id ? { ...p, sharesCount: p.sharesCount + 1 } : p))
@@ -600,6 +647,99 @@ export default function BemteviHub({
     return `${Math.floor(diff / 86400)}d`;
   };
 
+  // Render Shared Article Card inside Bemtevi Post (Integração de Artigos à Rede Social)
+  const renderSharedArticleCard = (article: BemteviSharedArticle) => {
+    return (
+      <div className="mt-3 bg-[#111115] hover:bg-[#141419] border-2 border-stone-700/80 hover:border-amber-500/70 rounded-xl p-3.5 transition-all shadow-md space-y-2 text-left">
+        <div className="flex items-center justify-between gap-2 text-[10px] font-mono">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="bg-[#D97706] text-black font-bold px-1.5 py-0.5 text-[9px] uppercase tracking-wider">
+              {article.setor || "Artigo do Acervo"}
+            </span>
+            <span className="text-stone-400 font-medium">Coleção: {article.colecao || "Geral"}</span>
+          </div>
+          <span className="bg-stone-800 text-stone-300 px-1.5 py-0.5 border border-stone-700 font-mono text-[9px]">
+            UID: {article.id}
+          </span>
+        </div>
+
+        <h4
+          onClick={(e) => {
+            e.stopPropagation();
+            if (onOpenArticle) {
+              onOpenArticle(article);
+            } else if (onNavigateUid) {
+              onNavigateUid(article.id);
+            }
+          }}
+          className="font-editorial text-sm sm:text-base font-bold text-stone-100 hover:text-amber-400 cursor-pointer leading-snug transition-colors"
+          title="Clique para ler este artigo completo no leitor oficial"
+        >
+          {article.titulo}
+        </h4>
+
+        {article.descricao && (
+          <p className="text-xs text-stone-300 font-serif leading-relaxed line-clamp-2">
+            {article.descricao.replace(/<[^>]*>/g, '')}
+          </p>
+        )}
+
+        <div className="pt-2 border-t border-stone-800 flex flex-wrap items-center justify-between gap-2 text-[10px] font-mono">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (onOpenArticle) {
+                onOpenArticle(article);
+              } else if (onNavigateUid) {
+                onNavigateUid(article.id);
+              }
+            }}
+            className="paper-button bg-[#667eea] hover:bg-[#5a6fd6] text-white px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 cursor-pointer shadow-none"
+          >
+            <BookOpen className="w-3 h-3" />
+            <span>Ler Artigo</span>
+          </button>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                const uidUrl = `${window.location.origin}/?uid=${encodeURIComponent(article.id)}`;
+                navigator.clipboard.writeText(uidUrl);
+                showToast(`Link do UID copiado: ?uid=${article.id}`);
+              }}
+              className="text-stone-400 hover:text-amber-300 underline flex items-center gap-1 cursor-pointer"
+              title="Copiar link com ?uid="
+            >
+              <span>Copiar Link (?uid=)</span>
+              <ExternalLink className="w-2.5 h-2.5" />
+            </button>
+
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setAttachedArticle(article);
+                const hash = (article.setor || 'Geral').replace(/[^a-zA-Z0-9À-ÿ]/g, '');
+                setComposerText(`Recomendo a leitura: #${hash} `);
+                setActiveTab('feed');
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+                showToast(`Artigo "${article.titulo}" anexado ao seu post no Bemtevi! 🐦`);
+              }}
+              className="text-emerald-400 hover:text-emerald-300 underline flex items-center gap-1 cursor-pointer"
+              title="Compartilhar este artigo dentro do Bemtevi"
+            >
+              <Share2 className="w-2.5 h-2.5" />
+              <span>Repostar no Bemtevi</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="min-h-screen bg-[#0F0F12] text-stone-100 font-sans pb-16 animate-fade-in">
       {/* ======================================================== */}
@@ -786,6 +926,36 @@ export default function BemteviHub({
                         className="w-full bg-transparent text-stone-100 placeholder-stone-500 text-sm focus:outline-none resize-none"
                       />
 
+                      {/* Attached Article Preview */}
+                      {attachedArticle && (
+                        <div className="bg-[#121217] border border-amber-500/60 rounded-xl p-2.5 my-2 text-xs relative flex items-start justify-between gap-3 shadow-md">
+                          <div className="space-y-0.5 overflow-hidden text-left">
+                            <div className="flex items-center gap-2">
+                              <span className="bg-amber-400 text-black font-mono font-bold px-1.5 py-0.2 text-[9px] uppercase tracking-wider">
+                                Artigo Vinculado
+                              </span>
+                              <span className="text-stone-400 font-mono text-[9px]">
+                                UID: {attachedArticle.id}
+                              </span>
+                            </div>
+                            <h5 className="font-editorial font-bold text-stone-100 text-xs truncate">
+                              {attachedArticle.titulo}
+                            </h5>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAttachedArticle(null);
+                              if (onClearInitialSharedArticle) onClearInitialSharedArticle();
+                            }}
+                            className="text-stone-400 hover:text-red-400 p-1 cursor-pointer shrink-0"
+                            title="Remover anexo do artigo"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      )}
+
                       {/* Optional Link Input */}
                       <div className="flex items-center gap-2 mt-2 pt-2 border-t border-stone-800/60">
                         <LinkIcon className="w-3.5 h-3.5 text-stone-500 shrink-0" />
@@ -800,9 +970,24 @@ export default function BemteviHub({
                     </div>
                   </div>
 
-                  {/* Composer Footer: Category, Community, Character Counter, Submit */}
+                  {/* Composer Footer: Category, Community, Article Picker, Character Counter, Submit */}
                   <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-stone-800">
-                    <div className="flex items-center gap-2 text-xs">
+                    <div className="flex items-center gap-2 text-xs flex-wrap">
+                      {/* Anexar Artigo Button */}
+                      <button
+                        type="button"
+                        onClick={() => setIsArticlePickerOpen(true)}
+                        className={`flex items-center gap-1.5 text-[11px] rounded-lg px-2.5 py-1 border transition-colors cursor-pointer ${
+                          attachedArticle
+                            ? 'bg-amber-400/20 text-amber-300 border-amber-500/50 font-bold'
+                            : 'bg-stone-800 hover:bg-stone-700 text-stone-300 border-stone-700 hover:text-amber-300'
+                        }`}
+                        title="Anexar um artigo do site para compartilhar no Bemtevi"
+                      >
+                        <BookOpen className="w-3.5 h-3.5 text-amber-400" />
+                        <span>{attachedArticle ? 'Trocar Artigo' : 'Anexar Artigo'}</span>
+                      </button>
+
                       {/* Category select */}
                       <select
                         value={composerCategory}
@@ -998,6 +1183,9 @@ export default function BemteviHub({
                         <p className="text-stone-200 text-sm sm:text-base leading-relaxed break-words font-serif">
                           {post.content}
                         </p>
+
+                        {/* Shared Article Embed Card (Integração de Artigos no Bemtevi) */}
+                        {post.sharedArticle && renderSharedArticleCard(post.sharedArticle)}
 
                         {/* Link preview card if attached */}
                         {post.link && (
@@ -1469,6 +1657,7 @@ export default function BemteviHub({
                       <span>{formatTimeAgo(post.createdAt)}</span>
                     </div>
                     <p className="text-stone-200 text-sm font-serif">{post.content}</p>
+                    {post.sharedArticle && renderSharedArticleCard(post.sharedArticle)}
                     <div className="flex items-center justify-between pt-2 border-t border-stone-800 text-xs">
                       <span className="text-amber-400 font-mono text-[11px]">{post.category}</span>
                       <button
@@ -1555,6 +1744,7 @@ export default function BemteviHub({
                         <span>{formatTimeAgo(post.createdAt)}</span>
                       </div>
                       <p className="text-stone-200 text-sm font-serif">{post.content}</p>
+                      {post.sharedArticle && renderSharedArticleCard(post.sharedArticle)}
                       <div className="flex items-center justify-between pt-2 border-t border-stone-800 text-xs font-mono text-stone-400">
                         <span>❤️ {post.likesCount} • 💬 {post.commentsCount}</span>
                         <button
@@ -2012,6 +2202,105 @@ export default function BemteviHub({
                   Enviar Mensagem
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* 6. MODAL SELETOR DE ARTIGOS DO ACERVO PARA COMPARTILHAR NO BEMTEVI */}
+      {isArticlePickerOpen && (
+        <div className="fixed inset-0 bg-stone-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in font-sans">
+          <div className="bg-[#16161B] border-2 border-stone-700 rounded-2xl max-w-lg w-full p-5 space-y-4 shadow-2xl text-left">
+            <div className="flex items-center justify-between border-b border-stone-800 pb-3">
+              <div className="flex items-center gap-2">
+                <BookOpen className="w-5 h-5 text-amber-400" />
+                <h3 className="font-editorial text-lg font-bold text-white">
+                  Anexar Artigo do Acervo ao Bemtevi
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsArticlePickerOpen(false)}
+                className="text-stone-400 hover:text-white p-1 cursor-pointer"
+                title="Fechar"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="relative">
+              <Search className="w-4 h-4 text-stone-500 absolute left-3 top-2.5" />
+              <input
+                type="text"
+                value={articlePickerSearch}
+                onChange={(e) => setArticlePickerSearch(e.target.value)}
+                placeholder="Buscar artigo por título, setor ou UID..."
+                className="w-full bg-[#121217] border border-stone-800 rounded-xl pl-9 pr-3 py-2 text-xs text-stone-200 placeholder-stone-600 focus:outline-none focus:border-[#667eea]"
+              />
+            </div>
+
+            <div className="max-h-72 overflow-y-auto space-y-2 pr-1 no-scrollbar font-mono text-xs">
+              {availableArticles.length === 0 ? (
+                <div className="text-center py-8 text-stone-500 text-xs">
+                  Nenhum artigo disponível no momento para compartilhamento.
+                </div>
+              ) : (
+                availableArticles
+                  .filter((art) => {
+                    if (!articlePickerSearch.trim()) return true;
+                    const q = articlePickerSearch.toLowerCase();
+                    return (
+                      (art.titulo || '').toLowerCase().includes(q) ||
+                      (art.id || '').toLowerCase().includes(q) ||
+                      (art.setor || '').toLowerCase().includes(q)
+                    );
+                  })
+                  .map((art) => (
+                    <div
+                      key={art.id}
+                      onClick={() => {
+                        setAttachedArticle({
+                          id: art.id,
+                          titulo: art.titulo,
+                          descricao: art.descricao || '',
+                          setor: art.setor || 'Geral',
+                          colecao: art.colecao || 'Acervo',
+                          criadorEmail: art.criadorEmail
+                        });
+                        setIsArticlePickerOpen(false);
+                        setArticlePickerSearch('');
+                        if (!composerText.trim()) {
+                          const hashTag = (art.setor || 'Geral').replace(/[^a-zA-Z0-9À-ÿ]/g, '');
+                          setComposerText(`Confiram este artigo: #${hashTag} #WZZM`);
+                        }
+                        showToast(`Artigo "${art.titulo}" anexado ao seu post no Bemtevi! 🐦`);
+                      }}
+                      className="p-3 bg-[#121217] hover:bg-stone-900 border border-stone-800 hover:border-amber-400/60 rounded-xl cursor-pointer flex items-center justify-between gap-3 transition-colors text-left"
+                    >
+                      <div className="space-y-1 overflow-hidden">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="bg-[#D97706] text-black font-bold px-1.5 py-0.2 text-[9px] uppercase">
+                            {art.setor || 'Geral'}
+                          </span>
+                          <span className="text-[9px] text-stone-400">UID: {art.id}</span>
+                        </div>
+                        <h5 className="font-editorial text-sm font-bold text-stone-200 truncate">
+                          {art.titulo}
+                        </h5>
+                        {art.descricao && (
+                          <p className="text-[11px] text-stone-400 line-clamp-1 font-serif">
+                            {art.descricao.replace(/<[^>]*>/g, '')}
+                          </p>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        className="shrink-0 bg-stone-800 hover:bg-[#667eea] text-stone-200 hover:text-white px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase transition-colors"
+                      >
+                        Anexar
+                      </button>
+                    </div>
+                  ))
+              )}
             </div>
           </div>
         </div>

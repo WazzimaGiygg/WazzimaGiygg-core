@@ -1662,7 +1662,7 @@ app.get('/api/bemtevi/posts', (req: Request, res: Response) => {
 
 // 2. Create Post (strictly enforced max 127 characters)
 app.post('/api/bemtevi/posts', (req: Request, res: Response) => {
-  const { content, authorId, authorName, authorHandle, authorAvatar, link, category, communityId, communityName } = req.body;
+  const { content, authorId, authorName, authorHandle, authorAvatar, link, category, communityId, communityName, sharedArticle } = req.body;
 
   if (!content || typeof content !== 'string') {
     res.status(400).json({ error: 'Conteúdo da postagem é obrigatório.' });
@@ -1687,6 +1687,7 @@ app.post('/api/bemtevi/posts', (req: Request, res: Response) => {
     category: category || 'Geral',
     communityId: communityId || undefined,
     communityName: communityName || undefined,
+    sharedArticle: sharedArticle || undefined,
     likesCount: 0,
     commentsCount: 0,
     sharesCount: 0,

@@ -7,6 +7,17 @@
  * Domínio oficial: https://bemtevi.wazzimagiygg.com/
  */
 
+export interface BemteviSharedArticle {
+  id: string; // Article UID
+  titulo: string;
+  descricao?: string;
+  setor?: string;
+  colecao?: string;
+  criadorEmail?: string;
+  link?: string;
+  url?: string;
+}
+
 export interface BemteviPost {
   id: string;
   authorId: string;
@@ -23,6 +34,7 @@ export interface BemteviPost {
   category: BemteviCategory;
   communityId?: string;
   communityName?: string;
+  sharedArticle?: BemteviSharedArticle;
   likesCount: number;
   commentsCount: number;
   sharesCount: number;
@@ -259,7 +271,34 @@ export const BEMTEVI_TRANSLATIONS = {
 // Sincronização exclusiva com banco de dados - nenhum dado sugerido fictício
 export const SEED_BEMTEVI_USERS: BemteviUser[] = [];
 export const SEED_BEMTEVI_COMMUNITIES: BemteviCommunity[] = [];
-export const SEED_BEMTEVI_POSTS: BemteviPost[] = [];
+export const SEED_BEMTEVI_POSTS: BemteviPost[] = [
+  {
+    id: 'post-init-1',
+    authorId: 'usr_pedro_cardona_official',
+    authorName: 'Pedro Cardona',
+    authorHandle: '@pedro_cardona',
+    authorBadge: 'Burocrata',
+    authorKarma: 5000,
+    authorLevel: 'Lendário',
+    content: 'Recomendo a leitura deste documento do nosso acervo sobre a reforma psiquiátrica! #SaudeMental #WZZM',
+    category: 'Educação',
+    sharedArticle: {
+      id: 'news_4',
+      titulo: 'Franco Basaglia e a Transformação da Psiquiatria: Da Desinstitucionalização à Liberdade Terapêutica',
+      descricao: 'Análise histórica sobre a desinstitucionalização, a Lei 10.216/2001 e a criação dos CAPS no Brasil.',
+      setor: 'Notícias & Sociedade',
+      colecao: 'wikiworldweb',
+      criadorEmail: 'redacao@wazzimagiygg.com'
+    },
+    likesCount: 14,
+    commentsCount: 3,
+    sharesCount: 5,
+    savesCount: 8,
+    likedBy: [],
+    savedBy: [],
+    createdAt: new Date(Date.now() - 3600000 * 4).toISOString()
+  }
+];
 export const SEED_BEMTEVI_COMMENTS: BemteviComment[] = [];
 export const SEED_BEMTEVI_TRENDING: BemteviTrendingTopic[] = [];
 export const SEED_BEMTEVI_NOTIFICATIONS: BemteviNotification[] = [];
