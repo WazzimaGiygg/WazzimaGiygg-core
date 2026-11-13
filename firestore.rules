@@ -17,6 +17,10 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
+    function validNonEmptyString(val, minLen, maxLen) {
+      return val is string && val.size() >= minLen && val.size() <= maxLen;
+    }
+
     // Public encyclopedic knowledge and articles are freely readable
     match /articles/{articleId} {
       allow read: if true;
@@ -30,27 +34,32 @@ service cloud.firestore {
 
     match /wikiworldweb/{articleId} {
       allow read: if true;
-      allow write: if isPublisher();
+      allow update: if request.resource.data.diff(resource.data).affectedKeys().hasOnly(['visualizacoes']);
+      allow create, delete: if isPublisher();
     }
 
     match /academico/{articleId} {
       allow read: if true;
-      allow write: if isPublisher();
+      allow update: if request.resource.data.diff(resource.data).affectedKeys().hasOnly(['visualizacoes']);
+      allow create, delete: if isPublisher();
     }
 
     match /materiadeensaio/{articleId} {
       allow read: if true;
-      allow write: if isPublisher();
+      allow update: if request.resource.data.diff(resource.data).affectedKeys().hasOnly(['visualizacoes']);
+      allow create, delete: if isPublisher();
     }
 
     match /materia/{articleId} {
       allow read: if true;
-      allow write: if isPublisher();
+      allow update: if request.resource.data.diff(resource.data).affectedKeys().hasOnly(['visualizacoes']);
+      allow create, delete: if isPublisher();
     }
 
     match /uwgbooks/{articleId} {
       allow read: if true;
-      allow write: if isPublisher();
+      allow update: if request.resource.data.diff(resource.data).affectedKeys().hasOnly(['visualizacoes']);
+      allow create, delete: if isPublisher();
     }
 
     match /documentos/{docId} {
@@ -58,6 +67,90 @@ service cloud.firestore {
       allow write: if isPublisher();
     }
 
+    // NotMediaWiki & Extension Security Integrity Collections
+    match /wiki_articles/{slug} {
+      allow read: if true;
+      allow write: if isPublisher();
+    }
+
+    match /wiki_revisions/{revId} {
+      allow read: if true;
+      allow write: if isPublisher();
+    }
+
+    match /wiki_events/{eventId} {
+      allow read: if true;
+      allow write: if isPublisher();
+    }
+
+    match /wiki_extensions/{extId} {
+      allow read: if true;
+      allow write: if isPublisher();
+    }
+
+    match /extensions_integrity_registry/{extId} {
+      allow read: if true;
+      allow write: if isPublisher();
+    }
+
+    // ============================================
+    // BEM-TE-VI REDE SOCIAL
+    // ============================================
+    match /bemtevi_posts/{postId} {
+      allow read: if true;
+      allow create: if isSignedIn()
+        && request.resource.data.authorId == request.auth.uid
+        && validNonEmptyString(request.resource.data.content, 1, 127)
+        && request.resource.data.likesCount is number
+        && request.resource.data.commentsCount is number
+        && request.resource.data.sharesCount is number
+        && request.resource.data.savesCount is number;
+      allow update: if isSignedIn() && (
+        resource.data.authorId == request.auth.uid ||
+        isPublisher() ||
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'likesCount', 'likedBy', 'commentsCount', 'sharesCount', 'savesCount', 'savedBy'
+        ])
+      );
+      allow delete: if isSignedIn() && (resource.data.authorId == request.auth.uid || isPublisher());
+    }
+
+    match /bemtevi_comments/{commentId} {
+      allow read: if true;
+      allow create: if isSignedIn()
+        && request.resource.data.authorId == request.auth.uid
+        && validNonEmptyString(request.resource.data.postId, 1, 120)
+        && validNonEmptyString(request.resource.data.content, 1, 280);
+      allow update, delete: if isSignedIn() && (resource.data.authorId == request.auth.uid || isPublisher());
+    }
+
+    match /bemtevi_communities/{communityId} {
+      allow read: if true;
+      allow create: if isSignedIn()
+        && request.resource.data.createdBy == request.auth.uid
+        && validNonEmptyString(request.resource.data.name, 3, 60);
+      allow update: if isSignedIn() && (
+        resource.data.createdBy == request.auth.uid ||
+        isPublisher() ||
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members', 'membersCount', 'postsCount'])
+      );
+      allow delete: if isPublisher();
+    }
+
+    match /bemtevi_messages/{messageId} {
+      allow read: if isSignedIn() && (
+        resource.data.senderId == request.auth.uid ||
+        resource.data.receiverId == request.auth.uid ||
+        resource.data.recipientId == request.auth.uid ||
+        isPublisher()
+      );
+      allow create: if isSignedIn()
+        && request.resource.data.senderId == request.auth.uid
+        && validNonEmptyString(request.resource.data.text, 1, 2000);
+      allow update, delete: if isPublisher();
+    }
+
+    // User Pages & Profiles (PII protected)
     match /userpage/{userId} {
       allow read: if true;
       allow write: if isOwner(userId) || isPublisher();
@@ -73,13 +166,38 @@ service cloud.firestore {
       allow write: if isOwner(userId) || isPublisher();
     }
 
+    // Notifications
+    match /notifications/{notifId} {
+      allow read: if isSignedIn() && (
+        resource.data.userId == request.auth.uid ||
+        resource.data.userId == "all" ||
+        isPublisher()
+      );
+      allow update: if isSignedIn()
+        && (resource.data.userId == request.auth.uid || isPublisher())
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lida']);
+      allow create, delete: if isPublisher();
+    }
+
+    // LGPD Tickets, Deletion Requests & Audit Logs
     match /tickets/{ticketId} {
-      allow create: if true;
+      allow create: if validNonEmptyString(request.resource.data.email, 3, 200)
+        && validNonEmptyString(request.resource.data.mensagem, 1, 5000);
+      allow read, update, delete: if isPublisher();
+    }
+
+    match /deletion_requests/{reqId} {
+      allow create: if validNonEmptyString(request.resource.data.email, 3, 200);
       allow read, update, delete: if isPublisher();
     }
 
     match /audit_logs/{logId} {
-      allow create: if true;
+      allow create: if validNonEmptyString(request.resource.data.action, 1, 200);
+      allow read: if isPublisher();
+    }
+
+    match /checkuser/{logId} {
+      allow create: if validNonEmptyString(request.resource.data.action, 1, 200);
       allow read: if isPublisher();
     }
 

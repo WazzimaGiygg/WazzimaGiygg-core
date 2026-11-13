@@ -40,7 +40,9 @@ import {
   ArrowLeft,
   ArrowRight,
   BookOpen,
-  FileText
+  FileText,
+  Edit3,
+  Check
 } from 'lucide-react';
 import {
   BemteviPost,
@@ -56,14 +58,21 @@ import {
   BEMTEVI_TRANSLATIONS,
   getKarmaLevel,
   getKarmaBadgeColor,
-  computeTrendingTopicsFromDbPosts
+  computeTrendingTopicsFromDbPosts,
+  extractHashtagsFromText,
+  normalizeBemteviLink
 } from '../../data/bemteviData';
 import {
   listBemteviPostsFromDb,
   createBemteviPostInDb,
+  updateBemteviPostInDb,
+  toggleBemteviPostLikeInDb,
+  incrementBemteviPostShareInDb,
+  toggleBemteviPostSaveInDb,
   deleteBemteviPostInDb,
   listBemteviCommunitiesFromDb,
   createBemteviCommunityInDb,
+  toggleBemteviCommunityMemberInDb,
   listBemteviCommentsFromDb,
   createBemteviCommentInDb,
   listBemteviMessagesFromDb,
@@ -115,9 +124,11 @@ export default function BemteviHub({
   // Feed filter tabs
   const [feedFilter, setFeedFilter] = useState<'forYou' | 'latest' | 'myPosts'>('forYou');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [selectedTagFilter, setSelectedTagFilter] = useState<string | null>(null);
+  const [onlyWithArticles, setOnlyWithArticles] = useState<boolean>(false);
   const [activeCommunityView, setActiveCommunityView] = useState<BemteviCommunity | null>(null);
 
-  // Database-Synchronized Stores (Exclusively from database, no fictitious suggested data)
+  // Database-Synchronized Stores
   const [posts, setPosts] = useState<BemteviPost[]>([]);
   const [comments, setComments] = useState<BemteviComment[]>([]);
   const [communities, setCommunities] = useState<BemteviCommunity[]>([]);
@@ -132,14 +143,30 @@ export default function BemteviHub({
       return [];
     }
   });
+  const [followingIds, setFollowingIds] = useState<string[]>(() => {
+    try {
+      const uidKey = `wzzm_bemtevi_following_${currentUser?.uid || 'usr-guest'}`;
+      const saved = localStorage.getItem(uidKey);
+      return saved ? JSON.parse(saved) : ['usr_pedro_cardona_official'];
+    } catch {
+      return ['usr_pedro_cardona_official'];
+    }
+  });
   const [isLoadingData, setIsLoadingData] = useState(true);
 
-  // Post Composer State (strictly max 127 chars as in repo)
+  // Post Composer State (strictly max 127 chars)
   const [composerText, setComposerText] = useState('');
   const [composerLink, setComposerLink] = useState('');
+  const [composerLinkError, setComposerLinkError] = useState<string | null>(null);
   const [composerCategory, setComposerCategory] = useState<BemteviCategory>('Geral');
   const [composerCommunityId, setComposerCommunityId] = useState<string>('');
   const [isSubmittingPost, setIsSubmittingPost] = useState(false);
+
+  // Inline Post Editing State
+  const [editingPostId, setEditingPostId] = useState<string | null>(null);
+  const [editingPostText, setEditingPostText] = useState('');
+  const [editingPostLink, setEditingPostLink] = useState('');
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
 
   // Shared Article Attachment State (Integração de artigos do site ao Bemtevi)
   const [attachedArticle, setAttachedArticle] = useState<BemteviSharedArticle | null>(() => initialSharedArticle || null);
@@ -221,28 +248,38 @@ export default function BemteviHub({
         listAllUsersFromFirestore()
       ]);
 
-      const validPosts: BemteviPost[] = (dbPosts || []).map((p: any) => ({
-        id: p.id || `post-${Date.now()}`,
-        authorId: p.authorId || 'anon',
-        authorName: p.authorName || 'Usuário WZZM',
-        authorHandle: p.authorHandle || `@${(p.authorName || 'usuario').toLowerCase().replace(/[^a-z0-9_]/g, '')}`,
-        authorAvatar: p.authorAvatar || undefined,
-        authorBadge: p.authorBadge || 'Membro',
-        authorKarma: p.authorKarma || 10,
-        content: p.content || '',
-        link: p.link || undefined,
-        category: p.category || 'Geral',
-        communityId: p.communityId || undefined,
-        communityName: p.communityName || undefined,
-        sharedArticle: p.sharedArticle || undefined,
-        likesCount: p.likesCount || (Array.isArray(p.likedBy) ? p.likedBy.length : 0),
-        commentsCount: p.commentsCount || 0,
-        sharesCount: p.sharesCount || 0,
-        savesCount: p.savesCount || 0,
-        likedBy: Array.isArray(p.likedBy) ? p.likedBy : [],
-        savedBy: Array.isArray(p.savedBy) ? p.savedBy : [],
-        createdAt: p.createdAt || new Date().toISOString()
-      }));
+      const validPosts: BemteviPost[] = (dbPosts || []).map((p: any) => {
+        const content = typeof p.content === 'string' ? p.content : '';
+        const tags = Array.from(
+          new Set([...(Array.isArray(p.tags) ? p.tags : []), ...extractHashtagsFromText(content)])
+        );
+        return {
+          id: p.id || `post-${Date.now()}`,
+          authorId: p.authorId || 'anon',
+          authorName: p.authorName || 'Usuário WZZM',
+          authorHandle: p.authorHandle || `@${(p.authorName || 'usuario').toLowerCase().replace(/[^a-z0-9_]/g, '')}`,
+          ...(p.authorAvatar ? { authorAvatar: p.authorAvatar } : {}),
+          authorBadge: p.authorBadge || 'Membro',
+          authorKarma: typeof p.authorKarma === 'number' ? p.authorKarma : 10,
+          content,
+          ...(p.link ? { link: p.link } : {}),
+          tags,
+          category: p.category || 'Geral',
+          ...(p.communityId ? { communityId: p.communityId } : {}),
+          ...(p.communityName ? { communityName: p.communityName } : {}),
+          ...(p.sharedArticle ? { sharedArticle: p.sharedArticle } : {}),
+          likesCount: typeof p.likesCount === 'number' ? p.likesCount : (Array.isArray(p.likedBy) ? p.likedBy.length : 0),
+          commentsCount: typeof p.commentsCount === 'number' ? p.commentsCount : 0,
+          sharesCount: typeof p.sharesCount === 'number' ? p.sharesCount : 0,
+          savesCount: typeof p.savesCount === 'number' ? p.savesCount : (Array.isArray(p.savedBy) ? p.savedBy.length : 0),
+          likedBy: Array.isArray(p.likedBy) ? p.likedBy : [],
+          savedBy: Array.isArray(p.savedBy) ? p.savedBy : [],
+          isEdited: Boolean(p.isEdited),
+          isLocalOnly: Boolean(p.isLocalOnly),
+          createdAt: p.createdAt || new Date().toISOString(),
+          ...(p.updatedAt ? { updatedAt: p.updatedAt } : {})
+        };
+      });
       setPosts(validPosts);
 
       // Compute trending topics EXCLUSIVELY from real database posts
@@ -264,21 +301,45 @@ export default function BemteviHub({
 
       setMessages(dbMsgs || []);
 
-      // Real users from database
-      const mappedUsers: BemteviUser[] = (dbUsers || []).map((u: any) => ({
-        uid: u.uid || u.id,
-        name: u.name || u.nome || u.email?.split('@')[0] || 'Usuário WZZM',
-        handle: `@${(u.email?.split('@')[0] || u.name || 'usuario').toLowerCase().replace(/[^a-z0-9_]/g, '')}`,
-        avatar: u.profilePictureUrl || u.avatar || undefined,
-        bio: u.bio || (u.isAdmin ? 'Burocrata administrador oficial' : (u.isTeacher ? 'Professor verificado' : 'Membro cadastrado no banco de dados')),
-        karma: u.karma || (u.isAdmin ? 5000 : 100),
-        level: u.level || (u.isAdmin ? 'Lendário' : (u.isTeacher ? 'Veterano' : 'Iniciante')),
-        followers: Array.isArray(u.followers) ? u.followers : [],
-        following: Array.isArray(u.following) ? u.following : [],
-        badges: Array.isArray(u.badges) ? u.badges : (u.isAdmin ? ['Burocrata Oficial'] : ['Registrado']),
-        joinedAt: u.createdAt || new Date().toISOString()
-      }));
-      setUsersList(mappedUsers);
+      // Real users from database + unique post authors so feed authors always resolve cleanly
+      const mappedUsersMap = new Map<string, BemteviUser>();
+      (dbUsers || []).forEach((u: any) => {
+        const uid = u.uid || u.id;
+        if (!uid) return;
+        mappedUsersMap.set(uid, {
+          uid,
+          name: u.name || u.nome || u.email?.split('@')[0] || 'Usuário WZZM',
+          handle: `@${(u.email?.split('@')[0] || u.name || 'usuario').toLowerCase().replace(/[^a-z0-9_]/g, '')}`,
+          ...(u.profilePictureUrl || u.avatar ? { avatar: u.profilePictureUrl || u.avatar } : {}),
+          bio: u.bio || (u.isAdmin ? 'Burocrata administrador oficial' : (u.isTeacher ? 'Professor verificado' : 'Membro cadastrado no banco de dados')),
+          karma: u.karma || (u.isAdmin ? 5000 : 100),
+          level: u.level || (u.isAdmin ? 'Lendário' : (u.isTeacher ? 'Veterano' : 'Iniciante')),
+          followers: Array.isArray(u.followers) ? u.followers : [],
+          following: Array.isArray(u.following) ? u.following : [],
+          badges: Array.isArray(u.badges) ? u.badges : (u.isAdmin ? ['Burocrata Oficial'] : ['Registrado']),
+          joinedAt: u.createdAt || new Date().toISOString()
+        });
+      });
+
+      validPosts.forEach((p) => {
+        if (p.authorId && !mappedUsersMap.has(p.authorId)) {
+          mappedUsersMap.set(p.authorId, {
+            uid: p.authorId,
+            name: p.authorName,
+            handle: p.authorHandle,
+            ...(p.authorAvatar ? { avatar: p.authorAvatar } : {}),
+            bio: 'Autor participante na rede livre Bem-Te-Vi.',
+            karma: p.authorKarma || 100,
+            level: p.authorBadge || getKarmaLevel(p.authorKarma || 100),
+            followers: [],
+            following: [],
+            badges: [p.authorBadge || 'Membro'],
+            joinedAt: p.createdAt
+          });
+        }
+      });
+
+      setUsersList(Array.from(mappedUsersMap.values()));
     } catch (err) {
       console.warn('Erro ao carregar dados exclusivos do banco de dados:', err);
     } finally {
@@ -288,13 +349,28 @@ export default function BemteviHub({
 
   useEffect(() => {
     loadDatabaseData();
-  }, []);
+  }, [currentUser?.uid]);
+
+  useEffect(() => {
+    try {
+      const uidKey = `wzzm_bemtevi_following_${currentUser?.uid || 'usr-guest'}`;
+      const saved = localStorage.getItem(uidKey);
+      if (saved) setFollowingIds(JSON.parse(saved));
+    } catch {
+      //
+    }
+  }, [currentUser?.uid]);
 
   // Current session user details in Bemtevi format
   const myUser: BemteviUser = useMemo(() => {
     const uid = currentUser?.uid || 'usr-guest';
-    const existing = usersList.find((u) => u.uid === uid || u.handle === `@${currentUser?.email?.split('@')[0]}`);
-    if (existing) return existing;
+    const existing = usersList.find((u) => u.uid === uid || (currentUser?.email && u.handle === `@${currentUser.email.split('@')[0]}`));
+    if (existing) {
+      return {
+        ...existing,
+        following: Array.from(new Set([...existing.following, ...followingIds]))
+      };
+    }
 
     const name = currentUser?.displayName || currentUser?.email?.split('@')[0] || 'Leitor WZZM';
     const handle = `@${(currentUser?.email?.split('@')[0] || 'leitor_anon').toLowerCase().replace(/[^a-z0-9_]/g, '')}`;
@@ -302,46 +378,67 @@ export default function BemteviHub({
       uid,
       name,
       handle,
-      avatar: currentUser?.photoURL || undefined,
+      ...(currentUser?.photoURL ? { avatar: currentUser.photoURL } : {}),
       bio: 'Membro ativo da rede livre Bemtevi no portal WazzimaGiygg.',
       karma: 120,
       level: 'Iniciante',
       followers: [],
-      following: ['usr-pedro'],
+      following: followingIds,
       badges: ['Membro'],
       joinedAt: new Date().toISOString()
     };
-  }, [currentUser, usersList]);
+  }, [currentUser, usersList, followingIds]);
 
-  // Handle Post Creation (max 127 characters)
+  // Handle Post Creation (max 127 characters, precise sanitization & validation)
   const handleCreatePost = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!composerText.trim()) {
+    if (isSubmittingPost) return;
+
+    const trimmedText = composerText.trim();
+    if (!trimmedText) {
       showToast(t.placeholderPost, true);
       return;
     }
 
-    if (composerText.length > 127) {
+    if (trimmedText.length > 127) {
       showToast('O texto excede o limite máximo de 127 caracteres do Bemtevi!', true);
       return;
     }
 
+    const linkCheck = normalizeBemteviLink(composerLink);
+    if (!linkCheck.valid) {
+      setComposerLinkError(linkCheck.error || 'Link inválido.');
+      showToast(linkCheck.error || 'Link inválido.', true);
+      return;
+    }
+    setComposerLinkError(null);
+
     setIsSubmittingPost(true);
     const targetComm = communities.find((c) => c.id === composerCommunityId);
+    const extractedTags = extractHashtagsFromText(trimmedText);
 
-    const postPayload = {
+    const sanitizedArticle: BemteviSharedArticle | undefined = attachedArticle
+      ? {
+          id: attachedArticle.id,
+          titulo: attachedArticle.titulo,
+          ...(attachedArticle.descricao ? { descricao: attachedArticle.descricao } : {}),
+          ...(attachedArticle.setor ? { setor: attachedArticle.setor } : {}),
+          ...(attachedArticle.colecao ? { colecao: attachedArticle.colecao } : {}),
+          ...(attachedArticle.criadorEmail ? { criadorEmail: attachedArticle.criadorEmail } : {}),
+          ...(attachedArticle.link ? { link: attachedArticle.link } : {}),
+          ...(attachedArticle.url ? { url: attachedArticle.url } : {})
+        }
+      : undefined;
+
+    const postPayload: Record<string, any> = {
       authorId: myUser.uid,
       authorName: myUser.name,
       authorHandle: myUser.handle,
-      authorAvatar: myUser.avatar,
       authorBadge: myUser.level,
       authorKarma: myUser.karma + 10,
-      content: composerText.trim(),
-      link: composerLink.trim() || undefined,
+      content: trimmedText,
+      tags: extractedTags,
       category: composerCategory,
-      communityId: composerCommunityId || undefined,
-      communityName: targetComm?.name,
-      sharedArticle: attachedArticle || undefined,
       likesCount: 0,
       commentsCount: 0,
       sharesCount: 0,
@@ -350,13 +447,27 @@ export default function BemteviHub({
       savedBy: []
     };
 
+    if (myUser.avatar) postPayload.authorAvatar = myUser.avatar;
+    if (linkCheck.normalized) postPayload.link = linkCheck.normalized;
+    if (composerCommunityId) {
+      postPayload.communityId = composerCommunityId;
+      if (targetComm?.name) postPayload.communityName = targetComm.name;
+    }
+    if (sanitizedArticle) postPayload.sharedArticle = sanitizedArticle;
+
     try {
       const savedPost = await createBemteviPostInDb(postPayload);
       const updatedList = [savedPost, ...posts];
       setPosts(updatedList);
       setTrending(computeTrendingTopicsFromDbPosts(updatedList));
+      if (composerCommunityId) {
+        setCommunities((prev) =>
+          prev.map((c) => (c.id === composerCommunityId ? { ...c, postsCount: (c.postsCount || 0) + 1 } : c))
+        );
+      }
       setComposerText('');
       setComposerLink('');
+      setComposerLinkError(null);
       setComposerCommunityId('');
       const hadArticle = Boolean(attachedArticle);
       setAttachedArticle(null);
@@ -364,18 +475,80 @@ export default function BemteviHub({
       showToast(
         hadArticle
           ? 'Artigo compartilhado no Bemtevi com sucesso! 🐦📰'
-          : 'Post gravado com sucesso no banco de dados! (+10 Karma)',
+          : savedPost.isLocalOnly
+          ? 'Post publicado no modo local (+10 Karma). Entre com sua conta Google para sincronizar na nuvem.'
+          : 'Post publicado e sincronizado com sucesso! (+10 Karma)',
         false
       );
     } catch (err) {
       console.warn('Erro ao salvar post no banco de dados:', err);
-      showToast('Erro ao sincronizar post com o banco de dados.', true);
+      showToast('Erro ao salvar publicação.', true);
     } finally {
       setIsSubmittingPost(false);
     }
   };
 
-  // Toggle Like on Post
+  // Start / Save Inline Post Editing
+  const handleStartEditPost = (post: BemteviPost) => {
+    setEditingPostId(post.id);
+    setEditingPostText(post.content);
+    setEditingPostLink(post.link || '');
+  };
+
+  const handleSaveEditPost = async (post: BemteviPost) => {
+    const trimmed = editingPostText.trim();
+    if (!trimmed) {
+      showToast('O texto da postagem não pode ficar vazio.', true);
+      return;
+    }
+    if (trimmed.length > 127) {
+      showToast('O texto excede o limite de 127 caracteres!', true);
+      return;
+    }
+
+    const linkCheck = normalizeBemteviLink(editingPostLink);
+    if (!linkCheck.valid) {
+      showToast(linkCheck.error || 'Link inválido.', true);
+      return;
+    }
+
+    setIsSavingEdit(true);
+    try {
+      const nextTags = extractHashtagsFromText(trimmed);
+      const nowIso = new Date().toISOString();
+      await updateBemteviPostInDb(post.id, {
+        content: trimmed,
+        link: linkCheck.normalized || null,
+        tags: nextTags,
+        isEdited: true
+      });
+
+      const updatedPosts = posts.map((p) =>
+        p.id === post.id
+          ? {
+              ...p,
+              content: trimmed,
+              tags: nextTags,
+              link: linkCheck.normalized,
+              isEdited: true,
+              updatedAt: nowIso
+            }
+          : p
+      );
+      setPosts(updatedPosts);
+      setTrending(computeTrendingTopicsFromDbPosts(updatedPosts));
+      setEditingPostId(null);
+      setEditingPostText('');
+      setEditingPostLink('');
+      showToast('Postagem atualizada com sucesso! ✓');
+    } catch {
+      showToast('Não foi possível salvar a edição.', true);
+    } finally {
+      setIsSavingEdit(false);
+    }
+  };
+
+  // Toggle Like on Post (persisted)
   const handleToggleLike = async (post: BemteviPost) => {
     const isLiked = post.likedBy.includes(myUser.uid);
     const updatedLikedBy = isLiked
@@ -390,26 +563,34 @@ export default function BemteviHub({
       )
     );
 
-    // Sync to backend database
-    fetch(`/api/bemtevi/posts/${post.id}/like`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId: myUser.uid })
-    }).catch(() => {});
+    await toggleBemteviPostLikeInDb(post.id, myUser.uid, updatedLikedBy, updatedLikesCount);
   };
 
-  // Toggle Save on Post
-  const handleToggleSave = (post: BemteviPost) => {
+  // Toggle Save on Post (persisted in localStorage + Firestore/API)
+  const handleToggleSave = async (post: BemteviPost) => {
     const isSaved = savedPostIds.includes(post.id);
-    const updated = isSaved
+    const updatedSavedIds = isSaved
       ? savedPostIds.filter((id) => id !== post.id)
       : [...savedPostIds, post.id];
 
-    setSavedPostIds(updated);
-    try {
-      localStorage.setItem('bemtevi_saved_posts', JSON.stringify(updated));
-    } catch {}
+    const nextSavedBy = isSaved
+      ? (post.savedBy || []).filter((id) => id !== myUser.uid)
+      : Array.from(new Set([...(post.savedBy || []), myUser.uid]));
+    const nextSavesCount = isSaved ? Math.max(0, (post.savesCount || 1) - 1) : (post.savesCount || 0) + 1;
 
+    setSavedPostIds(updatedSavedIds);
+    setPosts((prev) =>
+      prev.map((p) =>
+        p.id === post.id ? { ...p, savedBy: nextSavedBy, savesCount: nextSavesCount } : p
+      )
+    );
+    try {
+      localStorage.setItem('bemtevi_saved_posts', JSON.stringify(updatedSavedIds));
+    } catch {
+      //
+    }
+
+    await toggleBemteviPostSaveInDb(post.id, nextSavedBy, nextSavesCount);
     showToast(isSaved ? 'Post removido dos seus salvos.' : 'Post salvo em Seus Salvos! 🔖');
   };
 
@@ -420,38 +601,50 @@ export default function BemteviHub({
       const updatedList = posts.filter((p) => p.id !== postId);
       setPosts(updatedList);
       setTrending(computeTrendingTopicsFromDbPosts(updatedList));
-      showToast('Post excluído do banco de dados.');
+      showToast('Post excluído.');
     } catch {
-      showToast('Erro ao excluir post do banco de dados.', true);
+      showToast('Erro ao excluir post.', true);
     }
   };
 
-  // Share / Repost inside Bemtevi (Integração Social dos Artigos)
-  const handleSharePost = (post: BemteviPost) => {
+  // Share / Repost inside Bemtevi (persists sharesCount cleanly)
+  const handleSharePost = async (post: BemteviPost) => {
+    const nextSharesCount = (post.sharesCount || 0) + 1;
+
+    setPosts((prev) =>
+      prev.map((p) => (p.id === post.id ? { ...p, sharesCount: nextSharesCount } : p))
+    );
+    await incrementBemteviPostShareInDb(post.id, nextSharesCount);
+
     if (post.sharedArticle) {
       setAttachedArticle(post.sharedArticle);
       const hash = (post.sharedArticle.setor || 'Geral').replace(/[^a-zA-Z0-9À-ÿ]/g, '');
-      setComposerText(`Recomendo: #${hash} `);
+      const draft = `Recomendo: #${hash} #WZZM`.slice(0, 127);
+      setComposerText(draft);
       setActiveTab('feed');
       window.scrollTo({ top: 0, behavior: 'smooth' });
-      showToast(`Artigo "${post.sharedArticle.titulo}" anexado ao seu composer para recompartilhar no Bemtevi! 🐦`);
+      showToast(`Artigo "${post.sharedArticle.titulo}" anexado para recompartilhar no Bemtevi! 🐦`);
     } else {
-      const shareUrl = `${window.location.origin}/#bemtevi/post/${post.id}`;
-      navigator.clipboard?.writeText(shareUrl);
-      showToast('Link do post copiado para a área de transferência! 🔗');
+      const shareUrl = `${window.location.origin}/?uid=bemtevi&post=${encodeURIComponent(post.id)}`;
+      navigator.clipboard?.writeText(shareUrl).catch(() => {});
+      showToast('Link do post copiado e compartilhamento contabilizado! 🔗');
     }
-
-    setPosts((prev) =>
-      prev.map((p) => (p.id === post.id ? { ...p, sharesCount: p.sharesCount + 1 } : p))
-    );
   };
 
-  // Follow / Unfollow User
+  // Follow / Unfollow User (persisted locally)
   const handleToggleFollow = (targetUser: BemteviUser) => {
     const isFollowing = myUser.following.includes(targetUser.uid);
     const updatedFollowing = isFollowing
       ? myUser.following.filter((id) => id !== targetUser.uid)
-      : [...myUser.following, targetUser.uid];
+      : Array.from(new Set([...myUser.following, targetUser.uid]));
+
+    setFollowingIds(updatedFollowing);
+    try {
+      const uidKey = `wzzm_bemtevi_following_${myUser.uid}`;
+      localStorage.setItem(uidKey, JSON.stringify(updatedFollowing));
+    } catch {
+      //
+    }
 
     setUsersList((prev) =>
       prev.map((u) => {
@@ -461,7 +654,7 @@ export default function BemteviHub({
         if (u.uid === targetUser.uid) {
           const updatedFollowers = isFollowing
             ? u.followers.filter((id) => id !== myUser.uid)
-            : [...u.followers, myUser.uid];
+            : Array.from(new Set([...u.followers, myUser.uid]));
           return { ...u, followers: updatedFollowers };
         }
         return u;
@@ -471,12 +664,13 @@ export default function BemteviHub({
     showToast(isFollowing ? `Deixou de seguir ${targetUser.name}` : `Você agora segue ${targetUser.name}!`);
   };
 
-  // Join / Leave Community
-  const handleToggleJoinCommunity = (comm: BemteviCommunity) => {
+  // Join / Leave Community (persisted)
+  const handleToggleJoinCommunity = async (comm: BemteviCommunity) => {
     const isMember = comm.members.includes(myUser.uid);
     const updatedMembers = isMember
       ? comm.members.filter((id) => id !== myUser.uid)
-      : [...comm.members, myUser.uid];
+      : Array.from(new Set([...comm.members, myUser.uid]));
+    const updatedCount = isMember ? Math.max(0, comm.membersCount - 1) : comm.membersCount + 1;
 
     setCommunities((prev) =>
       prev.map((c) =>
@@ -484,12 +678,18 @@ export default function BemteviHub({
           ? {
               ...c,
               members: updatedMembers,
-              membersCount: isMember ? Math.max(0, c.membersCount - 1) : c.membersCount + 1
+              membersCount: updatedCount
             }
           : c
       )
     );
+    if (activeCommunityView?.id === comm.id) {
+      setActiveCommunityView((prev) =>
+        prev ? { ...prev, members: updatedMembers, membersCount: updatedCount } : prev
+      );
+    }
 
+    await toggleBemteviCommunityMemberInDb(comm.id, updatedMembers, updatedCount);
     showToast(
       isMember ? `Você saiu da comunidade ${comm.name}` : `Bem-vindo à comunidade ${comm.name}! 🎉`
     );
@@ -498,7 +698,7 @@ export default function BemteviHub({
   // Create Community
   const handleCreateCommunitySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newCommunityName.trim() || newCommunityName.length < 3) {
+    if (!newCommunityName.trim() || newCommunityName.trim().length < 3) {
       showToast('O nome da comunidade deve ter pelo menos 3 caracteres!', true);
       return;
     }
@@ -520,9 +720,9 @@ export default function BemteviHub({
       setIsCreateCommunityModalOpen(false);
       setNewCommunityName('');
       setNewCommunityDesc('');
-      showToast(`Comunidade "${savedComm.name}" gravada com sucesso no banco de dados! 🚀`);
+      showToast(`Comunidade "${savedComm.name}" criada com sucesso! 🚀`);
     } catch {
-      showToast('Erro ao gravar comunidade no banco de dados.', true);
+      showToast('Erro ao criar comunidade.', true);
     }
   };
 
@@ -540,28 +740,29 @@ export default function BemteviHub({
   // Submit Comment
   const handleSendComment = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedPostForComments || !newCommentText.trim()) return;
+    if (!selectedPostForComments || !newCommentText.trim() || isSubmittingComment) return;
 
-    if (newCommentText.length > 280) {
+    const trimmedComment = newCommentText.trim();
+    if (trimmedComment.length > 280) {
       showToast('Comentário excede o limite máximo de 280 caracteres!', true);
       return;
     }
 
     setIsSubmittingComment(true);
-    const commentData = {
+    const commentData: Record<string, any> = {
       postId: selectedPostForComments.id,
       authorId: myUser.uid,
       authorName: myUser.name,
       authorHandle: myUser.handle,
-      authorAvatar: myUser.avatar,
-      content: newCommentText.trim(),
+      content: trimmedComment,
       likesCount: 0,
       likedBy: []
     };
+    if (myUser.avatar) commentData.authorAvatar = myUser.avatar;
 
     try {
       const savedComment = await createBemteviCommentInDb(selectedPostForComments.id, commentData);
-      setComments([...comments, savedComment]);
+      setComments((prev) => [...prev, savedComment]);
       setPosts((prev) =>
         prev.map((p) =>
           p.id === selectedPostForComments.id
@@ -569,10 +770,13 @@ export default function BemteviHub({
             : p
         )
       );
+      setSelectedPostForComments((prev) =>
+        prev ? { ...prev, commentsCount: prev.commentsCount + 1 } : prev
+      );
       setNewCommentText('');
-      showToast('Comentário gravado no banco de dados! (+5 Karma)');
+      showToast('Comentário publicado! (+5 Karma)');
     } catch {
-      showToast('Erro ao gravar comentário no banco de dados.', true);
+      showToast('Erro ao publicar comentário.', true);
     } finally {
       setIsSubmittingComment(false);
     }
@@ -584,21 +788,21 @@ export default function BemteviHub({
     if (!activeDmUser || !dmInputText.trim()) return;
 
     const convId = [myUser.uid, activeDmUser.uid].sort().join('_');
-    const msgData = {
+    const msgData: Record<string, any> = {
       conversationId: convId,
       senderId: myUser.uid,
       senderName: myUser.name,
-      senderAvatar: myUser.avatar,
       receiverId: activeDmUser.uid,
       text: dmInputText.trim()
     };
+    if (myUser.avatar) msgData.senderAvatar = myUser.avatar;
 
     try {
       const savedMsg = await createBemteviMessageInDb(msgData);
-      setMessages([...messages, savedMsg]);
+      setMessages((prev) => [...prev, savedMsg]);
       setDmInputText('');
     } catch {
-      showToast('Erro ao gravar mensagem privada no banco de dados.', true);
+      showToast('Erro ao enviar mensagem privada.', true);
     }
   };
 
@@ -606,45 +810,94 @@ export default function BemteviHub({
   const filteredPosts = useMemo(() => {
     let list = [...posts];
 
-    // Filter by active community
     if (activeCommunityView) {
-      return list.filter((p) => p.communityId === activeCommunityView.id);
+      list = list.filter((p) => p.communityId === activeCommunityView.id);
     }
 
-    // Filter by Category
     if (selectedCategory !== 'all') {
       list = list.filter((p) => p.category === selectedCategory);
     }
 
-    // Filter by Tab
+    if (onlyWithArticles) {
+      list = list.filter((p) => Boolean(p.sharedArticle));
+    }
+
+    if (selectedTagFilter) {
+      const targetTag = selectedTagFilter.toLowerCase();
+      list = list.filter(
+        (p) =>
+          p.content.toLowerCase().includes(targetTag) ||
+          (Array.isArray(p.tags) && p.tags.some((tg) => tg.toLowerCase() === targetTag))
+      );
+    }
+
     if (feedFilter === 'myPosts') {
       list = list.filter((p) => p.authorId === myUser.uid);
     } else if (feedFilter === 'latest') {
       list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     } else {
-      // forYou: algorithmic (likes + recency)
+      // forYou: algorithmic (likes + comments + shares + recency)
       list.sort((a, b) => {
-        const scoreA = a.likesCount * 2 + a.commentsCount * 3 + new Date(a.createdAt).getTime() / 1e11;
-        const scoreB = b.likesCount * 2 + b.commentsCount * 3 + new Date(b.createdAt).getTime() / 1e11;
+        const tsA = new Date(a.createdAt).getTime() || 0;
+        const tsB = new Date(b.createdAt).getTime() || 0;
+        const scoreA = a.likesCount * 2 + a.commentsCount * 3 + (a.sharesCount || 0) * 2 + tsA / 1e11;
+        const scoreB = b.likesCount * 2 + b.commentsCount * 3 + (b.sharesCount || 0) * 2 + tsB / 1e11;
         return scoreB - scoreA;
       });
     }
 
     return list;
-  }, [posts, feedFilter, selectedCategory, activeCommunityView, myUser.uid]);
+  }, [posts, feedFilter, selectedCategory, selectedTagFilter, onlyWithArticles, activeCommunityView, myUser.uid]);
 
   // Saved Posts List
   const savedPosts = useMemo(() => {
     return posts.filter((p) => savedPostIds.includes(p.id));
   }, [posts, savedPostIds]);
 
-  // Relative Time helper
-  const formatTimeAgo = (dateStr: string) => {
-    const diff = (Date.now() - new Date(dateStr).getTime()) / 1000;
-    if (diff < 60) return t.motto ? 'agora' : 'now';
+  // Safe Relative Time & Full Date Helpers
+  const formatTimeAgo = (dateStr?: string) => {
+    if (!dateStr) return 'agora';
+    const ts = new Date(dateStr).getTime();
+    if (Number.isNaN(ts)) return 'recente';
+    const diff = Math.max(0, (Date.now() - ts) / 1000);
+    if (diff < 60) return locale === 'pt-BR' ? 'agora' : locale === 'es-ES' ? 'ahora' : 'now';
     if (diff < 3600) return `${Math.floor(diff / 60)}m`;
     if (diff < 86400) return `${Math.floor(diff / 3600)}h`;
-    return `${Math.floor(diff / 86400)}d`;
+    if (diff < 604800) return `${Math.floor(diff / 86400)}d`;
+    return new Date(ts).toLocaleDateString(locale);
+  };
+
+  const formatFullTimestamp = (dateStr?: string) => {
+    if (!dateStr) return '';
+    const ts = new Date(dateStr).getTime();
+    if (Number.isNaN(ts)) return '';
+    return new Date(ts).toLocaleString(locale);
+  };
+
+  const renderPostContentWithHashtags = (content: string) => {
+    const parts = content.split(/(#[a-zA-Z0-9_À-ÿ]+)/g);
+    return parts.map((part, idx) => {
+      if (part.startsWith('#') && part.length > 1) {
+        const cleanTag = part.trim();
+        return (
+          <button
+            key={`${cleanTag}-${idx}`}
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setSelectedTagFilter(cleanTag);
+              setActiveTab('feed');
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+            className="text-[#818cf8] hover:text-amber-400 font-semibold hover:underline cursor-pointer"
+            title={`Filtrar postagens com ${cleanTag}`}
+          >
+            {cleanTag}
+          </button>
+        );
+      }
+      return <React.Fragment key={idx}>{part}</React.Fragment>;
+    });
   };
 
   // Render Shared Article Card inside Bemtevi Post (Integração de Artigos à Rede Social)
@@ -956,16 +1209,27 @@ export default function BemteviHub({
                         </div>
                       )}
 
-                      {/* Optional Link Input */}
-                      <div className="flex items-center gap-2 mt-2 pt-2 border-t border-stone-800/60">
-                        <LinkIcon className="w-3.5 h-3.5 text-stone-500 shrink-0" />
-                        <input
-                          type="url"
-                          placeholder={t.linkPlaceholder}
-                          value={composerLink}
-                          onChange={(e) => setComposerLink(e.target.value)}
-                          className="w-full bg-transparent text-xs text-stone-300 placeholder-stone-600 focus:outline-none"
-                        />
+                      {/* Optional Link Input (accepts domains, https://, or ?uid=...) */}
+                      <div className="mt-2 pt-2 border-t border-stone-800/60">
+                        <div className="flex items-center gap-2">
+                          <LinkIcon className="w-3.5 h-3.5 text-stone-500 shrink-0" />
+                          <input
+                            type="text"
+                            placeholder={t.linkPlaceholder}
+                            value={composerLink}
+                            onChange={(e) => {
+                              setComposerLink(e.target.value);
+                              if (composerLinkError) setComposerLinkError(null);
+                            }}
+                            className="w-full bg-transparent text-xs text-stone-300 placeholder-stone-600 focus:outline-none"
+                          />
+                        </div>
+                        {composerLinkError && (
+                          <p className="text-[11px] font-mono text-red-400 mt-1 flex items-center gap-1">
+                            <AlertCircle className="w-3 h-3 shrink-0" />
+                            <span>{composerLinkError}</span>
+                          </p>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -1035,17 +1299,17 @@ export default function BemteviHub({
                         disabled={isSubmittingPost || !composerText.trim() || composerText.length > 127}
                         className="bg-gradient-to-r from-[#667eea] to-[#764ba2] hover:opacity-90 disabled:opacity-50 text-white px-4 py-1.5 rounded-full font-bold text-xs uppercase tracking-wider transition-all shadow-md cursor-pointer flex items-center gap-1.5"
                       >
-                        <span>{t.postButton}</span>
+                        <span>{isSubmittingPost ? 'Publicando...' : t.postButton}</span>
                       </button>
                     </div>
                   </div>
                 </form>
               </div>
 
-              {/* FEED TABS (Para Você / Últimas / Minhas) & CATEGORY PILLS */}
+              {/* FEED TABS (Para Você / Últimas / Minhas) & CATEGORY / ARTICLE / HASHTAG FILTERS */}
               <div className="bg-[#16161B] border border-stone-800 rounded-2xl p-3 shadow-md space-y-3">
-                <div className="flex items-center justify-between border-b border-stone-800 pb-2">
-                  <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-stone-800 pb-2">
+                  <div className="flex items-center gap-1.5 flex-wrap">
                     {[
                       { id: 'forYou', label: t.forYou },
                       { id: 'latest', label: t.latest },
@@ -1063,18 +1327,50 @@ export default function BemteviHub({
                         {tab.label}
                       </button>
                     ))}
+
+                    <button
+                      type="button"
+                      onClick={() => setOnlyWithArticles((v) => !v)}
+                      className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-colors cursor-pointer flex items-center gap-1 ${
+                        onlyWithArticles
+                          ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                          : 'text-stone-400 hover:text-white border border-transparent'
+                      }`}
+                      title="Mostrar apenas postagens que compartilham artigos do portal"
+                    >
+                      <BookOpen className="w-3 h-3" />
+                      <span>Com Artigos</span>
+                    </button>
                   </div>
 
                   <span className="text-[11px] font-mono text-stone-500">
-                    {filteredPosts.length} posts
+                    {filteredPosts.length} {filteredPosts.length === 1 ? 'post' : 'posts'}
                   </span>
                 </div>
+
+                {/* Active Hashtag Filter Badge */}
+                {selectedTagFilter && (
+                  <div className="flex items-center justify-between bg-[#667eea]/15 border border-[#667eea]/40 rounded-xl px-3 py-1.5 text-xs font-mono">
+                    <span className="text-indigo-200 flex items-center gap-1.5">
+                      <Hash className="w-3.5 h-3.5 text-[#818cf8]" />
+                      <span>Filtrando por: <strong className="text-white">{selectedTagFilter}</strong></span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedTagFilter(null)}
+                      className="text-stone-300 hover:text-white flex items-center gap-1 text-[11px] cursor-pointer"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                      <span>Limpar</span>
+                    </button>
+                  </div>
+                )}
 
                 {/* Category Horizontal Filter */}
                 <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1 text-xs">
                   <button
                     onClick={() => setSelectedCategory('all')}
-                    className={`px-2.5 py-0.5 rounded-full whitespace-nowrap text-[11px] font-medium transition-colors ${
+                    className={`px-2.5 py-0.5 rounded-full whitespace-nowrap text-[11px] font-medium transition-colors cursor-pointer ${
                       selectedCategory === 'all'
                         ? 'bg-[#667eea] text-white'
                         : 'bg-stone-800/80 text-stone-400 hover:text-white'
@@ -1086,7 +1382,7 @@ export default function BemteviHub({
                     <button
                       key={cat}
                       onClick={() => setSelectedCategory(cat)}
-                      className={`px-2.5 py-0.5 rounded-full whitespace-nowrap text-[11px] font-medium transition-colors ${
+                      className={`px-2.5 py-0.5 rounded-full whitespace-nowrap text-[11px] font-medium transition-colors cursor-pointer ${
                         selectedCategory === cat
                           ? 'bg-[#667eea] text-white'
                           : 'bg-stone-800/80 text-stone-400 hover:text-white'
@@ -1106,15 +1402,30 @@ export default function BemteviHub({
                     <p>Sincronizando dados em tempo real com o banco de dados...</p>
                   </div>
                 ) : filteredPosts.length === 0 ? (
-                  <div className="bg-[#16161B] border border-stone-800 rounded-2xl p-10 text-center text-stone-500 font-mono text-xs">
-                    <p>Nenhuma postagem encontrada no banco de dados.</p>
-                    <p className="mt-1 text-stone-600">Seja o primeiro a publicar algo interessante no Bemtevi!</p>
+                  <div className="bg-[#16161B] border border-stone-800 rounded-2xl p-10 text-center text-stone-500 font-mono text-xs space-y-2">
+                    <p>Nenhuma postagem encontrada para os filtros selecionados.</p>
+                    {(selectedTagFilter || selectedCategory !== 'all' || onlyWithArticles) ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedTagFilter(null);
+                          setSelectedCategory('all');
+                          setOnlyWithArticles(false);
+                        }}
+                        className="text-[#818cf8] hover:underline cursor-pointer"
+                      >
+                        Limpar filtros e ver todas as postagens
+                      </button>
+                    ) : (
+                      <p className="text-stone-600">Seja o primeiro a publicar algo interessante no Bemtevi!</p>
+                    )}
                   </div>
                 ) : (
                   filteredPosts.map((post) => {
                     const isLiked = post.likedBy.includes(myUser.uid);
                     const isSaved = savedPostIds.includes(post.id);
                     const isOwner = post.authorId === myUser.uid;
+                    const isEditingThis = editingPostId === post.id;
 
                     return (
                       <article
@@ -1151,8 +1462,20 @@ export default function BemteviHub({
                                   </span>
                                 )}
                               </div>
-                              <div className="flex items-center gap-2 text-[11px] text-stone-500 mt-0.5">
-                                <span>{formatTimeAgo(post.createdAt)}</span>
+                              <div className="flex items-center gap-2 text-[11px] text-stone-500 mt-0.5 flex-wrap">
+                                <span title={formatFullTimestamp(post.createdAt)}>
+                                  {formatTimeAgo(post.createdAt)}
+                                </span>
+                                {post.isEdited && (
+                                  <span className="text-[10px] italic text-stone-400" title={formatFullTimestamp(post.updatedAt)}>
+                                    (editado)
+                                  </span>
+                                )}
+                                {post.isLocalOnly && (
+                                  <span className="text-[9px] font-mono bg-stone-800 text-stone-400 px-1.5 py-0.2 rounded border border-stone-700">
+                                    Local
+                                  </span>
+                                )}
                                 {post.communityName && (
                                   <>
                                     <span>•</span>
@@ -1167,39 +1490,110 @@ export default function BemteviHub({
                             </div>
                           </div>
 
-                          {/* Delete if Owner */}
-                          {isOwner && (
-                            <button
-                              onClick={() => handleDeletePost(post.id)}
-                              className="text-stone-500 hover:text-red-400 p-1 cursor-pointer"
-                              title="Excluir postagem"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
+                          {/* Edit & Delete if Owner */}
+                          {isOwner && !isEditingThis && (
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => handleStartEditPost(post)}
+                                className="text-stone-500 hover:text-amber-400 p-1 cursor-pointer"
+                                title="Editar postagem"
+                              >
+                                <Edit3 className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeletePost(post.id)}
+                                className="text-stone-500 hover:text-red-400 p-1 cursor-pointer"
+                                title="Excluir postagem"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
                           )}
                         </div>
 
-                        {/* Content text */}
-                        <p className="text-stone-200 text-sm sm:text-base leading-relaxed break-words font-serif">
-                          {post.content}
-                        </p>
+                        {/* Inline Edit Mode vs Content Text */}
+                        {isEditingThis ? (
+                          <div className="bg-stone-900/70 border border-stone-700 rounded-xl p-3 space-y-2">
+                            <textarea
+                              rows={2}
+                              maxLength={127}
+                              value={editingPostText}
+                              onChange={(e) => setEditingPostText(e.target.value)}
+                              className="w-full bg-transparent text-sm text-white focus:outline-none resize-none"
+                            />
+                            <input
+                              type="text"
+                              value={editingPostLink}
+                              onChange={(e) => setEditingPostLink(e.target.value)}
+                              placeholder="Link opcional (https://... ou ?uid=...)"
+                              className="w-full bg-stone-950/60 border border-stone-800 rounded-lg px-2.5 py-1 text-xs text-stone-300 focus:outline-none"
+                            />
+                            <div className="flex items-center justify-between pt-1">
+                              <span className="text-[11px] font-mono text-stone-400">
+                                {editingPostText.length}/127
+                              </span>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingPostId(null)}
+                                  className="text-xs font-mono text-stone-400 hover:text-white px-2.5 py-1 rounded-lg bg-stone-800 cursor-pointer"
+                                >
+                                  Cancelar
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={isSavingEdit || !editingPostText.trim() || editingPostText.length > 127}
+                                  onClick={() => handleSaveEditPost(post)}
+                                  className="text-xs font-mono font-bold text-white px-3 py-1 rounded-lg bg-[#667eea] hover:bg-[#5a6fd6] disabled:opacity-50 flex items-center gap-1 cursor-pointer"
+                                >
+                                  <Check className="w-3.5 h-3.5" />
+                                  <span>{isSavingEdit ? 'Salvando...' : 'Salvar'}</span>
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="text-stone-200 text-sm sm:text-base leading-relaxed break-words font-serif">
+                            {renderPostContentWithHashtags(post.content)}
+                          </p>
+                        )}
 
                         {/* Shared Article Embed Card (Integração de Artigos no Bemtevi) */}
                         {post.sharedArticle && renderSharedArticleCard(post.sharedArticle)}
 
-                        {/* Link preview card if attached */}
+                        {/* Link preview card if attached (supports internal ?uid= navigation cleanly) */}
                         {post.link && (
-                          <a
-                            href={post.link}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="block bg-stone-900/80 hover:bg-stone-900 border border-stone-800 hover:border-stone-700 p-3 rounded-xl transition-colors text-xs font-mono group"
-                          >
-                            <div className="flex items-center justify-between gap-2 text-stone-400 group-hover:text-amber-400">
-                              <span className="truncate">{post.link}</span>
-                              <ExternalLink className="w-3.5 h-3.5 shrink-0" />
-                            </div>
-                          </a>
+                          post.link.startsWith('/?uid=') || post.link.startsWith('?uid=') ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const uidParam = post.link!.split('uid=')[1]?.split('&')[0];
+                                if (uidParam && onNavigateUid) {
+                                  onNavigateUid(decodeURIComponent(uidParam));
+                                }
+                              }}
+                              className="w-full text-left block bg-stone-900/80 hover:bg-stone-900 border border-stone-800 hover:border-amber-500/60 p-3 rounded-xl transition-colors text-xs font-mono group cursor-pointer"
+                            >
+                              <div className="flex items-center justify-between gap-2 text-stone-300 group-hover:text-amber-400">
+                                <span className="truncate">Abrir referência interna: {post.link}</span>
+                                <ExternalLink className="w-3.5 h-3.5 shrink-0" />
+                              </div>
+                            </button>
+                          ) : (
+                            <a
+                              href={post.link}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="block bg-stone-900/80 hover:bg-stone-900 border border-stone-800 hover:border-stone-700 p-3 rounded-xl transition-colors text-xs font-mono group"
+                            >
+                              <div className="flex items-center justify-between gap-2 text-stone-400 group-hover:text-amber-400">
+                                <span className="truncate">{post.link}</span>
+                                <ExternalLink className="w-3.5 h-3.5 shrink-0" />
+                              </div>
+                            </a>
+                          )
                         )}
 
                         {/* Interaction Bar */}
@@ -1390,8 +1784,9 @@ export default function BemteviHub({
                         <div
                           key={idx}
                           onClick={() => {
-                            setComposerText(`${item.tag} `);
+                            setSelectedTagFilter(item.tag);
                             setActiveTab('feed');
+                            window.scrollTo({ top: 0, behavior: 'smooth' });
                           }}
                           className="p-3 bg-stone-900/60 hover:bg-stone-900 border border-stone-800 hover:border-stone-700 rounded-xl transition-all cursor-pointer group"
                         >
@@ -1784,8 +2179,9 @@ export default function BemteviHub({
                   <div
                     key={i}
                     onClick={() => {
-                      setComposerText(`${trend.tag} `);
+                      setSelectedTagFilter(trend.tag);
                       setActiveTab('feed');
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
                     }}
                     className="flex items-center justify-between text-xs group cursor-pointer"
                   >

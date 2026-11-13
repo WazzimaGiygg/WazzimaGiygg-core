@@ -30,7 +30,8 @@ import {
   BemteviPost,
   BemteviComment,
   BemteviCommunity,
-  computeTrendingTopicsFromDbPosts
+  computeTrendingTopicsFromDbPosts,
+  extractHashtagsFromText
 } from './src/data/bemteviData';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -1660,34 +1661,38 @@ app.get('/api/bemtevi/posts', (req: Request, res: Response) => {
   res.json({ posts: list, total: list.length });
 });
 
-// 2. Create Post (strictly enforced max 127 characters)
+// 2. Create Post (strictly enforced max 127 characters, supports syncing remote id & extracted tags)
 app.post('/api/bemtevi/posts', (req: Request, res: Response) => {
-  const { content, authorId, authorName, authorHandle, authorAvatar, link, category, communityId, communityName, sharedArticle } = req.body;
+  const { id, content, authorId, authorName, authorHandle, authorAvatar, link, category, communityId, communityName, sharedArticle, tags } = req.body;
 
-  if (!content || typeof content !== 'string') {
+  if (!content || typeof content !== 'string' || !content.trim()) {
     res.status(400).json({ error: 'Conteúdo da postagem é obrigatório.' });
     return;
   }
 
-  if (content.length > 127) {
+  const trimmedContent = content.trim();
+  if (trimmedContent.length > 127) {
     res.status(400).json({ error: 'O texto deve ter no máximo 127 caracteres!' });
     return;
   }
 
+  const mergedTags = Array.from(new Set([...(Array.isArray(tags) ? tags : []), ...extractHashtagsFromText(trimmedContent)]));
+
   const newPost: BemteviPost = {
-    id: `post-${Date.now()}`,
+    id: id || `post-${Date.now()}`,
     authorId: authorId || 'usr-anon',
     authorName: authorName || 'Membro Bemtevi',
     authorHandle: authorHandle || '@membro',
-    authorAvatar: authorAvatar || undefined,
+    ...(authorAvatar ? { authorAvatar } : {}),
     authorBadge: 'Iniciante',
     authorKarma: 10,
-    content: content.trim(),
-    link: link || undefined,
+    content: trimmedContent,
+    ...(link ? { link } : {}),
+    tags: mergedTags,
     category: category || 'Geral',
-    communityId: communityId || undefined,
-    communityName: communityName || undefined,
-    sharedArticle: sharedArticle || undefined,
+    ...(communityId ? { communityId } : {}),
+    ...(communityName ? { communityName } : {}),
+    ...(sharedArticle ? { sharedArticle } : {}),
     likesCount: 0,
     commentsCount: 0,
     sharesCount: 0,
@@ -1697,8 +1702,44 @@ app.post('/api/bemtevi/posts', (req: Request, res: Response) => {
     createdAt: new Date().toISOString()
   };
 
-  BEMTEVI_STORE.posts.unshift(newPost);
+  if (!BEMTEVI_STORE.posts.some((p) => p.id === newPost.id)) {
+    BEMTEVI_STORE.posts.unshift(newPost);
+  }
   res.status(201).json({ success: true, post: newPost });
+});
+
+// 2b. Update / Edit / Sync Post (content, link, sharesCount, savedBy, savesCount)
+app.put('/api/bemtevi/posts/:id', (req: Request, res: Response) => {
+  const { id } = req.params;
+  const post = BEMTEVI_STORE.posts.find((p) => p.id === id);
+  if (!post) {
+    res.status(404).json({ error: 'Post não encontrado.' });
+    return;
+  }
+
+  const { content, link, category, sharesCount, savedBy, savesCount, isEdited } = req.body;
+  if (typeof content === 'string') {
+    const trimmed = content.trim();
+    if (!trimmed) {
+      res.status(400).json({ error: 'Conteúdo da postagem não pode ficar vazio.' });
+      return;
+    }
+    if (trimmed.length > 127) {
+      res.status(400).json({ error: 'O texto deve ter no máximo 127 caracteres!' });
+      return;
+    }
+    post.content = trimmed;
+    post.tags = extractHashtagsFromText(trimmed);
+    post.isEdited = isEdited ?? true;
+    post.updatedAt = new Date().toISOString();
+  }
+  if (link !== undefined) post.link = link || undefined;
+  if (category) post.category = category;
+  if (typeof sharesCount === 'number') post.sharesCount = sharesCount;
+  if (Array.isArray(savedBy)) post.savedBy = savedBy;
+  if (typeof savesCount === 'number') post.savesCount = savesCount;
+
+  res.json({ success: true, post });
 });
 
 // 3. Delete Post
@@ -1744,14 +1785,14 @@ app.get('/api/bemtevi/communities', (_req: Request, res: Response) => {
 });
 
 app.post('/api/bemtevi/communities', (req: Request, res: Response) => {
-  const { name, description, category, createdBy } = req.body;
-  if (!name || name.length < 3) {
+  const { id, name, description, category, createdBy } = req.body;
+  if (!name || name.trim().length < 3) {
     res.status(400).json({ error: 'Nome da comunidade deve ter pelo menos 3 caracteres.' });
     return;
   }
 
   const newComm: BemteviCommunity = {
-    id: `comm-${Date.now()}`,
+    id: id || `comm-${Date.now()}`,
     name: name.trim(),
     description: description || '',
     category: category || 'Geral',
@@ -1763,8 +1804,23 @@ app.post('/api/bemtevi/communities', (req: Request, res: Response) => {
     createdAt: new Date().toISOString()
   };
 
-  BEMTEVI_STORE.communities.unshift(newComm);
+  if (!BEMTEVI_STORE.communities.some((c) => c.id === newComm.id)) {
+    BEMTEVI_STORE.communities.unshift(newComm);
+  }
   res.status(201).json({ success: true, community: newComm });
+});
+
+app.post('/api/bemtevi/communities/:id/join', (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { members, membersCount } = req.body;
+  const comm = BEMTEVI_STORE.communities.find((c) => c.id === id);
+  if (!comm) {
+    res.status(404).json({ error: 'Comunidade não encontrada.' });
+    return;
+  }
+  if (Array.isArray(members)) comm.members = members;
+  if (typeof membersCount === 'number') comm.membersCount = membersCount;
+  res.json({ success: true, community: comm });
 });
 
 // 6. Trending Topics (Calculados estritamente a partir das postagens reais salvas no banco de dados)

@@ -27,6 +27,80 @@
         "isBanned": { "type": "boolean" }
       },
       "required": ["uid"]
+    },
+    "BemteviPost": {
+      "title": "BemteviPost",
+      "description": "Microblogging post on the Bem-Te-Vi social network (max 127 chars)",
+      "type": "object",
+      "properties": {
+        "authorId": { "type": "string" },
+        "authorName": { "type": "string" },
+        "authorHandle": { "type": "string" },
+        "authorAvatar": { "type": "string" },
+        "authorBadge": { "type": "string" },
+        "authorKarma": { "type": "number" },
+        "content": { "type": "string", "maxLength": 127 },
+        "link": { "type": "string" },
+        "tags": { "type": "array", "items": { "type": "string" } },
+        "category": { "type": "string" },
+        "communityId": { "type": "string" },
+        "communityName": { "type": "string" },
+        "sharedArticle": { "type": "object" },
+        "likesCount": { "type": "number" },
+        "commentsCount": { "type": "number" },
+        "sharesCount": { "type": "number" },
+        "savesCount": { "type": "number" },
+        "likedBy": { "type": "array", "items": { "type": "string" } },
+        "savedBy": { "type": "array", "items": { "type": "string" } },
+        "isEdited": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["authorId", "authorName", "content", "category"]
+    },
+    "BemteviComment": {
+      "title": "BemteviComment",
+      "description": "Public comment on a Bem-Te-Vi post (max 280 chars)",
+      "type": "object",
+      "properties": {
+        "postId": { "type": "string" },
+        "authorId": { "type": "string" },
+        "authorName": { "type": "string" },
+        "authorHandle": { "type": "string" },
+        "content": { "type": "string", "maxLength": 280 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["postId", "authorId", "content"]
+    },
+    "BemteviCommunity": {
+      "title": "BemteviCommunity",
+      "description": "Topic-based community in Bem-Te-Vi",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "maxLength": 60 },
+        "description": { "type": "string", "maxLength": 300 },
+        "category": { "type": "string" },
+        "membersCount": { "type": "number" },
+        "postsCount": { "type": "number" },
+        "createdBy": { "type": "string" },
+        "members": { "type": "array", "items": { "type": "string" } },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "createdBy", "category"]
+    },
+    "BemteviDirectMessage": {
+      "title": "BemteviDirectMessage",
+      "description": "Private direct message between Bem-Te-Vi users",
+      "type": "object",
+      "properties": {
+        "conversationId": { "type": "string" },
+        "senderId": { "type": "string" },
+        "senderName": { "type": "string" },
+        "receiverId": { "type": "string" },
+        "text": { "type": "string", "maxLength": 2000 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["conversationId", "senderId", "receiverId", "text"]
     }
   },
   "firestore": {
@@ -46,9 +120,37 @@
       "schema": "Article",
       "description": "Academic and methodology papers"
     },
+    "/materiadeensaio/{articleId}": {
+      "schema": "Article",
+      "description": "Essay articles"
+    },
+    "/materia/{articleId}": {
+      "schema": "Article",
+      "description": "Subject articles"
+    },
+    "/uwgbooks/{articleId}": {
+      "schema": "Article",
+      "description": "UWG Books publications"
+    },
     "/users/{userId}": {
       "schema": "User",
       "description": "User accounts and permissions"
+    },
+    "/bemtevi_posts/{postId}": {
+      "schema": "BemteviPost",
+      "description": "Public Bem-Te-Vi social feed posts"
+    },
+    "/bemtevi_comments/{commentId}": {
+      "schema": "BemteviComment",
+      "description": "Comments attached to Bem-Te-Vi posts"
+    },
+    "/bemtevi_communities/{communityId}": {
+      "schema": "BemteviCommunity",
+      "description": "Bem-Te-Vi thematic communities"
+    },
+    "/bemtevi_messages/{messageId}": {
+      "schema": "BemteviDirectMessage",
+      "description": "Private Bem-Te-Vi direct messages"
     }
   }
 }

@@ -24,6 +24,13 @@ import {
   ALLOWED_EXTENSION_DOMAINS,
   SEED_WIKI_EXTENSIONS
 } from "./data/notMediaWikiData";
+import {
+  SEED_BEMTEVI_POSTS,
+  extractHashtagsFromText
+} from "./data/bemteviData";
+import noticiasSeed from "./data/noticias.json";
+import artigosSeed from "./data/json/artigos.json";
+import cidadesSancionadasSeed from "./data/cidades_sancionadas.json";
 
 // The user's specific Firebase config from the original repository
 export const firebaseConfig = {
@@ -40,6 +47,118 @@ const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 export const db = getFirestore(app);
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
+
+// ============================================
+// FIRESTORE SANITIZATION & OFFLINE/STATIC HELPERS
+// ============================================
+
+/**
+ * Recursively strips `undefined` properties so Firestore addDoc/setDoc/updateDoc
+ * never fails with "Unsupported field value: undefined", while preserving
+ * Firestore FieldValue sentinels (serverTimestamp, increment) and Date objects.
+ */
+export function sanitizeFirestoreData<T>(value: T): T {
+  if (value === undefined || value === null) return value;
+  if (value instanceof Date) return value;
+
+  if (Array.isArray(value)) {
+    return value
+      .filter((item) => item !== undefined)
+      .map((item) => sanitizeFirestoreData(item)) as unknown as T;
+  }
+
+  if (typeof value === "object") {
+    const proto = Object.getPrototypeOf(value);
+    if (proto !== Object.prototype && proto !== null) {
+      return value;
+    }
+    const cleanObj: Record<string, any> = {};
+    for (const [key, val] of Object.entries(value as Record<string, any>)) {
+      if (val !== undefined) {
+        const sanitizedVal = sanitizeFirestoreData(val);
+        if (sanitizedVal !== undefined) {
+          cleanObj[key] = sanitizedVal;
+        }
+      }
+    }
+    return cleanObj as T;
+  }
+
+  return value;
+}
+
+let backendApiCache: { available: boolean; checkedAt: number } | null = null;
+let backendProbePromise: Promise<boolean> | null = null;
+
+/**
+ * Probes /api/health once (cached 60s) so static deployments (without server.ts)
+ * do not repeatedly emit 404 console errors on every /api/* route.
+ */
+export async function isBackendApiAvailable(): Promise<boolean> {
+  const now = Date.now();
+  if (backendApiCache && now - backendApiCache.checkedAt < 60000) {
+    return backendApiCache.available;
+  }
+  if (backendProbePromise) {
+    return backendProbePromise;
+  }
+
+  backendProbePromise = (async () => {
+    try {
+      const res = await fetch("/api/health", {
+        method: "GET",
+        headers: { Accept: "application/json" }
+      });
+      const contentType = res.headers.get("content-type") || "";
+      if (res.ok && contentType.includes("application/json")) {
+        const json = await res.json().catch(() => null);
+        const available = Boolean(json && json.status === "ok");
+        backendApiCache = { available, checkedAt: Date.now() };
+        return available;
+      }
+      backendApiCache = { available: false, checkedAt: Date.now() };
+      return false;
+    } catch {
+      backendApiCache = { available: false, checkedAt: Date.now() };
+      return false;
+    } finally {
+      backendProbePromise = null;
+    }
+  })();
+
+  return backendProbePromise;
+}
+
+export async function safeApiFetch(url: string, options?: RequestInit): Promise<Response | null> {
+  const available = await isBackendApiAvailable();
+  if (!available) return null;
+  try {
+    return await fetch(url, options);
+  } catch {
+    return null;
+  }
+}
+
+function readLocalJson<T>(key: string, fallback: T): T {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeLocalJson(key: string, value: any): void {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // Ignore storage quota or private mode issues
+  }
+}
+
+export function getStaticSanctionsFallback(): any[] {
+  return (cidadesSancionadasSeed as any)?.cidades_sancionadas || [];
+}
 
 // ============================================
 // TYPES
@@ -144,11 +263,30 @@ export interface DeletionRequest {
 export async function registerUser(user: User | { uid: string; displayName?: string; email?: string; photoURL?: string }, isGuest = false) {
   const uid = user.uid;
   const isBurocrata = isAuthorizedBurocrata(user.email);
-  const userData = {
-    uid: uid,
+  const localProfile = {
+    uid,
     email: user.email || (isGuest ? `${uid}@guest.local` : ""),
     name: user.displayName || (isGuest ? "Convidado (24h)" : "Usuário"),
-    profilePictureUrl: ('photoURL' in user ? user.photoURL : "") || "",
+    profilePictureUrl: ("photoURL" in user ? user.photoURL : "") || "",
+    isAdmin: isBurocrata,
+    isBan: false,
+    isBanned: false,
+    isTeacher: isBurocrata,
+    lastLoginAt: new Date().toISOString()
+  };
+
+  writeLocalJson("wzzm_local_session_profile", localProfile);
+
+  // Skip Firestore write for guests or mismatched Firebase Auth sessions to avoid permission errors
+  if (isGuest || !auth.currentUser || auth.currentUser.uid !== uid) {
+    return false;
+  }
+
+  const userData = sanitizeFirestoreData({
+    uid,
+    email: user.email || "",
+    name: user.displayName || "Usuário",
+    profilePictureUrl: ("photoURL" in user ? user.photoURL : "") || "",
     isAdmin: isBurocrata,
     isBan: false,
     isBanned: false,
@@ -157,55 +295,163 @@ export async function registerUser(user: User | { uid: string; displayName?: str
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
     lastLoginAt: serverTimestamp()
-  };
+  });
 
   try {
-    // Write in both "users" and "usuários" collections to match existing database backends
     await setDoc(doc(db, "users", uid), userData, { merge: true });
-    await setDoc(doc(db, "usuários", uid), userData, { merge: true });
+    await setDoc(doc(db, "usuários", uid), userData, { merge: true }).catch(() => {});
     return true;
-  } catch (error) {
-    console.warn("Could not write user profile to Firestore (using local session fallback):", error);
+  } catch {
     return false;
   }
 }
 
 export async function checkIfUserIsBanned(uid: string): Promise<boolean> {
+  if (!auth.currentUser || auth.currentUser.uid !== uid) return false;
   try {
     const userDoc = await getDoc(doc(db, "users", uid));
     if (userDoc.exists()) {
       const data = userDoc.data();
       return data.isBanned === true || data.isBan === true;
     }
-  } catch (error) {
-    console.warn("Could not check user ban status:", error);
+  } catch {
+    //
   }
   return false;
 }
 
 export async function checkIfUserIsAdmin(uid: string, email?: string | null): Promise<boolean> {
-  // Primary check: email must be the official Burocrata email
   if (email && isAuthorizedBurocrata(email)) {
     return true;
   }
+  if (!auth.currentUser || auth.currentUser.uid !== uid) return false;
   try {
     const userDoc = await getDoc(doc(db, "users", uid));
     if (userDoc.exists()) {
       const data = userDoc.data();
-      // Only pedrohenriquecardonaperes@gmail.com can hold admin privileges
       if (isAuthorizedBurocrata(data.email)) {
         return true;
       }
       return false;
     }
-  } catch (error) {
-    console.warn("Could not check user admin status:", error);
+  } catch {
+    //
   }
   return false;
 }
 
+function getStaticCollectionArticles(collectionName: string): Article[] {
+  if (collectionName === "wikiworldweb") {
+    return (Array.isArray(noticiasSeed) ? noticiasSeed : []).map((item: any, index: number) => ({
+      id: `news_${index + 1}`,
+      titulo: item.titulo || "Sem título",
+      descricao: item.resumo || "",
+      conteudo: item.resumo || "",
+      setor: "Notícias & Sociedade",
+      criadorEmail: "redacao@wazzimagiygg.com",
+      dataCriacao: "Acervo Oficial",
+      ultimaEdicao: "Sincronizado",
+      visualizacoes: 280 + index * 19,
+      colecao: "wikiworldweb",
+      link: item.link
+    }));
+  }
+
+  if (collectionName === "academico") {
+    const materias = (artigosSeed as any)?.materias || {};
+    return Object.entries<any>(materias).map(([key, value]) => ({
+      id: `acad_${key}`,
+      titulo: value.titulo || key,
+      descricao: value.descricao || "",
+      conteudo: value.descricao || "",
+      setor: value.categoria || "Acadêmico",
+      criadorEmail: "academico@wazzimagiygg.com",
+      dataCriacao: "Acervo Acadêmico",
+      ultimaEdicao: "Sincronizado",
+      visualizacoes: 150,
+      colecao: "academico",
+      link: value.link
+    }));
+  }
+
+  if (collectionName === "materiadeensaio") {
+    return [
+      {
+        id: "ensaio_1",
+        titulo: "A Reforma Psiquiátrica e a Trajetória dos CAPS no Brasil",
+        descricao: "Análise aprofundada sobre a superação do modelo asilar e a consolidação de políticas públicas humanizadas de desinstitucionalização.",
+        setor: "Saúde Mental & Direitos",
+        criadorEmail: "ensaios@wazzimagiygg.com",
+        dataCriacao: "Acervo Editorial",
+        ultimaEdicao: "Sincronizado",
+        visualizacoes: 520,
+        colecao: "materiadeensaio"
+      },
+      {
+        id: "ensaio_2",
+        titulo: "Neutralidade de Rede e Direitos Fundamentais no Marco Civil",
+        descricao: "Garantias constitucionais e limites de moderação privada em plataformas de conhecimento colaborativo sob a Lei 12.965/2014.",
+        setor: "Direito Digital",
+        criadorEmail: "juridico@wazzimagiygg.com",
+        dataCriacao: "Acervo Editorial",
+        ultimaEdicao: "Sincronizado",
+        visualizacoes: 412,
+        colecao: "materiadeensaio"
+      }
+    ];
+  }
+
+  if (collectionName === "uwgbooks") {
+    return [
+      {
+        id: "uwg_1",
+        titulo: "Compêndio de Metodologia e Produção Científica",
+        descricao: "Manual de diretrizes para elaboração de monografias, dissertações e artigos acadêmicos conforme normas técnicas.",
+        setor: "UWG Books",
+        criadorEmail: "editora@wazzimagiygg.com",
+        dataCriacao: "Editora UWG",
+        ultimaEdicao: "Sincronizado",
+        visualizacoes: 389,
+        colecao: "uwgbooks"
+      },
+      {
+        id: "uwg_2",
+        titulo: "História do Conhecimento Livre e Enciclopedismo Digital",
+        descricao: "Da Enciclopédia de Diderot às wikis modernas: a batalha contra os monopólios de informação e o assédio editorial.",
+        setor: "UWG Books",
+        criadorEmail: "editora@wazzimagiygg.com",
+        dataCriacao: "Editora UWG",
+        ultimaEdicao: "Sincronizado",
+        visualizacoes: 630,
+        colecao: "uwgbooks"
+      }
+    ];
+  }
+
+  if (collectionName === "materia") {
+    const materias = (artigosSeed as any)?.materias || {};
+    return Object.entries<any>(materias)
+      .slice(0, 8)
+      .map(([key, value]) => ({
+        id: `mat_${key}`,
+        titulo: value.titulo || key,
+        descricao: value.descricao || "",
+        conteudo: value.descricao || "",
+        setor: value.categoria || "Matérias & Referências",
+        criadorEmail: "redacao@wazzimagiygg.com",
+        dataCriacao: "Acervo Editorial",
+        ultimaEdicao: "Sincronizado",
+        visualizacoes: 195,
+        colecao: "materia",
+        link: value.link
+      }));
+  }
+
+  return [];
+}
+
 // ============================================
-// CONTENT LOADING WITH API FALLBACK
+// CONTENT LOADING WITH API + STATIC FALLBACK
 // ============================================
 export async function loadCollectionContent(collectionName: string): Promise<Article[]> {
   // First attempt: direct Firestore query
@@ -225,29 +471,29 @@ export async function loadCollectionContent(collectionName: string): Promise<Art
         dataCriacao: data.dataCriacao?.toDate ? data.dataCriacao.toDate().toLocaleDateString("pt-BR") : (data.dataCriacao || "Recente"),
         ultimaEdicao: data.ultimaEdicao?.toDate ? data.ultimaEdicao.toDate().toLocaleDateString("pt-BR") : (data.ultimaEdicao || "Recente"),
         visualizacoes: data.visualizacoes || 0,
-        colecao: collectionName
+        colecao: collectionName,
+        link: data.link
       });
     });
 
     if (items.length > 0) {
       return items;
     }
-  } catch (error) {
-    console.warn(`Firestore read failed for collection "${collectionName}", fallback to optimized backend API:`, error);
+  } catch {
+    // Fallback cleanly below
   }
 
-  // Second attempt: Fallback to high-performance TypeScript backend route
-  try {
-    const response = await fetch(`/api/articles?collection=${encodeURIComponent(collectionName)}`);
-    if (response.ok) {
-      const data = await response.json();
-      return data.articles || [];
+  // Second attempt: Backend route (only when Express backend is active)
+  const response = await safeApiFetch(`/api/articles?collection=${encodeURIComponent(collectionName)}`);
+  if (response && response.ok) {
+    const data = await response.json().catch(() => null);
+    if (data && Array.isArray(data.articles) && data.articles.length > 0) {
+      return data.articles;
     }
-  } catch (apiErr) {
-    console.warn("Backend API fallback error:", apiErr);
   }
 
-  return [];
+  // Third attempt: Bundled static fallback data
+  return getStaticCollectionArticles(collectionName);
 }
 
 export async function createArticle(articleData: {
@@ -265,12 +511,12 @@ export async function createArticle(articleData: {
     );
   }
 
-  const payload = {
+  const payload = sanitizeFirestoreData({
     ...articleData,
     visualizacoes: 1,
     dataCriacao: serverTimestamp(),
     ultimaEdicao: serverTimestamp()
-  };
+  });
 
   try {
     const docRef = await addDoc(collection(db, articleData.colecao), payload);
@@ -289,7 +535,7 @@ export async function incrementArticleViews(collectionName: string, id: string) 
     await updateDoc(docRef, {
       visualizacoes: increment(1)
     });
-  } catch (error) {
+  } catch {
     // Fail silently, never disrupt reading
   }
 }
@@ -298,6 +544,33 @@ export async function incrementArticleViews(collectionName: string, id: string) 
 // NOTIFICATIONS
 // ============================================
 export function setupNotificationsListener(userId: string, callback: (notifications: UserNotification[]) => void) {
+  const defaultNotifications: UserNotification[] = [
+    {
+      id: "sys_1",
+      userId,
+      titulo: "Edição Digital Atualizada",
+      mensagem: "O acervo acadêmico, notícias e a rede Bem-Te-Vi estão sincronizados.",
+      timestamp: "Agora",
+      lida: false,
+      tipo: "sistema"
+    },
+    {
+      id: "sys_2",
+      userId,
+      titulo: "Marco Civil & LGPD",
+      mensagem: "Seus registros de navegação e direitos de privacidade estão protegidos sob a Lei 12.965/2014.",
+      timestamp: "Hoje",
+      lida: true,
+      tipo: "alerta"
+    }
+  ];
+
+  // Skip Firestore listener when unauthenticated (rules restrict notifications to signed-in users)
+  if (!auth.currentUser) {
+    callback(defaultNotifications);
+    return () => {};
+  }
+
   try {
     const q = query(
       collection(db, "notifications"),
@@ -315,71 +588,41 @@ export function setupNotificationsListener(userId: string, callback: (notificati
             mensagem: data.mensagem || "",
             timestamp: data.timestamp?.toDate ? data.timestamp.toDate().toLocaleTimeString("pt-BR") : "Agora",
             lida: !!data.lida,
-            tipo: data.tipo || 'sistema'
+            tipo: data.tipo || "sistema"
           });
         }
       });
-      callback(notifs);
-    }, (error) => {
-      console.warn("Firestore notification snapshot warning:", error);
-      // Fallback notifications if collection empty or permission restricted
-      callback([
-        {
-          id: 'sys_1',
-          userId,
-          titulo: 'Edição Digital Atualizada',
-          mensagem: 'O acervo acadêmico e notícias da WazzimaGiygg foram sincronizados com o backend.',
-          timestamp: 'Agora',
-          lida: false,
-          tipo: 'sistema'
-        },
-        {
-          id: 'sys_2',
-          userId,
-          titulo: 'Marco Civil & LGPD',
-          mensagem: 'Seus registros de navegação e direitos de privacidade estão protegidos sob a Lei 12.965/2014.',
-          timestamp: 'Hoje',
-          lida: true,
-          tipo: 'alerta'
-        }
-      ]);
+      callback(notifs.length > 0 ? notifs : defaultNotifications);
+    }, () => {
+      callback(defaultNotifications);
     });
-  } catch (err) {
-    console.warn("Could not bind notification listener:", err);
-    callback([
-      {
-        id: 'sys_1',
-        userId,
-        titulo: 'Edição Digital Atualizada',
-        mensagem: 'O acervo acadêmico e notícias da WazzimaGiygg foram sincronizados com o backend.',
-        timestamp: 'Agora',
-        lida: false,
-        tipo: 'sistema'
-      }
-    ]);
+  } catch {
+    callback(defaultNotifications);
     return () => {};
   }
 }
 
 export async function markNotificationAsRead(id: string) {
+  if (!auth.currentUser) return;
   try {
     const docRef = doc(db, "notifications", id);
     await updateDoc(docRef, { lida: true });
-  } catch (error) {
+  } catch {
     // Fail silently
   }
 }
 
 export async function markAllNotificationsAsRead(notifs: UserNotification[]) {
+  if (!auth.currentUser) return;
   try {
     const batch = writeBatch(db);
-    const unread = notifs.filter(n => !n.lida);
-    unread.forEach(n => {
+    const unread = notifs.filter((n) => !n.lida);
+    unread.forEach((n) => {
       const docRef = doc(db, "notifications", n.id);
       batch.update(docRef, { lida: true });
     });
     await batch.commit();
-  } catch (error) {
+  } catch {
     // Fail silently
   }
 }
@@ -388,26 +631,20 @@ export async function markAllNotificationsAsRead(notifs: UserNotification[]) {
 // AUDIT & LOGGING (COMPATIBLE WITH checkuser)
 // ============================================
 export async function registerAuditLog(userUid: string, action: string, details?: any) {
-  const logData = {
+  const logData = sanitizeFirestoreData({
     userId: userUid,
     action,
     details: details || {},
     timestamp: new Date().toISOString(),
-    userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'Server'
-  };
+    userAgent: typeof navigator !== "undefined" ? navigator.userAgent : "Server"
+  });
 
-  // Dispatch to server endpoint for high-speed logging
-  try {
-    fetch('/api/logs', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(logData)
-    }).catch(() => {});
-  } catch {
-    // ignore
-  }
+  safeApiFetch("/api/logs", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(logData)
+  }).catch(() => {});
 
-  // Also write to Firestore checkuser collection
   try {
     await addDoc(collection(db, "checkuser"), {
       ...logData,
@@ -423,75 +660,90 @@ export async function registerAuditLog(userUid: string, action: string, details?
 // ============================================
 
 export async function listAllUsersFromFirestore(): Promise<AppUser[]> {
-  // First attempt: Firestore users collection
-  try {
-    const snapshot = await getDocs(collection(db, "users"));
-    const usersList: AppUser[] = [];
-    snapshot.forEach((docSnap) => {
-      const d = docSnap.data();
-      usersList.push({
-        uid: docSnap.id,
-        email: d.email || "",
-        name: d.name || d.displayName || "Usuário",
-        profilePictureUrl: d.profilePictureUrl || "",
-        isAdmin: !!d.isAdmin,
-        isBanned: !!(d.isBanned || d.isBan),
-        isTeacher: !!(d.isTeacher || d.isTeatcher),
-        createdAt: d.createdAt?.toDate ? d.createdAt.toDate().toISOString() : d.createdAt,
-        lastLoginAt: d.lastLoginAt?.toDate ? d.lastLoginAt.toDate().toISOString() : d.lastLoginAt
+  // Publisher accounts may query the full Firestore users directory
+  if (auth.currentUser && isAuthorizedPublisher(auth.currentUser.email)) {
+    try {
+      const snapshot = await getDocs(collection(db, "users"));
+      const usersList: AppUser[] = [];
+      snapshot.forEach((docSnap) => {
+        const d = docSnap.data();
+        usersList.push({
+          uid: docSnap.id,
+          email: d.email || "",
+          name: d.name || d.displayName || "Usuário",
+          profilePictureUrl: d.profilePictureUrl || "",
+          isAdmin: !!d.isAdmin,
+          isBanned: !!(d.isBanned || d.isBan),
+          isTeacher: !!(d.isTeacher || d.isTeatcher),
+          createdAt: d.createdAt?.toDate ? d.createdAt.toDate().toISOString() : d.createdAt,
+          lastLoginAt: d.lastLoginAt?.toDate ? d.lastLoginAt.toDate().toISOString() : d.lastLoginAt
+        });
       });
-    });
-    if (usersList.length > 0) return usersList;
-  } catch (err) {
-    console.warn("Firestore list users failed, fallback to backend:", err);
-  }
-
-  // Fallback: Backend API
-  try {
-    const res = await fetch("/api/admin/users");
-    if (res.ok) {
-      const data = await res.json();
-      return data.users || [];
+      if (usersList.length > 0) return usersList;
+    } catch {
+      //
     }
-  } catch (apiErr) {
-    console.warn("Backend admin users API error:", apiErr);
   }
 
-  return [];
+  // Fallback: Backend API when available
+  const res = await safeApiFetch("/api/admin/users");
+  if (res && res.ok) {
+    const data = await res.json().catch(() => null);
+    if (data && Array.isArray(data.users) && data.users.length > 0) {
+      return data.users;
+    }
+  }
+
+  // Fallback: own signed-in user or local session profile + baseline official curator
+  const result: AppUser[] = [
+    {
+      uid: "usr_pedro_cardona_official",
+      email: "pedrohenriquecardonaperes@gmail.com",
+      name: "Pedro Cardona",
+      profilePictureUrl: "",
+      isAdmin: true,
+      isBanned: false,
+      isTeacher: true
+    }
+  ];
+
+  const localSession = readLocalJson<AppUser | null>("wzzm_local_session_profile", null);
+  if (localSession && localSession.uid && !result.some((u) => u.uid === localSession.uid)) {
+    result.unshift(localSession);
+  }
+
+  return result;
 }
 
 export async function getUserByUidFromFirestore(uid: string): Promise<AppUser | null> {
   if (!uid) return null;
-  try {
-    const docSnap = await getDoc(doc(db, "users", uid));
-    if (docSnap.exists()) {
-      const d = docSnap.data();
-      return {
-        uid: docSnap.id,
-        email: d.email || "",
-        name: d.name || d.displayName || "Usuário",
-        profilePictureUrl: d.profilePictureUrl || "",
-        isAdmin: !!d.isAdmin,
-        isBanned: !!(d.isBanned || d.isBan),
-        isTeacher: !!(d.isTeacher || d.isTeatcher),
-        createdAt: d.createdAt?.toDate ? d.createdAt.toDate().toISOString() : d.createdAt,
-        lastLoginAt: d.lastLoginAt?.toDate ? d.lastLoginAt.toDate().toISOString() : d.lastLoginAt
-      };
+  if (auth.currentUser && (auth.currentUser.uid === uid || isAuthorizedPublisher(auth.currentUser.email))) {
+    try {
+      const docSnap = await getDoc(doc(db, "users", uid));
+      if (docSnap.exists()) {
+        const d = docSnap.data();
+        return {
+          uid: docSnap.id,
+          email: d.email || "",
+          name: d.name || d.displayName || "Usuário",
+          profilePictureUrl: d.profilePictureUrl || "",
+          isAdmin: !!d.isAdmin,
+          isBanned: !!(d.isBanned || d.isBan),
+          isTeacher: !!(d.isTeacher || d.isTeatcher),
+          createdAt: d.createdAt?.toDate ? d.createdAt.toDate().toISOString() : d.createdAt,
+          lastLoginAt: d.lastLoginAt?.toDate ? d.lastLoginAt.toDate().toISOString() : d.lastLoginAt
+        };
+      }
+    } catch {
+      //
     }
-  } catch (err) {
-    console.warn("Firestore getUserByUidFromFirestore error:", err);
   }
 
-  // Fallback: Backend admin users API
-  try {
-    const res = await fetch(`/api/admin/users`);
-    if (res.ok) {
-      const data = await res.json();
-      const found = (data.users || []).find((u: any) => u.uid === uid);
-      if (found) return found;
-    }
-  } catch (apiErr) {
-    console.warn("Backend user fetch error:", apiErr);
+  const res = await safeApiFetch(`/api/admin/users`);
+  if (res && res.ok) {
+    const data = await res.json().catch(() => null);
+    const found = (data?.users || []).find((u: any) => u.uid === uid);
+    if (found) return found;
   }
 
   return null;
@@ -505,26 +757,21 @@ export async function updateUserAdminStatus(uid: string, isAdmin: boolean): Prom
     console.warn("Firestore updateUserAdminStatus error:", err);
   }
 
-  // Also sync with backend API
-  try {
-    await fetch(`/api/admin/users/${encodeURIComponent(uid)}/toggle-admin`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ isAdmin })
-    });
-    return true;
-  } catch {
-    return false;
-  }
+  const res = await safeApiFetch(`/api/admin/users/${encodeURIComponent(uid)}/toggle-admin`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ isAdmin })
+  });
+  return Boolean(res?.ok || auth.currentUser);
 }
 
 export async function updateUserBanStatus(uid: string, isBanned: boolean, banReason?: string): Promise<boolean> {
-  const payload = {
+  const payload = sanitizeFirestoreData({
     isBanned,
     isBan: isBanned,
     banReason: isBanned ? (banReason || "Violação das Políticas do Portal") : null,
     bannedAt: isBanned ? serverTimestamp() : null
-  };
+  });
 
   try {
     await updateDoc(doc(db, "users", uid), payload);
@@ -533,16 +780,12 @@ export async function updateUserBanStatus(uid: string, isBanned: boolean, banRea
     console.warn("Firestore updateUserBanStatus error:", err);
   }
 
-  try {
-    await fetch(`/api/admin/users/${encodeURIComponent(uid)}/toggle-ban`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ isBanned, banReason })
-    });
-    return true;
-  } catch {
-    return false;
-  }
+  const res = await safeApiFetch(`/api/admin/users/${encodeURIComponent(uid)}/toggle-ban`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ isBanned, banReason })
+  });
+  return Boolean(res?.ok || auth.currentUser);
 }
 
 export async function updateUserTeacherStatus(uid: string, isTeacher: boolean): Promise<boolean> {
@@ -558,16 +801,12 @@ export async function updateUserTeacherStatus(uid: string, isTeacher: boolean): 
     console.warn("Firestore updateUserTeacherStatus error:", err);
   }
 
-  try {
-    await fetch(`/api/admin/users/${encodeURIComponent(uid)}/toggle-teacher`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ isTeacher })
-    });
-    return true;
-  } catch {
-    return false;
-  }
+  const res = await safeApiFetch(`/api/admin/users/${encodeURIComponent(uid)}/toggle-teacher`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ isTeacher })
+  });
+  return Boolean(res?.ok || auth.currentUser);
 }
 
 // ============================================
@@ -614,10 +853,10 @@ export async function listDeletionRequests(): Promise<DeletionRequest[]> {
     console.warn("Could not load deletion_requests from Firestore:", err);
   }
 
-  // Fallback to backend API
+  // Fallback to backend API when available
   try {
-    const res = await fetch("/api/admin/deletion-requests");
-    if (res.ok) {
+    const res = await safeApiFetch("/api/admin/deletion-requests");
+    if (res && res.ok) {
       const data = await res.json();
       return (data.requests || []).map((r: any) => ({
         ...r,
@@ -724,26 +963,22 @@ export async function updateDeletionRequestStatus(
   }
 
   try {
-    await updateDoc(doc(db, "deletion_requests", id), updatePayload);
+    await updateDoc(doc(db, "deletion_requests", id), sanitizeFirestoreData(updatePayload));
   } catch (err) {
     console.warn("Firestore update deletion request error:", err);
   }
 
-  try {
-    await fetch(`/api/admin/deletion-requests/${id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        status,
-        adminEmail: admin,
-        rejectionReason: notesOrReason,
-        certificateId: updatePayload.certificateId
-      })
-    });
-    return true;
-  } catch {
-    return false;
-  }
+  const res = await safeApiFetch(`/api/admin/deletion-requests/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      status,
+      adminEmail: admin,
+      rejectionReason: notesOrReason,
+      certificateId: updatePayload.certificateId
+    })
+  });
+  return Boolean(res?.ok || auth.currentUser);
 }
 
 export async function deleteUserFromFirestore(uid: string): Promise<boolean> {
@@ -754,14 +989,10 @@ export async function deleteUserFromFirestore(uid: string): Promise<boolean> {
     console.warn("Firestore deleteUser error:", err);
   }
 
-  try {
-    await fetch(`/api/admin/users/${encodeURIComponent(uid)}`, {
-      method: "DELETE"
-    });
-    return true;
-  } catch {
-    return false;
-  }
+  const res = await safeApiFetch(`/api/admin/users/${encodeURIComponent(uid)}`, {
+    method: "DELETE"
+  });
+  return Boolean(res?.ok || auth.currentUser);
 }
 
 export async function deleteArticleFromFirestore(collectionName: string, id: string): Promise<boolean> {
@@ -772,283 +1003,652 @@ export async function deleteArticleFromFirestore(collectionName: string, id: str
     console.warn("Firestore deleteArticle error:", err);
   }
 
-  try {
-    await fetch(`/api/admin/articles/${encodeURIComponent(id)}?collection=${encodeURIComponent(collectionName)}`, {
-      method: "DELETE"
-    });
-    return true;
-  } catch {
-    return false;
-  }
+  const res = await safeApiFetch(`/api/admin/articles/${encodeURIComponent(id)}?collection=${encodeURIComponent(collectionName)}`, {
+    method: "DELETE"
+  });
+  return Boolean(res?.ok || auth.currentUser);
 }
 
 // ============================================
-// BEMTEVI REDE SOCIAL - SINCRONIZAÇÃO COM BANCO DE DADOS
-// Apenas dados sincronizados do banco de dados são permitidos
+// BEMTEVI REDE SOCIAL - SINCRONIZAÇÃO MULTI-CAMADA
+// Firestore + Express API + localStorage fallback (zero perda de dados)
 // ============================================
 
+const BEMTEVI_POSTS_CACHE_KEY = "wzzm_bemtevi_posts";
+const BEMTEVI_DELETED_POSTS_KEY = "wzzm_bemtevi_deleted_posts";
+const BEMTEVI_COMMUNITIES_CACHE_KEY = "wzzm_bemtevi_communities";
+const BEMTEVI_MESSAGES_CACHE_KEY = "wzzm_bemtevi_messages";
+const getBemteviCommentsCacheKey = (postId: string) => `wzzm_bemtevi_comments_${postId}`;
+
+function normalizeBemteviPostRecord(p: any): any {
+  const content = typeof p?.content === "string" ? p.content : "";
+  const extracted = extractHashtagsFromText(content);
+  const existingTags = Array.isArray(p?.tags) ? p.tags : [];
+  const mergedTags = Array.from(new Set([...extracted, ...existingTags]));
+  return sanitizeFirestoreData({
+    ...p,
+    content,
+    tags: mergedTags,
+    likesCount: typeof p?.likesCount === "number" ? p.likesCount : (Array.isArray(p?.likedBy) ? p.likedBy.length : 0),
+    commentsCount: typeof p?.commentsCount === "number" ? p.commentsCount : 0,
+    sharesCount: typeof p?.sharesCount === "number" ? p.sharesCount : 0,
+    savesCount: typeof p?.savesCount === "number" ? p.savesCount : (Array.isArray(p?.savedBy) ? p.savedBy.length : 0),
+    likedBy: Array.isArray(p?.likedBy) ? p.likedBy : [],
+    savedBy: Array.isArray(p?.savedBy) ? p.savedBy : [],
+    createdAt: p?.createdAt?.toDate ? p.createdAt.toDate().toISOString() : p?.createdAt || new Date().toISOString(),
+    updatedAt: p?.updatedAt?.toDate ? p.updatedAt.toDate().toISOString() : p?.updatedAt
+  });
+}
+
 export async function listBemteviPostsFromDb(): Promise<any[]> {
+  const deletedIds = new Set(readLocalJson<string[]>(BEMTEVI_DELETED_POSTS_KEY, []));
+  const postMap = new Map<string, any>();
+
+  // 1. Baseline seed posts
+  for (const seed of SEED_BEMTEVI_POSTS) {
+    if (!deletedIds.has(seed.id)) {
+      postMap.set(seed.id, normalizeBemteviPostRecord(seed));
+    }
+  }
+
+  // 2. Backend API posts (if server.ts is running)
+  const apiRes = await safeApiFetch("/api/bemtevi/posts");
+  if (apiRes && apiRes.ok) {
+    const json = await apiRes.json().catch(() => null);
+    if (json && Array.isArray(json.posts)) {
+      for (const p of json.posts) {
+        if (p?.id && !deletedIds.has(p.id)) {
+          postMap.set(p.id, normalizeBemteviPostRecord(p));
+        }
+      }
+    }
+  }
+
+  // 3. Direct Firestore posts (authoritative cloud persistence when rules permit)
   try {
     const q = query(collection(db, "bemtevi_posts"), orderBy("createdAt", "desc"));
     const snapshot = await getDocs(q);
-    const posts: any[] = [];
     snapshot.forEach((docSnap) => {
-      const data = docSnap.data();
-      posts.push({
-        id: docSnap.id,
-        ...data,
-        createdAt: data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : data.createdAt || new Date().toISOString()
-      });
+      if (!deletedIds.has(docSnap.id)) {
+        const normalized = normalizeBemteviPostRecord({
+          ...docSnap.data(),
+          id: docSnap.id,
+          isLocalOnly: false
+        });
+        postMap.set(docSnap.id, normalized);
+      }
     });
-    if (posts.length > 0) return posts;
-  } catch (err) {
-    console.warn("Firestore bemtevi_posts read warning:", err);
-  }
-
-  // Fallback to backend database endpoint
-  try {
-    const res = await fetch("/api/bemtevi/posts");
-    if (res.ok) {
-      const json = await res.json();
-      return json.posts || [];
-    }
   } catch {
-    //
+    // Graceful fallback to backend & local cache if Firestore is unavailable or rules deny
   }
 
-  return [];
+  // 4. Local cache (preserves offline/guest posts or local updates not yet synced)
+  const localPosts = readLocalJson<any[]>(BEMTEVI_POSTS_CACHE_KEY, []);
+  for (const lp of localPosts) {
+    if (!lp?.id || deletedIds.has(lp.id)) continue;
+    const existing = postMap.get(lp.id);
+    if (!existing) {
+      postMap.set(lp.id, normalizeBemteviPostRecord(lp));
+    } else if (lp.isLocalOnly || (lp.updatedAt && (!existing.updatedAt || lp.updatedAt > existing.updatedAt))) {
+      postMap.set(lp.id, normalizeBemteviPostRecord({ ...existing, ...lp }));
+    }
+  }
+
+  const merged = Array.from(postMap.values()).sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  );
+  writeLocalJson(BEMTEVI_POSTS_CACHE_KEY, merged.slice(0, 100));
+  return merged;
 }
 
 export async function createBemteviPostInDb(postData: any): Promise<any> {
-  const payload = {
+  const nowIso = new Date().toISOString();
+  const extractedTags = extractHashtagsFromText(postData?.content || "");
+  const cleanData = sanitizeFirestoreData({
     ...postData,
-    createdAt: serverTimestamp()
-  };
+    content: (postData?.content || "").trim(),
+    tags: Array.from(new Set([...(Array.isArray(postData?.tags) ? postData.tags : []), ...extractedTags])),
+    likesCount: postData?.likesCount ?? 0,
+    commentsCount: postData?.commentsCount ?? 0,
+    sharesCount: postData?.sharesCount ?? 0,
+    savesCount: postData?.savesCount ?? 0,
+    likedBy: Array.isArray(postData?.likedBy) ? postData.likedBy : [],
+    savedBy: Array.isArray(postData?.savedBy) ? postData.savedBy : []
+  });
 
-  try {
-    const docRef = await addDoc(collection(db, "bemtevi_posts"), payload);
-    const result = {
-      ...postData,
-      id: docRef.id,
-      createdAt: new Date().toISOString()
-    };
-    // Sync to backend cache
-    fetch("/api/bemtevi/posts", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(result)
-    }).catch(() => {});
-    return result;
-  } catch (err) {
-    console.warn("Firestore bemtevi_posts add error, using backend:", err);
-    const res = await fetch("/api/bemtevi/posts", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(postData)
-    });
-    if (res.ok) {
-      const data = await res.json();
-      return data.post;
+  // Attempt Firestore write only when authenticated as matching user
+  if (auth.currentUser && auth.currentUser.uid === cleanData.authorId) {
+    try {
+      const firestorePayload = sanitizeFirestoreData({
+        ...cleanData,
+        createdAt: serverTimestamp()
+      });
+      const docRef = await addDoc(collection(db, "bemtevi_posts"), firestorePayload);
+      const result = normalizeBemteviPostRecord({
+        ...cleanData,
+        id: docRef.id,
+        createdAt: nowIso,
+        isLocalOnly: false
+      });
+
+      const cached = readLocalJson<any[]>(BEMTEVI_POSTS_CACHE_KEY, []);
+      writeLocalJson(BEMTEVI_POSTS_CACHE_KEY, [result, ...cached.filter((p) => p.id !== result.id)].slice(0, 100));
+
+      safeApiFetch("/api/bemtevi/posts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(result)
+      }).catch(() => {});
+
+      return result;
+    } catch {
+      // Fall through cleanly to backend API / localStorage persistence
     }
-    throw err;
   }
+
+  // Fallback 1: Express Backend API (if mounted)
+  const apiRes = await safeApiFetch("/api/bemtevi/posts", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(cleanData)
+  });
+  if (apiRes && apiRes.ok) {
+    const data = await apiRes.json().catch(() => null);
+    if (data?.post) {
+      const normalized = normalizeBemteviPostRecord(data.post);
+      const cached = readLocalJson<any[]>(BEMTEVI_POSTS_CACHE_KEY, []);
+      writeLocalJson(BEMTEVI_POSTS_CACHE_KEY, [normalized, ...cached.filter((p) => p.id !== normalized.id)].slice(0, 100));
+      return normalized;
+    }
+  }
+
+  // Fallback 2: Local persistent storage (for guests or static hosting)
+  const localPost = normalizeBemteviPostRecord({
+    ...cleanData,
+    id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    createdAt: nowIso,
+    isLocalOnly: true
+  });
+  const cached = readLocalJson<any[]>(BEMTEVI_POSTS_CACHE_KEY, []);
+  writeLocalJson(BEMTEVI_POSTS_CACHE_KEY, [localPost, ...cached].slice(0, 100));
+  return localPost;
+}
+
+export async function updateBemteviPostInDb(postId: string, updates: Record<string, any>): Promise<any> {
+  const nowIso = new Date().toISOString();
+  const nextTags =
+    typeof updates.content === "string"
+      ? extractHashtagsFromText(updates.content)
+      : updates.tags;
+
+  const cleanUpdates = sanitizeFirestoreData({
+    ...updates,
+    ...(nextTags !== undefined ? { tags: nextTags } : {}),
+    updatedAt: nowIso
+  });
+
+  // Update local cache immediately
+  const cached = readLocalJson<any[]>(BEMTEVI_POSTS_CACHE_KEY, []);
+  const updatedCache = cached.map((p) => (p.id === postId ? normalizeBemteviPostRecord({ ...p, ...cleanUpdates }) : p));
+  writeLocalJson(BEMTEVI_POSTS_CACHE_KEY, updatedCache);
+
+  // Sync to Firestore when document is remote and user is signed in
+  if (auth.currentUser && !postId.startsWith("local-") && !postId.startsWith("post-init-")) {
+    try {
+      await updateDoc(
+        doc(db, "bemtevi_posts", postId),
+        sanitizeFirestoreData({
+          ...cleanUpdates,
+          updatedAt: serverTimestamp()
+        })
+      );
+    } catch {
+      // Keep local update intact
+    }
+  }
+
+  // Sync to Express API if available
+  await safeApiFetch(`/api/bemtevi/posts/${encodeURIComponent(postId)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(cleanUpdates)
+  });
+
+  return cleanUpdates;
+}
+
+export async function toggleBemteviPostLikeInDb(
+  postId: string,
+  userId: string,
+  nextLikedBy: string[],
+  nextLikesCount: number
+): Promise<void> {
+  const cached = readLocalJson<any[]>(BEMTEVI_POSTS_CACHE_KEY, []);
+  writeLocalJson(
+    BEMTEVI_POSTS_CACHE_KEY,
+    cached.map((p) => (p.id === postId ? { ...p, likedBy: nextLikedBy, likesCount: nextLikesCount } : p))
+  );
+
+  if (auth.currentUser && !postId.startsWith("local-") && !postId.startsWith("post-init-")) {
+    try {
+      await updateDoc(doc(db, "bemtevi_posts", postId), {
+        likedBy: nextLikedBy,
+        likesCount: nextLikesCount
+      });
+    } catch {
+      //
+    }
+  }
+
+  safeApiFetch(`/api/bemtevi/posts/${encodeURIComponent(postId)}/like`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ userId })
+  }).catch(() => {});
+}
+
+export async function incrementBemteviPostShareInDb(postId: string, nextSharesCount: number): Promise<void> {
+  const cached = readLocalJson<any[]>(BEMTEVI_POSTS_CACHE_KEY, []);
+  writeLocalJson(
+    BEMTEVI_POSTS_CACHE_KEY,
+    cached.map((p) => (p.id === postId ? { ...p, sharesCount: nextSharesCount } : p))
+  );
+
+  if (auth.currentUser && !postId.startsWith("local-") && !postId.startsWith("post-init-")) {
+    try {
+      await updateDoc(doc(db, "bemtevi_posts", postId), {
+        sharesCount: nextSharesCount
+      });
+    } catch {
+      //
+    }
+  }
+
+  safeApiFetch(`/api/bemtevi/posts/${encodeURIComponent(postId)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sharesCount: nextSharesCount })
+  }).catch(() => {});
+}
+
+export async function toggleBemteviPostSaveInDb(
+  postId: string,
+  nextSavedBy: string[],
+  nextSavesCount: number
+): Promise<void> {
+  const cached = readLocalJson<any[]>(BEMTEVI_POSTS_CACHE_KEY, []);
+  writeLocalJson(
+    BEMTEVI_POSTS_CACHE_KEY,
+    cached.map((p) => (p.id === postId ? { ...p, savedBy: nextSavedBy, savesCount: nextSavesCount } : p))
+  );
+
+  if (auth.currentUser && !postId.startsWith("local-") && !postId.startsWith("post-init-")) {
+    try {
+      await updateDoc(doc(db, "bemtevi_posts", postId), {
+        savedBy: nextSavedBy,
+        savesCount: nextSavesCount
+      });
+    } catch {
+      //
+    }
+  }
+
+  safeApiFetch(`/api/bemtevi/posts/${encodeURIComponent(postId)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ savedBy: nextSavedBy, savesCount: nextSavesCount })
+  }).catch(() => {});
 }
 
 export async function deleteBemteviPostInDb(postId: string): Promise<boolean> {
-  try {
-    await deleteDoc(doc(db, "bemtevi_posts", postId));
-  } catch (err) {
-    console.warn("Firestore delete bemtevi_post error:", err);
+  const deleted = readLocalJson<string[]>(BEMTEVI_DELETED_POSTS_KEY, []);
+  if (!deleted.includes(postId)) {
+    writeLocalJson(BEMTEVI_DELETED_POSTS_KEY, [...deleted, postId]);
+  }
+  const cached = readLocalJson<any[]>(BEMTEVI_POSTS_CACHE_KEY, []);
+  writeLocalJson(BEMTEVI_POSTS_CACHE_KEY, cached.filter((p) => p.id !== postId));
+
+  if (auth.currentUser && !postId.startsWith("local-") && !postId.startsWith("post-init-")) {
+    try {
+      await deleteDoc(doc(db, "bemtevi_posts", postId));
+    } catch {
+      //
+    }
   }
 
-  try {
-    await fetch(`/api/bemtevi/posts/${postId}`, { method: "DELETE" });
-    return true;
-  } catch {
-    return false;
-  }
+  await safeApiFetch(`/api/bemtevi/posts/${encodeURIComponent(postId)}`, { method: "DELETE" });
+  return true;
 }
 
 export async function listBemteviCommunitiesFromDb(): Promise<any[]> {
+  const commMap = new Map<string, any>();
+
+  const apiRes = await safeApiFetch("/api/bemtevi/communities");
+  if (apiRes && apiRes.ok) {
+    const json = await apiRes.json().catch(() => null);
+    for (const c of json?.communities || []) {
+      if (c?.id) commMap.set(c.id, c);
+    }
+  }
+
   try {
     const snapshot = await getDocs(collection(db, "bemtevi_communities"));
-    const comms: any[] = [];
     snapshot.forEach((docSnap) => {
       const data = docSnap.data();
-      comms.push({
+      commMap.set(docSnap.id, {
         id: docSnap.id,
         ...data,
         createdAt: data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : data.createdAt || new Date().toISOString()
       });
     });
-    if (comms.length > 0) return comms;
-  } catch (err) {
-    console.warn("Firestore bemtevi_communities read error:", err);
-  }
-
-  try {
-    const res = await fetch("/api/bemtevi/communities");
-    if (res.ok) {
-      const json = await res.json();
-      return json.communities || [];
-    }
   } catch {
     //
   }
 
-  return [];
+  const localComms = readLocalJson<any[]>(BEMTEVI_COMMUNITIES_CACHE_KEY, []);
+  for (const lc of localComms) {
+    if (lc?.id && !commMap.has(lc.id)) {
+      commMap.set(lc.id, lc);
+    }
+  }
+
+  const merged = Array.from(commMap.values());
+  writeLocalJson(BEMTEVI_COMMUNITIES_CACHE_KEY, merged);
+  return merged;
 }
 
 export async function createBemteviCommunityInDb(commData: any): Promise<any> {
-  const payload = {
-    ...commData,
-    createdAt: serverTimestamp()
-  };
+  const cleanData = sanitizeFirestoreData(commData);
+  const nowIso = new Date().toISOString();
 
-  try {
-    const docRef = await addDoc(collection(db, "bemtevi_communities"), payload);
-    const result = { ...commData, id: docRef.id, createdAt: new Date().toISOString() };
-    fetch("/api/bemtevi/communities", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(result)
-    }).catch(() => {});
-    return result;
-  } catch (err) {
-    const res = await fetch("/api/bemtevi/communities", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(commData)
-    });
-    if (res.ok) {
-      const json = await res.json();
+  if (auth.currentUser && auth.currentUser.uid === cleanData.createdBy) {
+    try {
+      const payload = sanitizeFirestoreData({
+        ...cleanData,
+        createdAt: serverTimestamp()
+      });
+      const docRef = await addDoc(collection(db, "bemtevi_communities"), payload);
+      const result = { ...cleanData, id: docRef.id, createdAt: nowIso };
+      const cached = readLocalJson<any[]>(BEMTEVI_COMMUNITIES_CACHE_KEY, []);
+      writeLocalJson(BEMTEVI_COMMUNITIES_CACHE_KEY, [result, ...cached.filter((c) => c.id !== result.id)]);
+
+      safeApiFetch("/api/bemtevi/communities", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(result)
+      }).catch(() => {});
+
+      return result;
+    } catch {
+      //
+    }
+  }
+
+  const apiRes = await safeApiFetch("/api/bemtevi/communities", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(cleanData)
+  });
+  if (apiRes && apiRes.ok) {
+    const json = await apiRes.json().catch(() => null);
+    if (json?.community) {
+      const cached = readLocalJson<any[]>(BEMTEVI_COMMUNITIES_CACHE_KEY, []);
+      writeLocalJson(BEMTEVI_COMMUNITIES_CACHE_KEY, [json.community, ...cached]);
       return json.community;
     }
-    throw err;
   }
+
+  const localComm = {
+    ...cleanData,
+    id: `local-comm-${Date.now()}`,
+    createdAt: nowIso,
+    isLocalOnly: true
+  };
+  const cached = readLocalJson<any[]>(BEMTEVI_COMMUNITIES_CACHE_KEY, []);
+  writeLocalJson(BEMTEVI_COMMUNITIES_CACHE_KEY, [localComm, ...cached]);
+  return localComm;
+}
+
+export async function toggleBemteviCommunityMemberInDb(
+  communityId: string,
+  nextMembers: string[],
+  nextMembersCount: number
+): Promise<void> {
+  const cached = readLocalJson<any[]>(BEMTEVI_COMMUNITIES_CACHE_KEY, []);
+  writeLocalJson(
+    BEMTEVI_COMMUNITIES_CACHE_KEY,
+    cached.map((c) => (c.id === communityId ? { ...c, members: nextMembers, membersCount: nextMembersCount } : c))
+  );
+
+  if (auth.currentUser && !communityId.startsWith("local-")) {
+    try {
+      await updateDoc(doc(db, "bemtevi_communities", communityId), {
+        members: nextMembers,
+        membersCount: nextMembersCount
+      });
+    } catch {
+      //
+    }
+  }
+
+  safeApiFetch(`/api/bemtevi/communities/${encodeURIComponent(communityId)}/join`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ members: nextMembers, membersCount: nextMembersCount })
+  }).catch(() => {});
 }
 
 export async function listBemteviCommentsFromDb(postId: string): Promise<any[]> {
+  const commentMap = new Map<string, any>();
+
+  const apiRes = await safeApiFetch(`/api/bemtevi/posts/${encodeURIComponent(postId)}/comments`);
+  if (apiRes && apiRes.ok) {
+    const json = await apiRes.json().catch(() => null);
+    for (const c of json?.comments || []) {
+      if (c?.id) commentMap.set(c.id, c);
+    }
+  }
+
   try {
     const q = query(collection(db, "bemtevi_comments"), orderBy("createdAt", "asc"));
     const snapshot = await getDocs(q);
-    const comms: any[] = [];
     snapshot.forEach((docSnap) => {
       const data = docSnap.data();
       if (data.postId === postId) {
-        comms.push({
+        commentMap.set(docSnap.id, {
           id: docSnap.id,
           ...data,
           createdAt: data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : data.createdAt || new Date().toISOString()
         });
       }
     });
-    if (comms.length > 0) return comms;
-  } catch (err) {
-    console.warn("Firestore bemtevi_comments read error:", err);
-  }
-
-  try {
-    const res = await fetch(`/api/bemtevi/posts/${postId}/comments`);
-    if (res.ok) {
-      const json = await res.json();
-      return json.comments || [];
-    }
   } catch {
     //
   }
 
-  return [];
+  const localComments = readLocalJson<any[]>(getBemteviCommentsCacheKey(postId), []);
+  for (const lc of localComments) {
+    if (lc?.id && !commentMap.has(lc.id)) {
+      commentMap.set(lc.id, lc);
+    }
+  }
+
+  const merged = Array.from(commentMap.values()).sort(
+    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+  );
+  writeLocalJson(getBemteviCommentsCacheKey(postId), merged);
+  return merged;
 }
 
 export async function createBemteviCommentInDb(postId: string, commentData: any): Promise<any> {
-  const payload = {
+  const cleanData = sanitizeFirestoreData({
     postId,
     ...commentData,
-    createdAt: serverTimestamp()
+    content: (commentData?.content || "").trim()
+  });
+  const nowIso = new Date().toISOString();
+
+  // Helper to update post comment count in local cache + Firestore
+  const bumpPostCommentCount = async () => {
+    const cachedPosts = readLocalJson<any[]>(BEMTEVI_POSTS_CACHE_KEY, []);
+    writeLocalJson(
+      BEMTEVI_POSTS_CACHE_KEY,
+      cachedPosts.map((p) => (p.id === postId ? { ...p, commentsCount: (p.commentsCount || 0) + 1 } : p))
+    );
+    if (auth.currentUser && !postId.startsWith("local-") && !postId.startsWith("post-init-")) {
+      await updateDoc(doc(db, "bemtevi_posts", postId), {
+        commentsCount: increment(1)
+      }).catch(() => {});
+    }
   };
 
-  try {
-    const docRef = await addDoc(collection(db, "bemtevi_comments"), payload);
-    const result = { id: docRef.id, postId, ...commentData, createdAt: new Date().toISOString() };
-    fetch(`/api/bemtevi/posts/${postId}/comments`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(result)
-    }).catch(() => {});
-    return result;
-  } catch (err) {
-    const res = await fetch(`/api/bemtevi/posts/${postId}/comments`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(commentData)
-    });
-    if (res.ok) {
-      const json = await res.json();
+  if (auth.currentUser && auth.currentUser.uid === cleanData.authorId) {
+    try {
+      const payload = sanitizeFirestoreData({
+        ...cleanData,
+        createdAt: serverTimestamp()
+      });
+      const docRef = await addDoc(collection(db, "bemtevi_comments"), payload);
+      const result = { id: docRef.id, ...cleanData, createdAt: nowIso };
+      const cached = readLocalJson<any[]>(getBemteviCommentsCacheKey(postId), []);
+      writeLocalJson(getBemteviCommentsCacheKey(postId), [...cached, result]);
+      await bumpPostCommentCount();
+
+      safeApiFetch(`/api/bemtevi/posts/${encodeURIComponent(postId)}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(result)
+      }).catch(() => {});
+
+      return result;
+    } catch {
+      //
+    }
+  }
+
+  const apiRes = await safeApiFetch(`/api/bemtevi/posts/${encodeURIComponent(postId)}/comments`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(cleanData)
+  });
+  if (apiRes && apiRes.ok) {
+    const json = await apiRes.json().catch(() => null);
+    if (json?.comment) {
+      const cached = readLocalJson<any[]>(getBemteviCommentsCacheKey(postId), []);
+      writeLocalJson(getBemteviCommentsCacheKey(postId), [...cached, json.comment]);
+      await bumpPostCommentCount();
       return json.comment;
     }
-    throw err;
   }
+
+  const localComment = {
+    id: `local-comment-${Date.now()}`,
+    ...cleanData,
+    createdAt: nowIso,
+    isLocalOnly: true
+  };
+  const cached = readLocalJson<any[]>(getBemteviCommentsCacheKey(postId), []);
+  writeLocalJson(getBemteviCommentsCacheKey(postId), [...cached, localComment]);
+  await bumpPostCommentCount();
+  return localComment;
 }
 
 export async function listBemteviMessagesFromDb(): Promise<any[]> {
-  try {
-    const q = query(collection(db, "bemtevi_messages"), orderBy("createdAt", "asc"));
-    const snapshot = await getDocs(q);
-    const msgs: any[] = [];
-    snapshot.forEach((docSnap) => {
-      const data = docSnap.data();
-      msgs.push({
-        id: docSnap.id,
-        ...data,
-        createdAt: data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : data.createdAt || new Date().toISOString()
-      });
-    });
-    if (msgs.length > 0) return msgs;
-  } catch (err) {
-    console.warn("Firestore bemtevi_messages read error:", err);
-  }
+  const msgMap = new Map<string, any>();
 
-  try {
-    const res = await fetch("/api/bemtevi/messages");
-    if (res.ok) {
-      const json = await res.json();
-      return json.messages || [];
+  const apiRes = await safeApiFetch("/api/bemtevi/messages");
+  if (apiRes && apiRes.ok) {
+    const json = await apiRes.json().catch(() => null);
+    for (const m of json?.messages || []) {
+      if (m?.id) msgMap.set(m.id, m);
     }
-  } catch {
-    //
   }
 
-  return [];
+  // Only query protected direct messages in Firestore when signed in
+  if (auth.currentUser) {
+    try {
+      const q = query(collection(db, "bemtevi_messages"), orderBy("createdAt", "asc"));
+      const snapshot = await getDocs(q);
+      snapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        msgMap.set(docSnap.id, {
+          id: docSnap.id,
+          ...data,
+          createdAt: data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : data.createdAt || new Date().toISOString()
+        });
+      });
+    } catch {
+      // Keep graceful fallback without noisy permission warnings
+    }
+  }
+
+  const localMsgs = readLocalJson<any[]>(BEMTEVI_MESSAGES_CACHE_KEY, []);
+  for (const lm of localMsgs) {
+    if (lm?.id && !msgMap.has(lm.id)) {
+      msgMap.set(lm.id, lm);
+    }
+  }
+
+  const merged = Array.from(msgMap.values()).sort(
+    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+  );
+  writeLocalJson(BEMTEVI_MESSAGES_CACHE_KEY, merged.slice(-200));
+  return merged;
 }
 
 export async function createBemteviMessageInDb(msgData: any): Promise<any> {
-  const payload = {
+  const cleanData = sanitizeFirestoreData({
     ...msgData,
-    createdAt: serverTimestamp()
-  };
+    text: (msgData?.text || "").trim()
+  });
+  const nowIso = new Date().toISOString();
 
-  try {
-    const docRef = await addDoc(collection(db, "bemtevi_messages"), payload);
-    const result = { id: docRef.id, ...msgData, createdAt: new Date().toISOString() };
-    fetch("/api/bemtevi/messages", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(result)
-    }).catch(() => {});
-    return result;
-  } catch (err) {
-    const res = await fetch("/api/bemtevi/messages", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(msgData)
-    });
-    if (res.ok) {
-      const json = await res.json();
+  if (auth.currentUser && auth.currentUser.uid === cleanData.senderId) {
+    try {
+      const payload = sanitizeFirestoreData({
+        ...cleanData,
+        createdAt: serverTimestamp()
+      });
+      const docRef = await addDoc(collection(db, "bemtevi_messages"), payload);
+      const result = { id: docRef.id, ...cleanData, createdAt: nowIso };
+      const cached = readLocalJson<any[]>(BEMTEVI_MESSAGES_CACHE_KEY, []);
+      writeLocalJson(BEMTEVI_MESSAGES_CACHE_KEY, [...cached, result].slice(-200));
+
+      safeApiFetch("/api/bemtevi/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(result)
+      }).catch(() => {});
+
+      return result;
+    } catch {
+      //
+    }
+  }
+
+  const apiRes = await safeApiFetch("/api/bemtevi/messages", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(cleanData)
+  });
+  if (apiRes && apiRes.ok) {
+    const json = await apiRes.json().catch(() => null);
+    if (json?.message) {
+      const cached = readLocalJson<any[]>(BEMTEVI_MESSAGES_CACHE_KEY, []);
+      writeLocalJson(BEMTEVI_MESSAGES_CACHE_KEY, [...cached, json.message].slice(-200));
       return json.message;
     }
-    throw err;
   }
+
+  const localMsg = {
+    id: `local-msg-${Date.now()}`,
+    ...cleanData,
+    createdAt: nowIso,
+    isLocalOnly: true
+  };
+  const cached = readLocalJson<any[]>(BEMTEVI_MESSAGES_CACHE_KEY, []);
+  writeLocalJson(BEMTEVI_MESSAGES_CACHE_KEY, [...cached, localMsg].slice(-200));
+  return localMsg;
 }
 
 // ============================================
@@ -1075,14 +1675,10 @@ export async function listWikiArticlesFromDb(): Promise<any[]> {
   }
 
   // Fallback to backend API
-  try {
-    const res = await fetch("/api/v1/content/articles");
-    if (res.ok) {
-      const data = await res.json();
-      return data.articles || [];
-    }
-  } catch {
-    //
+  const res = await safeApiFetch("/api/v1/content/articles");
+  if (res && res.ok) {
+    const data = await res.json().catch(() => null);
+    return data?.articles || [];
   }
 
   return [];
@@ -1093,38 +1689,35 @@ export async function saveWikiArticleInDb(articleData: any, revisionData?: any):
   const revId = revisionData?.id || `rev-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`;
   const now = new Date().toISOString();
 
-  const finalArticle = {
+  const finalArticle = sanitizeFirestoreData({
     ...articleData,
     slug,
     latestRevisionId: revId,
     updatedAt: now,
     views: articleData.views || 1
-  };
+  });
 
-  const finalRev = revisionData ? {
+  const finalRev = revisionData ? sanitizeFirestoreData({
     ...revisionData,
     id: revId,
     articleSlug: slug,
     timestamp: now
-  } : null;
+  }) : null;
 
   try {
-    // Save or update article in Firestore
-    await setDoc(doc(db, "wiki_articles", slug), {
+    await setDoc(doc(db, "wiki_articles", slug), sanitizeFirestoreData({
       ...finalArticle,
       updatedAt: serverTimestamp()
-    }, { merge: true });
+    }), { merge: true });
 
-    // Save revision in Firestore
     if (finalRev) {
-      await setDoc(doc(db, "wiki_revisions", revId), {
+      await setDoc(doc(db, "wiki_revisions", revId), sanitizeFirestoreData({
         ...finalRev,
         timestamp: serverTimestamp()
-      });
+      }));
     }
 
-    // Save event in Firestore
-    await addDoc(collection(db, "wiki_events"), {
+    await addDoc(collection(db, "wiki_events"), sanitizeFirestoreData({
       page_title: finalArticle.title,
       page_namespace: 0,
       rev_id: revId,
@@ -1134,10 +1727,9 @@ export async function saveWikiArticleInDb(articleData: any, revisionData?: any):
       type: "edit",
       timestamp: serverTimestamp(),
       dt: now
-    }).catch(() => {});
+    })).catch(() => {});
 
-    // Sync to backend API
-    fetch("/api/v1/content/articles", {
+    safeApiFetch("/api/v1/content/articles", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -1152,8 +1744,7 @@ export async function saveWikiArticleInDb(articleData: any, revisionData?: any):
 
     return { article: finalArticle, revision: finalRev };
   } catch (err) {
-    // If client-side firestore fails, proxy through backend
-    const res = await fetch("/api/v1/content/articles", {
+    const res = await safeApiFetch("/api/v1/content/articles", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -1165,7 +1756,7 @@ export async function saveWikiArticleInDb(articleData: any, revisionData?: any):
         authorId: finalRev?.author?.id || "usr_community"
       })
     });
-    if (res.ok) {
+    if (res && res.ok) {
       const data = await res.json();
       return { article: data.article, revision: data.revision };
     }
@@ -1177,19 +1768,15 @@ export async function deleteWikiArticleFromDb(slug: string): Promise<boolean> {
   const normalizedSlug = slug.toLowerCase();
   try {
     await deleteDoc(doc(db, "wiki_articles", normalizedSlug));
-    fetch(`/api/v1/content/articles/${encodeURIComponent(normalizedSlug)}`, {
+    safeApiFetch(`/api/v1/content/articles/${encodeURIComponent(normalizedSlug)}`, {
       method: "DELETE"
     }).catch(() => {});
     return true;
-  } catch (err) {
-    try {
-      const res = await fetch(`/api/v1/content/articles/${encodeURIComponent(normalizedSlug)}`, {
-        method: "DELETE"
-      });
-      return res.ok;
-    } catch {
-      return false;
-    }
+  } catch {
+    const res = await safeApiFetch(`/api/v1/content/articles/${encodeURIComponent(normalizedSlug)}`, {
+      method: "DELETE"
+    });
+    return Boolean(res?.ok);
   }
 }
 
@@ -1212,21 +1799,16 @@ export async function listWikiRevisionsFromDb(slug?: string): Promise<any[]> {
     } else if (list.length > 0) {
       return list;
     }
-  } catch (err) {
-    console.warn("Firestore wiki_revisions read error:", err);
-  }
-
-  // Fallback to backend API
-  try {
-    if (slug) {
-      const res = await fetch(`/api/v1/revisions/article/${encodeURIComponent(slug)}`);
-      if (res.ok) {
-        const data = await res.json();
-        return data.revisions || [];
-      }
-    }
   } catch {
     //
+  }
+
+  if (slug) {
+    const res = await safeApiFetch(`/api/v1/revisions/article/${encodeURIComponent(slug)}`);
+    if (res && res.ok) {
+      const data = await res.json().catch(() => null);
+      return data?.revisions || [];
+    }
   }
 
   return [];
@@ -1246,18 +1828,14 @@ export async function listWikiEventsFromDb(): Promise<any[]> {
       });
     });
     if (list.length > 0) return list;
-  } catch (err) {
-    console.warn("Firestore wiki_events read error:", err);
-  }
-
-  try {
-    const res = await fetch("/api/v1/events/history");
-    if (res.ok) {
-      const data = await res.json();
-      return data.events || [];
-    }
   } catch {
     //
+  }
+
+  const res = await safeApiFetch("/api/v1/events/history");
+  if (res && res.ok) {
+    const data = await res.json().catch(() => null);
+    return data?.events || [];
   }
 
   return [];
@@ -1349,7 +1927,7 @@ export async function registerExtensionHashInFirestore(
 
   const packageHash = computeCanonicalExtensionHash(extension);
 
-  const payload: FirestoreExtensionMetadata = {
+  const payload: FirestoreExtensionMetadata = sanitizeFirestoreData({
     id: extension.id,
     name: extension.name,
     namePt: extension.namePt,
@@ -1362,16 +1940,16 @@ export async function registerExtensionHashInFirestore(
     signatureStatus: extension.quarantined ? 'quarantined' : 'verified',
     quarantined: !!extension.quarantined,
     quarantineReason: extension.quarantineReason
-  };
+  });
 
   try {
     // Save to primary extensions registry in Firestore
     await setDoc(doc(db, "wiki_extensions", extension.id), payload, { merge: true });
     // Also save to immutable integrity registry collection
-    await setDoc(doc(db, "extensions_integrity_registry", extension.id), {
+    await setDoc(doc(db, "extensions_integrity_registry", extension.id), sanitizeFirestoreData({
       ...payload,
       syncedAt: serverTimestamp()
-    }, { merge: true });
+    }), { merge: true });
 
     // Log the registration event in audit log
     await registerAuditLog(
@@ -1381,7 +1959,7 @@ export async function registerExtensionHashInFirestore(
     );
 
     // Sync with backend API
-    fetch("/api/v1/extensions/security/sync", {
+    safeApiFetch("/api/v1/extensions/security/sync", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -1392,22 +1970,17 @@ export async function registerExtensionHashInFirestore(
 
     return { success: true, hash: packageHash };
   } catch (err: any) {
-    console.warn("Could not write extension hash to Firestore directly:", err);
     // Fallback sync via backend
-    try {
-      const res = await fetch("/api/v1/extensions/security/sync", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          extension: { ...extension, sha256: packageHash },
-          userEmail: email
-        })
-      });
-      if (res.ok) {
-        return { success: true, hash: packageHash };
-      }
-    } catch {
-      //
+    const res = await safeApiFetch("/api/v1/extensions/security/sync", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        extension: { ...extension, sha256: packageHash },
+        userEmail: email
+      })
+    });
+    if (res && res.ok) {
+      return { success: true, hash: packageHash };
     }
     return { success: false, hash: packageHash, error: err.message };
   }

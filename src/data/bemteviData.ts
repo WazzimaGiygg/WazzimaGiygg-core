@@ -41,7 +41,10 @@ export interface BemteviPost {
   savesCount: number;
   likedBy: string[];
   savedBy: string[];
+  isEdited?: boolean;
+  isLocalOnly?: boolean;
   createdAt: string;
+  updatedAt?: string;
 }
 
 export interface BemteviComment {
@@ -308,16 +311,66 @@ export const SEED_BEMTEVI_MESSAGES: BemteviDirectMessage[] = [];
  * Calcula tópicos em alta EXCLUSIVAMENTE a partir das postagens reais salvas no banco de dados.
  * Se não houver postagens ou hashtags no banco de dados, nenhum trending fictício é exibido.
  */
+export function extractHashtagsFromText(content: string): string[] {
+  if (!content || typeof content !== 'string') return [];
+  const matches = content.match(/#[a-zA-Z0-9_À-ÿ]+/g) || [];
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const m of matches) {
+    const clean = m.trim();
+    const key = clean.toLowerCase();
+    if (clean.length > 1 && !seen.has(key)) {
+      seen.add(key);
+      result.push(clean);
+    }
+  }
+  return result;
+}
+
+export function normalizeBemteviLink(rawLink: string): { valid: boolean; normalized?: string; error?: string } {
+  const trimmed = (rawLink || '').trim();
+  if (!trimmed) return { valid: true, normalized: undefined };
+
+  const lower = trimmed.toLowerCase();
+  if (lower.startsWith('javascript:') || lower.startsWith('data:') || lower.startsWith('vbscript:')) {
+    return { valid: false, error: 'Protocolo de link não permitido por segurança.' };
+  }
+
+  // Internal portal UID link like ?uid=news_1 or /?uid=news_1
+  if (trimmed.startsWith('?uid=') || trimmed.startsWith('/?uid=')) {
+    return { valid: true, normalized: trimmed.startsWith('/') ? trimmed : `/${trimmed}` };
+  }
+
+  // Relative path starting with /
+  if (trimmed.startsWith('/') && !trimmed.startsWith('//')) {
+    return { valid: true, normalized: trimmed };
+  }
+
+  const candidate = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  try {
+    const parsed = new URL(candidate);
+    if (!parsed.hostname || !parsed.hostname.includes('.')) {
+      return { valid: false, error: 'Informe um link válido (ex: https://wazzimagiygg.com ou ?uid=artigo).' };
+    }
+    return { valid: true, normalized: parsed.toString() };
+  } catch {
+    return { valid: false, error: 'Formato de link inválido. Use https://... ou ?uid=...' };
+  }
+}
+
 export function computeTrendingTopicsFromDbPosts(posts: BemteviPost[]): BemteviTrendingTopic[] {
   const counts = new Map<string, { tag: string; category: string; count: number }>();
   for (const post of posts) {
-    const hashtags = post.content.match(/#[a-zA-Z0-9_À-ÿ]+/g) || [];
-    for (const rawTag of hashtags) {
-      const tag = rawTag.trim();
-      if (!counts.has(tag)) {
-        counts.set(tag, { tag, category: post.category || 'Geral', count: 0 });
+    const fromContent = extractHashtagsFromText(post.content || '');
+    const fromField = Array.isArray(post.tags) ? post.tags : [];
+    const combined = Array.from(new Set([...fromContent, ...fromField]));
+    for (const rawTag of combined) {
+      const tag = rawTag.startsWith('#') ? rawTag.trim() : `#${rawTag.trim()}`;
+      const key = tag.toLowerCase();
+      if (!counts.has(key)) {
+        counts.set(key, { tag, category: post.category || 'Geral', count: 0 });
       }
-      counts.get(tag)!.count += 1;
+      counts.get(key)!.count += 1;
     }
   }
   return Array.from(counts.values())
