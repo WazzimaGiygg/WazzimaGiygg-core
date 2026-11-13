@@ -8,6 +8,7 @@
 
 import { getClientIp, cleanIpAddress } from './ipUtils';
 import { isIpv4InCidr } from './wikimediaIpChecker';
+import { safeApiFetch } from '../../utils/apiClient';
 
 export interface VpnCheckResult {
   ip: string;
@@ -437,7 +438,7 @@ export async function checkClientVpnConnection(forceRefresh = false): Promise<Vp
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 3200);
-    const resp = await fetch('/api/security/check-vpn', {
+    const resp = await safeApiFetch('/api/security/check-vpn', {
       signal: controller.signal,
       headers: {
         'Cache-Control': forceRefresh ? 'no-cache' : 'default',
@@ -445,7 +446,7 @@ export async function checkClientVpnConnection(forceRefresh = false): Promise<Vp
     });
     clearTimeout(timeoutId);
 
-    if (resp.ok) {
+    if (resp && resp.ok) {
       const data = await resp.json();
       if (data && typeof data.ip === 'string') {
         return {
@@ -565,12 +566,12 @@ export async function checkCustomIpForVpn(targetIp: string): Promise<VpnCheckRes
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 3500);
-    const resp = await fetch(`/api/security/check-vpn?ip=${encodeURIComponent(clean)}`, {
+    const resp = await safeApiFetch(`/api/security/check-vpn?ip=${encodeURIComponent(clean)}`, {
       signal: controller.signal,
     });
     clearTimeout(timeoutId);
 
-    if (resp.ok) {
+    if (resp && resp.ok) {
       const data = await resp.json();
       if (data && typeof data.ip === 'string') {
         return {

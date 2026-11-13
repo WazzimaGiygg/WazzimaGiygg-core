@@ -6,6 +6,7 @@
  */
 
 import { getClientIp } from './ipUtils';
+import { safeApiFetch } from '../../utils/apiClient';
 
 export interface WikimediaIpCheckResult {
   isWikimedia: boolean;
@@ -254,12 +255,12 @@ export async function verifyClientIpForLogin(): Promise<WikimediaIpCheckResult> 
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 2500);
-    const resp = await fetch('/api/auth/check-wikimedia-ip', {
+    const resp = await safeApiFetch('/api/auth/check-wikimedia-ip', {
       signal: controller.signal,
     });
     clearTimeout(timeoutId);
 
-    if (resp.ok) {
+    if (resp && resp.ok) {
       const data = await resp.json();
       if (data && typeof data.isWikimedia === 'boolean') {
         return {

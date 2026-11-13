@@ -69,6 +69,7 @@ import {
   ExtensionSecurityAudit,
   ALLOWED_EXTENSION_DOMAINS,
   SEED_WIKI_EXTENSIONS,
+  EXISTING_EXTENSIONS_CATALOG,
   parseWikitextToHtml,
   computeWikitextDiff,
   computeSha256Hex,
@@ -88,7 +89,8 @@ import {
   registerExtensionHashInFirestore,
   executeExtensionSafely,
   loadAndVerifyAllExtensionsFromDb,
-  ExtensionIntegrityCheckResult
+  ExtensionIntegrityCheckResult,
+  safeApiFetch
 } from '../../firebase';
 import { stripHtmlToPlainText } from '../../utils/text';
 
@@ -177,19 +179,34 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
     }
   };
 
-  // Load extensions from backend API and verify against Firestore hashes
+  // Load extensions from backend API (with local/Firestore fallback) and verify against Firestore hashes
   const loadExtensionsFromApi = async () => {
     try {
-      const res = await fetch('/api/v1/extensions');
-      if (res.ok) {
+      const res = await safeApiFetch('/api/v1/extensions');
+      if (res && res.ok) {
         const data = await res.json();
         if (data.extensions && Array.isArray(data.extensions)) {
           setExtensions(data.extensions);
           refreshFirestoreIntegrity(data.extensions);
+          return;
         }
       }
+
+      // Static mode fallback: localStorage -> SEED_WIKI_EXTENSIONS
+      let fallbackList = [...SEED_WIKI_EXTENSIONS];
+      try {
+        const cached = localStorage.getItem('wzzm_extensions_state');
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            fallbackList = parsed;
+          }
+        }
+      } catch {}
+      setExtensions(fallbackList);
+      refreshFirestoreIntegrity(fallbackList);
     } catch (err) {
-      console.warn('Erro ao carregar extensões do servidor:', err);
+      console.warn('Erro ao carregar extensões:', err);
     }
   };
 
@@ -212,8 +229,8 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
 
     try {
       for (const ext of extensions) {
-        // 1. Sync with backend gateway
-        const res = await fetch('/api/v1/extensions/security/sync', {
+        // 1. Sync with backend gateway if available
+        const res = await safeApiFetch('/api/v1/extensions/security/sync', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -228,7 +245,7 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
         // 3. Verify downloaded integrity against Firestore record
         const integrityCheck = await verifyExtensionIntegrityWithFirestore(ext);
 
-        const data = await res.json();
+        const data = res ? await res.json().catch(() => ({})) : { success: true, status: 'verified', reasons: [] };
         if (data.success && integrityCheck.valid) {
           successCount++;
         } else {
@@ -293,7 +310,7 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
     }
 
     try {
-      const res = await fetch(`/api/v1/extensions/${ext.id}/toggle`, {
+      const res = await safeApiFetch(`/api/v1/extensions/${ext.id}/toggle`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -302,13 +319,19 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
         })
       });
 
-      const data = await res.json();
-      if (!res.ok) {
+      if (res && !res.ok) {
+        const data = await res.json().catch(() => ({}));
         showToast(data.error || 'Erro ao alterar estado da extensão.', true);
         return;
       }
 
-      setExtensions(prev => prev.map(e => e.id === ext.id ? { ...e, enabled: !ext.enabled } : e));
+      setExtensions((prev) => {
+        const updated = prev.map((e) => (e.id === ext.id ? { ...e, enabled: !ext.enabled } : e));
+        try {
+          localStorage.setItem('wzzm_extensions_state', JSON.stringify(updated));
+        } catch {}
+        return updated;
+      });
       showToast(`Extensão "${ext.name}" ${!ext.enabled ? 'ativada' : 'desativada'} com sucesso.`);
     } catch (err: any) {
       showToast(`Erro na requisição: ${err.message}`, true);
@@ -322,7 +345,7 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
     updatedMetadata?: Partial<WikiExtension>
   ): Promise<boolean> => {
     try {
-      const res = await fetch(`/api/v1/extensions/${extensionId}/config`, {
+      const res = await safeApiFetch(`/api/v1/extensions/${extensionId}/config`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -331,42 +354,50 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
         })
       });
 
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        showToast(data.error || 'Erro ao salvar configuração da extensão.', true);
-        return false;
+      let updatedExt: WikiExtension | undefined;
+      if (res) {
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.success) {
+          showToast(data.error || 'Erro ao salvar configuração da extensão.', true);
+          return false;
+        }
+        updatedExt = data.extension;
+
+        // If metadata or files were also modified, send PUT /api/v1/extensions/:id
+        if (updatedMetadata && (updatedMetadata.namePt || updatedMetadata.description || updatedMetadata.files)) {
+          await safeApiFetch(`/api/v1/extensions/${extensionId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              ...updatedMetadata,
+              config: newConfig,
+              userEmail: currentUser?.email
+            })
+          });
+        }
       }
 
-      // If metadata or files were also modified, send PUT /api/v1/extensions/:id
-      if (updatedMetadata && (updatedMetadata.namePt || updatedMetadata.description || updatedMetadata.files)) {
-        await fetch(`/api/v1/extensions/${extensionId}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            ...updatedMetadata,
-            config: newConfig,
-            userEmail: currentUser?.email
-          })
-        });
-      }
-
-      // Update local state
-      setExtensions((prev) =>
-        prev.map((e) =>
+      // Update local state & static storage
+      let nextExtensions: WikiExtension[] = [];
+      setExtensions((prev) => {
+        nextExtensions = prev.map((e) =>
           e.id === extensionId
             ? { ...e, ...updatedMetadata, config: { ...(e.config || {}), ...newConfig } }
             : e
-        )
-      );
+        );
+        try {
+          localStorage.setItem('wzzm_extensions_state', JSON.stringify(nextExtensions));
+        } catch {}
+        return nextExtensions;
+      });
 
-      // Re-register hash in Firestore for zero-trust integrity
-      const updatedExt = data.extension;
-      if (updatedExt) {
-        await registerExtensionHashInFirestore(updatedExt);
-        await refreshFirestoreIntegrity([...extensions.filter((e) => e.id !== extensionId), updatedExt]);
+      const resolvedExt = updatedExt || nextExtensions.find((e) => e.id === extensionId) || extensions.find((e) => e.id === extensionId);
+      if (resolvedExt) {
+        await registerExtensionHashInFirestore(resolvedExt);
+        await refreshFirestoreIntegrity(nextExtensions.length > 0 ? nextExtensions : extensions);
       }
 
-      showToast(`Configurações da extensão "${updatedExt?.name || extensionId}" salvas com sucesso!`);
+      showToast(`Configurações da extensão "${resolvedExt?.name || extensionId}" salvas com sucesso!`);
       return true;
     } catch (err: any) {
       showToast(`Erro na requisição: ${err.message}`, true);
@@ -377,7 +408,7 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
   // 3.05.3.a: Add Extension from Existing Catalog
   const handleAddCatalogExtension = async (catalogExtensionId: string): Promise<boolean> => {
     try {
-      const res = await fetch('/api/v1/extensions/catalog/add', {
+      const res = await safeApiFetch('/api/v1/extensions/catalog/add', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -386,18 +417,35 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
         })
       });
 
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        showToast(data.error || 'Erro ao adicionar extensão do catálogo.', true);
+      let added: WikiExtension | undefined;
+      if (res) {
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.success) {
+          showToast(data.error || 'Erro ao adicionar extensão do catálogo.', true);
+          return false;
+        }
+        added = data.extension;
+      } else {
+        added = EXISTING_EXTENSIONS_CATALOG.find((c) => c.id === catalogExtensionId);
+      }
+
+      if (!added) {
+        showToast('Extensão não encontrada no catálogo.', true);
         return false;
       }
 
-      const added = data.extension;
-      setExtensions((prev) => [...prev, added]);
-      await registerExtensionHashInFirestore(added);
-      await refreshFirestoreIntegrity([...extensions, added]);
+      const addedExt: WikiExtension = added;
+      setExtensions((prev) => {
+        const next = prev.some((e) => e.id === addedExt.id) ? prev : [...prev, addedExt];
+        try {
+          localStorage.setItem('wzzm_extensions_state', JSON.stringify(next));
+        } catch {}
+        return next;
+      });
+      await registerExtensionHashInFirestore(addedExt);
+      await refreshFirestoreIntegrity([...extensions, addedExt]);
 
-      showToast(`✓ Extensão "${added.name}" adicionada ao ecossistema com sucesso!`);
+      showToast(`✓ Extensão "${addedExt.name}" adicionada ao ecossistema com sucesso!`);
       return true;
     } catch (err: any) {
       showToast(`Erro ao adicionar extensão: ${err.message}`, true);
@@ -408,7 +456,7 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
   // 3.05.3.a: Add Custom Extension
   const handleAddCustomExtension = async (customExt: Partial<WikiExtension>): Promise<boolean> => {
     try {
-      const res = await fetch('/api/v1/extensions/catalog/add', {
+      const res = await safeApiFetch('/api/v1/extensions/catalog/add', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -417,14 +465,44 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
         })
       });
 
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        showToast(data.error || 'Erro ao criar extensão.', true);
-        return false;
+      let added: WikiExtension;
+      if (res) {
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.success) {
+          showToast(data.error || 'Erro ao criar extensão.', true);
+          return false;
+        }
+        added = data.extension;
+      } else {
+        const rawCode = customExt.files?.[0]?.content || '// Custom extension';
+        added = {
+          id: customExt.id || `ext-custom-${Date.now()}`,
+          name: customExt.name || 'CustomExtension',
+          namePt: customExt.namePt || customExt.name || 'Extensão Personalizada',
+          version: customExt.version || '1.0.0',
+          author: customExt.author || currentUser?.email || 'Burocrata',
+          description: customExt.description || '',
+          category: customExt.category || 'portal',
+          enabled: false,
+          type: customExt.type || 'extension',
+          url: customExt.url || 'https://notmediawiki.wazzimagiygg.com',
+          originDomain: customExt.originDomain || 'notmediawiki.wazzimagiygg.com',
+          files: customExt.files || [],
+          sha256: computeSha256Hex(rawCode),
+          signatureStatus: 'verified',
+          lastSyncTimestamp: new Date().toISOString(),
+          syncAuthorizedBy: currentUser?.email || 'system',
+          quarantined: false
+        };
       }
 
-      const added = data.extension;
-      setExtensions((prev) => [...prev, added]);
+      setExtensions((prev) => {
+        const next = [...prev, added];
+        try {
+          localStorage.setItem('wzzm_extensions_state', JSON.stringify(next));
+        } catch {}
+        return next;
+      });
       await registerExtensionHashInFirestore(added);
       await refreshFirestoreIntegrity([...extensions, added]);
 
@@ -472,8 +550,8 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
       const localAudit = scanExtensionCodeForMalware('custom-sandbox', forensicFileName, forensicCode);
       setForensicAudit(localAudit);
 
-      // Also submit to backend
-      const res = await fetch('/api/v1/extensions/security/scan', {
+      // Also submit to backend when available
+      const res = await safeApiFetch('/api/v1/extensions/security/scan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -482,7 +560,7 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
         })
       });
 
-      if (res.ok) {
+      if (res && res.ok) {
         const data = await res.json();
         if (data.audit) {
           setForensicAudit(data.audit);

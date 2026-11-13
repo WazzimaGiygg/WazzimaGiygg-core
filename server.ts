@@ -2,6 +2,9 @@ import express, { Request, Response } from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
+import { GoogleGenAI } from '@google/genai';
+import { checkIfWikimediaIp, cleanIpAddress } from './src/wiki/utils/wikimediaIpChecker';
+import { evaluateIpLocally } from './src/wiki/utils/vpnChecker';
 import {
   SEED_WIKI_ARTICLES,
   SEED_WIKI_REVISIONS,
@@ -92,6 +95,7 @@ const DATA_CACHE = {
   noticias: loadJsonFile<any[]>('src/data/noticias.json', []),
   artigos: loadJsonFile<any>('src/data/json/artigos.json', { materias: {} }),
   cidadesSancionadas: loadJsonFile<any>('src/data/cidades_sancionadas.json', { cidades_sancionadas: [] }),
+  customArticles: [] as any[],
   messages: [
     {
       id: 'msg_welcome',
@@ -354,15 +358,12 @@ app.get('/api/sanctions', (_req: Request, res: Response) => {
   res.json(DATA_CACHE.cidadesSancionadas);
 });
 
-// 6. Articles API (Querying & Caching)
-app.get('/api/articles', (req: Request, res: Response) => {
-  const { collection = 'wikiworldweb', search = '', limit = '50' } = req.query;
-  const maxLimit = Math.min(parseInt(limit as string, 10) || 50, 100);
+// Helper to assemble articles across all supported collections
+function buildArticlesList(collection: string): any[] {
+  const results: any[] = [];
+  const col = (collection || 'wikiworldweb').toString();
 
-  // Combine curated news and academic resources formatted as articles
-  let results: any[] = [];
-
-  if (collection === 'academico' || collection === 'all') {
+  if (col === 'academico' || col === 'all') {
     const materias = DATA_CACHE.artigos?.materias || {};
     for (const [key, value] of Object.entries<any>(materias)) {
       results.push({
@@ -373,7 +374,7 @@ app.get('/api/articles', (req: Request, res: Response) => {
         criadorEmail: 'academico@wazzimagiygg.com',
         dataCriacao: new Date().toISOString(),
         ultimaEdicao: new Date().toISOString(),
-        visualizacoes: 142 + Math.floor(Math.random() * 50),
+        visualizacoes: 142 + ((key.length * 13) % 50),
         colecao: 'academico',
         link: value.link,
         categoria: value.categoria
@@ -381,7 +382,7 @@ app.get('/api/articles', (req: Request, res: Response) => {
     }
   }
 
-  if (collection === 'wikiworldweb' || collection === 'all') {
+  if (col === 'wikiworldweb' || col === 'all') {
     const news = DATA_CACHE.noticias || [];
     news.forEach((item, index) => {
       results.push({
@@ -396,10 +397,10 @@ app.get('/api/articles', (req: Request, res: Response) => {
         colecao: 'wikiworldweb',
         link: item.link
       });
-    } );
+    });
   }
 
-  if (collection === 'materiadeensaio' || collection === 'all') {
+  if (col === 'materiadeensaio' || col === 'all') {
     results.push(
       {
         id: 'ensaio_1',
@@ -426,7 +427,7 @@ app.get('/api/articles', (req: Request, res: Response) => {
     );
   }
 
-  if (collection === 'uwgbooks' || collection === 'all') {
+  if (col === 'uwgbooks' || col === 'all') {
     results.push(
       {
         id: 'uwg_1',
@@ -453,6 +454,45 @@ app.get('/api/articles', (req: Request, res: Response) => {
     );
   }
 
+  if (col === 'materia' || col === 'all') {
+    const materias = DATA_CACHE.artigos?.materias || {};
+    Object.entries<any>(materias)
+      .slice(0, 8)
+      .forEach(([key, value]) => {
+        results.push({
+          id: `mat_${key}`,
+          titulo: value.titulo || key,
+          descricao: value.descricao || '',
+          conteudo: value.descricao || '',
+          setor: value.categoria || 'Matérias & Referências',
+          criadorEmail: 'redacao@wazzimagiygg.com',
+          dataCriacao: new Date().toISOString(),
+          ultimaEdicao: new Date().toISOString(),
+          visualizacoes: 195,
+          colecao: 'materia',
+          link: value.link
+        });
+      });
+  }
+
+  // Include custom articles persisted in server memory
+  for (const custom of DATA_CACHE.customArticles) {
+    if (col === 'all' || custom.colecao === col) {
+      results.unshift(custom);
+    }
+  }
+
+  return results;
+}
+
+// 6. Articles API (Querying, Creating, Updating, Deleting)
+app.get('/api/articles', (req: Request, res: Response) => {
+  const { collection = 'wikiworldweb', search = '', limit = '50' } = req.query;
+  const maxLimit = Math.min(parseInt(limit as string, 10) || 50, 200);
+  const colStr = typeof collection === 'string' ? collection : 'wikiworldweb';
+
+  let results = buildArticlesList(colStr);
+
   // Filter by query if present
   if (typeof search === 'string' && search.trim().length > 0) {
     const q = search.toLowerCase().trim();
@@ -466,40 +506,78 @@ app.get('/api/articles', (req: Request, res: Response) => {
 
   res.json({
     total: results.length,
-    collection,
+    collection: colStr,
     articles: results.slice(0, maxLimit)
   });
+});
+
+app.post('/api/articles', (req: Request, res: Response) => {
+  const { titulo, descricao, conteudo, setor, criadorEmail, colecao, link } = req.body;
+  if (!titulo || !String(titulo).trim()) {
+    res.status(400).json({ error: 'Título do artigo é obrigatório.' });
+    return;
+  }
+
+  const now = new Date().toISOString();
+  const article = {
+    id: `art_${Date.now().toString(36)}`,
+    titulo: String(titulo).trim(),
+    descricao: String(descricao || conteudo || '').trim(),
+    conteudo: String(conteudo || descricao || '').trim(),
+    setor: setor || 'Geral',
+    criadorEmail: criadorEmail || 'sistema@wazzimagiygg.com',
+    dataCriacao: now,
+    ultimaEdicao: now,
+    visualizacoes: 1,
+    colecao: colecao || 'wikiworldweb',
+    ...(link ? { link } : {})
+  };
+
+  DATA_CACHE.customArticles.unshift(article);
+  res.status(201).json({ success: true, article });
+});
+
+app.put('/api/articles/:id', (req: Request, res: Response) => {
+  const { id } = req.params;
+  const idx = DATA_CACHE.customArticles.findIndex((a) => a.id === id);
+  if (idx === -1) {
+    res.status(404).json({ error: 'Artigo editável não encontrado no servidor.' });
+    return;
+  }
+
+  const updated = {
+    ...DATA_CACHE.customArticles[idx],
+    ...req.body,
+    id,
+    ultimaEdicao: new Date().toISOString()
+  };
+  DATA_CACHE.customArticles[idx] = updated;
+  res.json({ success: true, article: updated });
+});
+
+app.delete('/api/articles/:id', (req: Request, res: Response) => {
+  const { id } = req.params;
+  const beforeLen = DATA_CACHE.customArticles.length;
+  DATA_CACHE.customArticles = DATA_CACHE.customArticles.filter((a) => a.id !== id);
+  if (DATA_CACHE.customArticles.length < beforeLen) {
+    res.json({ success: true, message: `Artigo ${id} removido.` });
+    return;
+  }
+  if (id.startsWith('news_')) {
+    const idx = parseInt(id.replace('news_', ''), 10) - 1;
+    if (idx >= 0 && idx < DATA_CACHE.noticias.length) {
+      DATA_CACHE.noticias.splice(idx, 1);
+      res.json({ success: true, message: `Artigo ${id} removido.` });
+      return;
+    }
+  }
+  res.status(404).json({ error: 'Artigo não encontrado.' });
 });
 
 // 7. Single Article Fetch
 app.get('/api/articles/:id', (req: Request, res: Response) => {
   const { id } = req.params;
-  const articlesList = [
-    ...(DATA_CACHE.noticias || []).map((n, i) => ({
-      id: `news_${i + 1}`,
-      titulo: n.titulo,
-      descricao: n.resumo,
-      setor: 'Notícias & Sociedade',
-      criadorEmail: 'redacao@wazzimagiygg.com',
-      dataCriacao: new Date().toISOString(),
-      ultimaEdicao: new Date().toISOString(),
-      visualizacoes: 300,
-      colecao: 'wikiworldweb'
-    })),
-    ...Object.entries<any>(DATA_CACHE.artigos?.materias || {}).map(([k, v]) => ({
-      id: `acad_${k}`,
-      titulo: v.titulo,
-      descricao: v.descricao,
-      setor: v.categoria || 'Acadêmico',
-      criadorEmail: 'academico@wazzimagiygg.com',
-      dataCriacao: new Date().toISOString(),
-      ultimaEdicao: new Date().toISOString(),
-      visualizacoes: 180,
-      colecao: 'academico'
-    }))
-  ];
-
-  const found = articlesList.find((a) => a.id === id);
+  const found = buildArticlesList('all').find((a) => a.id === id);
   if (found) {
     res.json(found);
   } else {
@@ -703,6 +781,7 @@ app.delete('/api/admin/users/:uid', (req: Request, res: Response) => {
 // Delete article administratively
 app.delete('/api/admin/articles/:id', (req: Request, res: Response) => {
   const { id } = req.params;
+  DATA_CACHE.customArticles = DATA_CACHE.customArticles.filter((a) => a.id !== id);
   // If it is in noticias
   if (id.startsWith('news_')) {
     const idx = parseInt(id.replace('news_', ''), 10) - 1;
@@ -713,7 +792,7 @@ app.delete('/api/admin/articles/:id', (req: Request, res: Response) => {
   res.json({ success: true, message: `Artigo ${id} removido pelo Burocrata.` });
 });
 
-// Update ticket status
+// Update / Delete ticket status
 app.put('/api/tickets/:id', (req: Request, res: Response) => {
   const { id } = req.params;
   const { status } = req.body;
@@ -721,6 +800,17 @@ app.put('/api/tickets/:id', (req: Request, res: Response) => {
   if (ticket) {
     ticket.status = status || 'Concluído';
     res.json({ success: true, ticket });
+  } else {
+    res.status(404).json({ error: 'Ticket não encontrado.' });
+  }
+});
+
+app.delete('/api/tickets/:id', (req: Request, res: Response) => {
+  const { id } = req.params;
+  const initialLen = DATA_CACHE.tickets.length;
+  DATA_CACHE.tickets = DATA_CACHE.tickets.filter((t) => t.id !== id);
+  if (DATA_CACHE.tickets.length < initialLen) {
+    res.json({ success: true, message: 'Ticket removido.' });
   } else {
     res.status(404).json({ error: 'Ticket não encontrado.' });
   }
@@ -1624,6 +1714,16 @@ app.put('/api/v1/extensions/:id', (req: Request, res: Response) => {
   });
 });
 
+app.delete('/api/v1/extensions/:id', (req: Request, res: Response) => {
+  const { id } = req.params;
+  const idx = WIKI_STORE.extensions.findIndex((e) => e.id === id);
+  if (idx === -1) {
+    return res.status(404).json({ error: 'Extensão não encontrada.' });
+  }
+  const [removed] = WIKI_STORE.extensions.splice(idx, 1);
+  res.json({ success: true, removedId: removed.id });
+});
+
 
 // ============================================
 // BEMTEVI SOCIAL NETWORK ENDPOINTS (/api/bemtevi/*)
@@ -1915,6 +2015,222 @@ app.post('/api/bemtevi/messages', (req: Request, res: Response) => {
 
   BEMTEVI_STORE.messages.push(newMsg);
   res.status(201).json({ success: true, message: newMsg });
+});
+
+// ============================================
+// SECURITY & AUTH IP/VPN CHECK ENDPOINTS
+// ============================================
+function extractRequestClientIp(req: Request): string {
+  const queryIp = typeof req.query.ip === 'string' ? req.query.ip : '';
+  if (queryIp.trim()) {
+    return cleanIpAddress(queryIp);
+  }
+  const forwarded = req.headers['x-forwarded-for'];
+  const raw = Array.isArray(forwarded)
+    ? forwarded[0]
+    : typeof forwarded === 'string'
+      ? forwarded.split(',')[0]
+      : req.socket?.remoteAddress || '127.0.0.1';
+  return cleanIpAddress(raw || '127.0.0.1');
+}
+
+app.get('/api/auth/check-wikimedia-ip', (req: Request, res: Response) => {
+  const ip = extractRequestClientIp(req);
+  const result = checkIfWikimediaIp(ip);
+  res.json(result);
+});
+
+app.get('/api/security/check-vpn', (req: Request, res: Response) => {
+  const ip = extractRequestClientIp(req);
+  const result = evaluateIpLocally(ip);
+  res.json(result);
+});
+
+// ============================================
+// GEMINI AI WIKI ENDPOINTS (/api/gemini/*)
+// ============================================
+const DEFAULT_GEMINI_MODEL = 'gemini-2.5-flash';
+const DEFAULT_GEMINI_APPLET_ID = '0a14dc90-3ab3-47bc-8306-ca5bc2953699';
+
+function getServerGeminiClient(): GoogleGenAI | null {
+  const apiKey = process.env.GEMINI_API_KEY?.trim();
+  if (!apiKey || apiKey === 'MY_GEMINI_API_KEY') return null;
+  return new GoogleGenAI({ apiKey });
+}
+
+app.get('/api/gemini/status', (_req: Request, res: Response) => {
+  const client = getServerGeminiClient();
+  res.json({
+    status: client ? 'ready' : 'unconfigured',
+    hasApiKey: !!client,
+    defaultModel: DEFAULT_GEMINI_MODEL,
+    appletId: DEFAULT_GEMINI_APPLET_ID
+  });
+});
+
+app.post('/api/gemini/chat', async (req: Request, res: Response) => {
+  const { message, history = [], context, customSystemInstruction, model, image } = req.body || {};
+  if (!message || typeof message !== 'string') {
+    return res.status(400).json({ error: 'Mensagem é obrigatória.' });
+  }
+
+  const ai = getServerGeminiClient();
+  if (!ai) {
+    return res.status(503).json({
+      error: 'Chave GEMINI_API_KEY não configurada no servidor.',
+      fallbackAvailable: true
+    });
+  }
+
+  try {
+    const contextText = context?.currentArticle?.titulo
+      ? `\nContexto atual do artigo: "${context.currentArticle.titulo}" (${context.currentArticle.categoria || 'Geral'}).`
+      : context?.currentCollection?.titulo
+        ? `\nContexto atual da coleção: "${context.currentCollection.titulo}".`
+        : '';
+
+    const contents: any[] = Array.isArray(history)
+      ? history.slice(-10).map((h: any) => ({
+          role: h.role === 'model' || h.role === 'assistant' ? 'model' : 'user',
+          parts: [{ text: String(h.text || h.content || '') }]
+        }))
+      : [];
+
+    const currentParts: any[] = [{ text: message }];
+    if (image?.data && image?.mimeType) {
+      currentParts.push({
+        inlineData: { data: image.data, mimeType: image.mimeType }
+      });
+    }
+    contents.push({ role: 'user', parts: currentParts });
+
+    const response = await ai.models.generateContent({
+      model: typeof model === 'string' && model.trim() ? model.trim() : DEFAULT_GEMINI_MODEL,
+      contents,
+      config: {
+        systemInstruction: `${customSystemInstruction || 'Você é o assistente editorial da WikiZero / WazzimaGiygg.'}${contextText}`
+      }
+    });
+
+    res.json({
+      reply: response.text || 'Não foi possível gerar resposta no momento.'
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Erro ao consultar o Gemini.' });
+  }
+});
+
+app.post('/api/gemini/generate-article', async (req: Request, res: Response) => {
+  const { topic, category = 'Geral', keywords = '', language = 'Português', userInstructions = '', chatbotId } = req.body || {};
+  if (!topic || typeof topic !== 'string') {
+    return res.status(400).json({ error: 'Tópico do artigo é obrigatório.' });
+  }
+
+  const ai = getServerGeminiClient();
+  if (!ai) {
+    return res.status(503).json({ error: 'Chave GEMINI_API_KEY não configurada no servidor.' });
+  }
+
+  try {
+    const prompt = `Escreva um artigo enciclopédico neutro, estruturado em Wikitext (usando == Seções == e listas quando apropriado), em ${language}, sobre "${topic}" na categoria "${category}". Palavras-chave: ${keywords}. Instruções adicionais: ${userInstructions}.`;
+    const response = await ai.models.generateContent({
+      model: DEFAULT_GEMINI_MODEL,
+      contents: prompt
+    });
+
+    res.json({
+      title: topic.trim(),
+      wikitext: response.text || '',
+      category,
+      chatbotId: chatbotId || DEFAULT_GEMINI_APPLET_ID
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Erro ao gerar artigo com Gemini.' });
+  }
+});
+
+app.post('/api/gemini/generate-collection', async (req: Request, res: Response) => {
+  const { theme, userInstructions = '', chatbotId } = req.body || {};
+  if (!theme || typeof theme !== 'string') {
+    return res.status(400).json({ error: 'Tema da coleção é obrigatório.' });
+  }
+
+  const slug = theme
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+
+  const ai = getServerGeminiClient();
+  if (!ai) {
+    return res.status(503).json({ error: 'Chave GEMINI_API_KEY não configurada no servidor.' });
+  }
+
+  try {
+    const response = await ai.models.generateContent({
+      model: DEFAULT_GEMINI_MODEL,
+      contents: `Gere um JSON puro (sem markdown) com as chaves titulo, descricao (máximo 180 caracteres), categoria, icon (um emoji), e tags (array de 3 a 5 strings) para uma coleção enciclopédica sobre "${theme}". ${userInstructions}`,
+      config: { responseMimeType: 'application/json' }
+    });
+    const parsed = JSON.parse(response.text || '{}');
+    res.json({
+      collection: {
+        titulo: parsed.titulo || theme.trim(),
+        uid: slug || `col-${Date.now()}`,
+        descricao: parsed.descricao || `Coleção temática dedicada a ${theme.trim()}.`,
+        categoria: parsed.categoria || 'Geral',
+        icon: parsed.icon || '📚',
+        tags: Array.isArray(parsed.tags) ? parsed.tags : [theme.trim()]
+      },
+      chatbotId: chatbotId || DEFAULT_GEMINI_APPLET_ID
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Erro ao gerar coleção com Gemini.' });
+  }
+});
+
+app.post('/api/gemini/notebook-synthesize', async (req: Request, res: Response) => {
+  const { sources = [], action = 'full_article', customPrompt = '', targetArticleTitle = '' } = req.body || {};
+  if (!Array.isArray(sources) || sources.length === 0) {
+    return res.status(400).json({ error: 'Ao menos uma fonte é obrigatória para síntese.' });
+  }
+
+  const ai = getServerGeminiClient();
+  if (!ai) {
+    return res.status(503).json({ error: 'Chave GEMINI_API_KEY não configurada no servidor.' });
+  }
+
+  try {
+    const sourcesText = sources
+      .map((s: any, idx: number) => `Fonte ${idx + 1} (${s.title || 'Sem título'}):\n${String(s.content || '').slice(0, 6000)}`)
+      .join('\n\n---\n\n');
+
+    const response = await ai.models.generateContent({
+      model: DEFAULT_GEMINI_MODEL,
+      contents: `Ação: ${action}. Título alvo: ${targetArticleTitle || 'Artigo sintetizado'}. Instrução extra: ${customPrompt}.\n\nFontes:\n${sourcesText}\n\nRetorne JSON puro com: { "wikitext": "...", "summary": "...", "suggestedTitle": "...", "suggestedCategory": "..." }`,
+      config: { responseMimeType: 'application/json' }
+    });
+
+    const parsed = JSON.parse(response.text || '{}');
+    res.json({
+      wikitext: parsed.wikitext || '',
+      summary: parsed.summary || 'Síntese gerada com sucesso.',
+      suggestedTitle: parsed.suggestedTitle || targetArticleTitle || 'Artigo do Notebook',
+      suggestedCategory: parsed.suggestedCategory || 'Geral'
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Erro ao sintetizar com Gemini Notebook.' });
+  }
+});
+
+// Explicit JSON 404 handler for any unknown /api/* route (prevents SPA HTML fallthrough)
+app.all('/api/*', (req: Request, res: Response) => {
+  res.status(404).json({
+    error: 'Endpoint de API não encontrado.',
+    method: req.method,
+    path: req.originalUrl
+  });
 });
 
 // ============================================

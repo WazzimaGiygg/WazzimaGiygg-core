@@ -31,6 +31,8 @@ import {
 import noticiasSeed from "./data/noticias.json";
 import artigosSeed from "./data/json/artigos.json";
 import cidadesSancionadasSeed from "./data/cidades_sancionadas.json";
+import { isBackendApiAvailable, safeApiFetch } from "./utils/apiClient";
+export { isBackendApiAvailable, safeApiFetch };
 
 // The user's specific Firebase config from the original repository
 export const firebaseConfig = {
@@ -85,58 +87,6 @@ export function sanitizeFirestoreData<T>(value: T): T {
   }
 
   return value;
-}
-
-let backendApiCache: { available: boolean; checkedAt: number } | null = null;
-let backendProbePromise: Promise<boolean> | null = null;
-
-/**
- * Probes /api/health once (cached 60s) so static deployments (without server.ts)
- * do not repeatedly emit 404 console errors on every /api/* route.
- */
-export async function isBackendApiAvailable(): Promise<boolean> {
-  const now = Date.now();
-  if (backendApiCache && now - backendApiCache.checkedAt < 60000) {
-    return backendApiCache.available;
-  }
-  if (backendProbePromise) {
-    return backendProbePromise;
-  }
-
-  backendProbePromise = (async () => {
-    try {
-      const res = await fetch("/api/health", {
-        method: "GET",
-        headers: { Accept: "application/json" }
-      });
-      const contentType = res.headers.get("content-type") || "";
-      if (res.ok && contentType.includes("application/json")) {
-        const json = await res.json().catch(() => null);
-        const available = Boolean(json && json.status === "ok");
-        backendApiCache = { available, checkedAt: Date.now() };
-        return available;
-      }
-      backendApiCache = { available: false, checkedAt: Date.now() };
-      return false;
-    } catch {
-      backendApiCache = { available: false, checkedAt: Date.now() };
-      return false;
-    } finally {
-      backendProbePromise = null;
-    }
-  })();
-
-  return backendProbePromise;
-}
-
-export async function safeApiFetch(url: string, options?: RequestInit): Promise<Response | null> {
-  const available = await isBackendApiAvailable();
-  if (!available) return null;
-  try {
-    return await fetch(url, options);
-  } catch {
-    return null;
-  }
 }
 
 function readLocalJson<T>(key: string, fallback: T): T {

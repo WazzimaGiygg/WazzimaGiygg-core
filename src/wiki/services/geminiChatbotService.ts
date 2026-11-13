@@ -2,6 +2,7 @@ import { GeminiChatbotConfig, GeminiChatMessage, UserProfile } from '../types';
 import { getDbSafe } from './firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { GeminiQuotaService } from './geminiQuotaService';
+import { safeApiFetch } from '../../utils/apiClient';
 
 export const DEFAULT_GEMINI_CHATBOT_CONFIG: GeminiChatbotConfig = {
   chatbotId: '0a14dc90-3ab3-47bc-8306-ca5bc2953699', // Google AI Studio Applet / Chatbot ID padrão
@@ -114,9 +115,9 @@ export class GeminiChatbotService {
     appletId: string;
   }> {
     try {
-      const res = await fetch('/api/gemini/status');
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}`);
+      const res = await safeApiFetch('/api/gemini/status');
+      if (!res || !res.ok) {
+        throw new Error(res ? `HTTP ${res.status}` : 'Backend offline');
       }
       return await res.json();
     } catch (err) {
@@ -194,12 +195,18 @@ export class GeminiChatbotService {
       isPremium: !!(params.user?.isGeminiPremium || params.user?.geminiPlan === 'premium'),
     };
 
-    const res = await fetch('/api/gemini/chat', {
+    const res = await safeApiFetch('/api/gemini/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
       signal: params.signal,
     });
+
+    if (!res) {
+      return {
+        reply: 'O assistente Gemini requer o servidor backend Express ativo (/api/gemini/chat). No momento a aplicação está operando em modo estático/offline.',
+      };
+    }
 
     if (!res.ok) {
       const errorData = await res.json().catch(() => ({}));
@@ -243,11 +250,15 @@ export class GeminiChatbotService {
       chatbotId: config.chatbotId,
     };
 
-    const res = await fetch('/api/gemini/generate-article', {
+    const res = await safeApiFetch('/api/gemini/generate-article', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
+
+    if (!res) {
+      throw new Error('Serviço /api/gemini/generate-article indisponível em hospedagem estática.');
+    }
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
@@ -282,11 +293,15 @@ export class GeminiChatbotService {
       chatbotId: config.chatbotId,
     };
 
-    const res = await fetch('/api/gemini/generate-collection', {
+    const res = await safeApiFetch('/api/gemini/generate-collection', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
+
+    if (!res) {
+      throw new Error('Serviço /api/gemini/generate-collection indisponível em hospedagem estática.');
+    }
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));

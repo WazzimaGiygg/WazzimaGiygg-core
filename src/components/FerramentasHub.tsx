@@ -37,7 +37,7 @@ import {
   Award
 } from "lucide-react";
 import { collection, addDoc, serverTimestamp } from "firebase/firestore";
-import { db, registerAuditLog, updateUserTeacherStatus, updateUserAdminStatus, updateUserBanStatus, AppUser, Article } from "../firebase";
+import { db, registerAuditLog, updateUserTeacherStatus, updateUserAdminStatus, updateUserBanStatus, AppUser, Article, safeApiFetch } from "../firebase";
 import { FERRAMENTAS_LIST, FerramentaItem } from "../data/ferramentasSource";
 import {
   CostItem,
@@ -209,11 +209,11 @@ export default function FerramentasHub({
     const fetchToolsData = async () => {
       try {
         const [cRes, rRes, fRes, sRes, bRes] = await Promise.all([
-          fetch("/api/admin/costs").catch(() => null),
-          fetch("/api/admin/redirects").catch(() => null),
-          fetch("/api/admin/forum").catch(() => null),
-          fetch("/api/admin/surveys").catch(() => null),
-          fetch("/api/admin/blog").catch(() => null)
+          safeApiFetch("/api/admin/costs"),
+          safeApiFetch("/api/admin/redirects"),
+          safeApiFetch("/api/admin/forum"),
+          safeApiFetch("/api/admin/surveys"),
+          safeApiFetch("/api/admin/blog")
         ]);
 
         if (cRes && cRes.ok) {
@@ -272,18 +272,18 @@ export default function FerramentasHub({
     });
     showToast("Custo operacional adicionado com sucesso!");
 
-    // Sync to backend
-    fetch("/api/admin/costs", {
+    // Sync to backend when available
+    safeApiFetch("/api/admin/costs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(item)
-    }).catch(() => {});
+    });
   };
 
   const handleDeleteCost = (id: string) => {
     setCosts((prev) => prev.filter((c) => c.id !== id));
     showToast("Registro de custo removido.");
-    fetch(`/api/admin/costs/${id}`, { method: "DELETE" }).catch(() => {});
+    safeApiFetch(`/api/admin/costs/${id}`, { method: "DELETE" });
   };
 
   const handleAddRedirect = async (e: React.FormEvent) => {
@@ -307,17 +307,17 @@ export default function FerramentasHub({
     setNewRedirectForm({ slug: "", urlDestino: "", titulo: "", comAviso: false });
     showToast(`Redirecionador "/r/${slugClean}" criado com sucesso!`);
 
-    fetch("/api/admin/redirects", {
+    safeApiFetch("/api/admin/redirects", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(item)
-    }).catch(() => {});
+    });
   };
 
   const handleDeleteRedirect = (id: string) => {
     setRedirects((prev) => prev.filter((r) => r.id !== id));
     showToast("Redirecionamento excluído.");
-    fetch(`/api/admin/redirects/${id}`, { method: "DELETE" }).catch(() => {});
+    safeApiFetch(`/api/admin/redirects/${id}`, { method: "DELETE" });
   };
 
   const handleRegisterProfessor = async (e: React.FormEvent) => {
@@ -326,7 +326,7 @@ export default function FerramentasHub({
 
     setIsSubmittingTeacher(true);
     try {
-      const res = await fetch("/api/admin/users", {
+      const res = await safeApiFetch("/api/admin/users", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -338,7 +338,7 @@ export default function FerramentasHub({
         })
       });
 
-      if (res.ok) {
+      if (!res || res.ok) {
         showToast(`Professor(a) ${professorForm.name} cadastrado(a) com sucesso com cargo Docente.`);
         setProfessorForm({
           name: "",

@@ -2,6 +2,7 @@ import { GeminiNotebookItem, GeminiNotebookSource, GeminiNotebookNote, UserProfi
 import { getDbSafe } from './firebase';
 import { collection, doc, getDoc, getDocs, setDoc, deleteDoc, query, where } from 'firebase/firestore';
 import { GeminiQuotaService } from './geminiQuotaService';
+import { safeApiFetch } from '../../utils/apiClient';
 
 const LOCAL_STORAGE_KEY = 'wikizero_gemini_notebooks_v1';
 
@@ -154,11 +155,15 @@ export class GeminiNotebookService {
       isPremium: !!(params.user?.isGeminiPremium || params.user?.geminiPlan === 'premium'),
     };
 
-    const res = await fetch('/api/gemini/notebook-synthesize', {
+    const res = await safeApiFetch('/api/gemini/notebook-synthesize', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
+
+    if (!res) {
+      throw new Error('Serviço /api/gemini/notebook-synthesize indisponível em hospedagem estática.');
+    }
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
