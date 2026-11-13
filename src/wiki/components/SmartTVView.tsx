@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import HighlightedText from '../../components/HighlightedText';
 import { 
   Tv, 
   Volume2, 
@@ -198,10 +199,11 @@ export const SmartTVView: React.FC<SmartTVViewProps> = ({
     return safeArticles.filter((a) => {
       if (!a) return false;
       const matchCat = selectedCategory === 'Todas' || a.categoria === selectedCategory;
+      const q = searchQuery.trim().toLowerCase();
       const matchSearch =
-        !searchQuery.trim() ||
-        (a.titulo || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (a.descricao || '').toLowerCase().includes(searchQuery.toLowerCase());
+        !q ||
+        (a.titulo || '').toLowerCase().includes(q) ||
+        (a.descricao || '').toLowerCase().includes(q);
       return matchCat && matchSearch;
     });
   }, [articles, selectedCategory, searchQuery]);
@@ -788,8 +790,20 @@ export const SmartTVView: React.FC<SmartTVViewProps> = ({
                   <span className="text-[10px] font-bold uppercase tracking-wider text-blue-400">
                     {art.categoria || 'Geral'}
                   </span>
-                  <h4 className="text-base font-bold text-white">{art.titulo}</h4>
-                  <p className="text-xs text-slate-300 line-clamp-2">{cleanSummary(art.descricao, 90)}</p>
+                  <h4 className="text-base font-bold text-white">
+                    <HighlightedText
+                      text={art.titulo}
+                      query={searchQuery}
+                      highlightClassName="bg-amber-400 text-slate-950 px-1 rounded-[2px]"
+                    />
+                  </h4>
+                  <p className="text-xs text-slate-300 line-clamp-2">
+                    <HighlightedText
+                      text={cleanSummary(art.descricao, 90)}
+                      query={searchQuery}
+                      highlightClassName="bg-amber-400 text-slate-950 px-1 rounded-[2px]"
+                    />
+                  </p>
                 </div>
               ))}
             </div>
@@ -831,8 +845,20 @@ export const SmartTVView: React.FC<SmartTVViewProps> = ({
                   }}
                   className="p-5 rounded-2xl bg-white/5 hover:bg-blue-900/30 border border-white/10 hover:border-blue-400 cursor-pointer transition space-y-2"
                 >
-                  <h4 className="text-base font-bold text-white">{art.titulo}</h4>
-                  <p className="text-xs text-slate-300 line-clamp-3">{cleanSummary(art.descricao, 110)}</p>
+                  <h4 className="text-base font-bold text-white">
+                    <HighlightedText
+                      text={art.titulo}
+                      query={searchQuery}
+                      highlightClassName="bg-amber-400 text-slate-950 px-1 rounded-[2px]"
+                    />
+                  </h4>
+                  <p className="text-xs text-slate-300 line-clamp-3">
+                    <HighlightedText
+                      text={cleanSummary(art.descricao, 110)}
+                      query={searchQuery}
+                      highlightClassName="bg-amber-400 text-slate-950 px-1 rounded-[2px]"
+                    />
+                  </p>
                 </div>
               ))}
               {filteredArticles.length === 0 && (

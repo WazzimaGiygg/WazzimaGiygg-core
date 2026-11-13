@@ -90,6 +90,7 @@ import ExternalRedirectModal from "./components/ExternalRedirectModal";
 import ExtensionConfigModal from "./components/ExtensionConfigModal";
 import { WikiExtension, SEED_WIKI_EXTENSIONS } from "./data/notMediaWikiData";
 import { exportArticleFormattedPdf } from "./utils/pdfExport";
+import HighlightedText from "./components/HighlightedText";
 
 export default function App() {
   // Authentication & Role States
@@ -706,7 +707,7 @@ export default function App() {
     }
 
     if (searchTerm.trim()) {
-      const q = searchTerm.toLowerCase();
+      const q = searchTerm.trim().toLowerCase();
       list = list.filter(
         (a) =>
           a.titulo.toLowerCase().includes(q) ||
@@ -1416,7 +1417,7 @@ export default function App() {
                       {/* Top tag & views */}
                       <div className="flex items-center justify-between text-[10px] font-mono mb-2 text-stone-600">
                         <span className="bg-[#EBEAE8] text-[#141414] font-bold px-2 py-0.5 border border-stone-300 uppercase tracking-wider">
-                          {article.setor || "Geral"}
+                          <HighlightedText text={article.setor || "Geral"} query={searchTerm} />
                         </span>
                         <span className="flex items-center gap-1 font-mono text-stone-500">
                           <Eye className="w-3 h-3" />
@@ -1429,12 +1430,15 @@ export default function App() {
                         onClick={() => handleOpenArticle(article)}
                         className="text-lg font-editorial font-bold text-stone-950 group-hover:text-amber-800 transition-colors leading-snug cursor-pointer mb-2"
                       >
-                        {article.titulo}
+                        <HighlightedText text={article.titulo} query={searchTerm} />
                       </h3>
 
                       {/* Excerpt */}
                       <p className="text-xs text-stone-700 leading-relaxed font-serif line-clamp-4 mb-4">
-                        {stripHtmlToPlainText(article.descricao) || "Sem resumo disponível."}
+                        <HighlightedText
+                          text={stripHtmlToPlainText(article.descricao) || "Sem resumo disponível."}
+                          query={searchTerm}
+                        />
                       </p>
                     </div>
 

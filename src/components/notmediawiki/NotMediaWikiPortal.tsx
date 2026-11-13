@@ -93,6 +93,7 @@ import {
   safeApiFetch
 } from '../../firebase';
 import { stripHtmlToPlainText } from '../../utils/text';
+import HighlightedText from '../HighlightedText';
 
 interface NotMediaWikiPortalProps {
   currentUser?: any;
@@ -899,10 +900,11 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
   // Filtered articles for Search
   const filteredArticles = useMemo(() => {
     if (!searchQuery.trim()) return articles;
-    const q = searchQuery.toLowerCase();
+    const q = searchQuery.trim().toLowerCase();
     return articles.filter(
       (a) =>
         a.title.toLowerCase().includes(q) ||
+        a.summary.toLowerCase().includes(q) ||
         a.wikitext.toLowerCase().includes(q) ||
         a.categories.some((c) => c.toLowerCase().includes(q))
     );
@@ -1111,11 +1113,11 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
                       </div>
 
                       <h4 className="font-editorial text-lg font-bold text-stone-950 group-hover:text-blue-800 transition-colors">
-                        {art.title}
+                        <HighlightedText text={art.title} query={searchQuery} />
                       </h4>
 
                       <p className="text-xs font-serif text-stone-600 line-clamp-3 mt-1.5 leading-relaxed">
-                        {art.summary}
+                        <HighlightedText text={art.summary} query={searchQuery} />
                       </p>
                     </div>
 
