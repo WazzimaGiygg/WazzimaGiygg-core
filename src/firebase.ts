@@ -32,7 +32,13 @@ import noticiasSeed from "./data/noticias.json";
 import artigosSeed from "./data/json/artigos.json";
 import cidadesSancionadasSeed from "./data/cidades_sancionadas.json";
 import { isBackendApiAvailable, safeApiFetch } from "./utils/apiClient";
-export { isBackendApiAvailable, safeApiFetch };
+import {
+  assertValidPortalArticlePayload,
+  assertValidWikiArticlePayload,
+  ArticleValidationError,
+  PortalArticleInput
+} from "./utils/articleSchema";
+export { isBackendApiAvailable, safeApiFetch, ArticleValidationError };
 
 // The user's specific Firebase config from the original repository
 export const firebaseConfig = {
@@ -446,30 +452,31 @@ export async function loadCollectionContent(collectionName: string): Promise<Art
   return getStaticCollectionArticles(collectionName);
 }
 
-export async function createArticle(articleData: {
-  titulo: string;
-  descricao: string;
-  setor: string;
-  criadorEmail: string;
-  colecao: string;
-}): Promise<string | null> {
-  const criador = articleData.criadorEmail?.toLowerCase().trim();
-  if (!isAuthorizedPublisher(criador)) {
-    console.error("Tentativa de publicação não autorizada pelo e-mail:", criador);
+export async function createArticle(articleData: PortalArticleInput): Promise<string | null> {
+  // Validação rigorosa de esquema no frontend ANTES de qualquer operação no Firestore
+  const validated = assertValidPortalArticlePayload(articleData);
+
+  if (!isAuthorizedPublisher(validated.criadorEmail)) {
+    console.error("Tentativa de publicação não autorizada pelo e-mail:", validated.criadorEmail);
     throw new Error(
       "Acesso negado: Qualquer publicação de artigo só deve ser feita pelas contas dos e-mails wazzimagiygg@gmail.com e pedrohenriquecardonaperes@gmail.com"
     );
   }
 
   const payload = sanitizeFirestoreData({
-    ...articleData,
-    visualizacoes: 1,
+    titulo: validated.titulo,
+    descricao: validated.descricao,
+    setor: validated.setor,
+    criadorEmail: validated.criadorEmail,
+    colecao: validated.colecao,
+    ...(validated.link ? { link: validated.link } : {}),
+    visualizacoes: validated.visualizacoes,
     dataCriacao: serverTimestamp(),
     ultimaEdicao: serverTimestamp()
   });
 
   try {
-    const docRef = await addDoc(collection(db, articleData.colecao), payload);
+    const docRef = await addDoc(collection(db, validated.colecao), payload);
     // Also save to generic articles collection for global search
     await addDoc(collection(db, "artigos"), { ...payload, originalId: docRef.id });
     return docRef.id;
@@ -1635,16 +1642,24 @@ export async function listWikiArticlesFromDb(): Promise<any[]> {
 }
 
 export async function saveWikiArticleInDb(articleData: any, revisionData?: any): Promise<{ article: any; revision?: any }> {
-  const slug = (articleData.slug || articleData.title.trim().replace(/\s+/g, "_")).toLowerCase();
+  // Validação rigorosa de esquema antes de enviar verbete Wiki para o Firestore
+  const validatedWiki = assertValidWikiArticlePayload(articleData);
+  const slug = validatedWiki.slug;
   const revId = revisionData?.id || `rev-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`;
   const now = new Date().toISOString();
 
   const finalArticle = sanitizeFirestoreData({
     ...articleData,
+    id: validatedWiki.id,
     slug,
+    title: validatedWiki.title,
+    namespace: validatedWiki.namespace,
+    wikitext: validatedWiki.wikitext,
+    summary: validatedWiki.summary,
+    categories: validatedWiki.categories,
+    views: validatedWiki.views,
     latestRevisionId: revId,
-    updatedAt: now,
-    views: articleData.views || 1
+    updatedAt: now
   });
 
   const finalRev = revisionData ? sanitizeFirestoreData({

@@ -17,7 +17,7 @@ function escapeRegExp(str: string): string {
 export default function HighlightedText({
   text,
   query,
-  highlightClassName = 'bg-amber-200/90 text-stone-950 px-0.5 rounded-[2px]'
+  highlightClassName = 'bg-amber-200/90 text-stone-950 dark:bg-amber-400/90 dark:text-stone-950 px-0.5 rounded-[2px]'
 }: HighlightedTextProps) {
   const safeText = text ?? '';
   const trimmedQuery = (query ?? '').trim();

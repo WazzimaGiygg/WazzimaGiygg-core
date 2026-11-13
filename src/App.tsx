@@ -43,7 +43,9 @@ import {
   FileDown,
   MessageCircle,
   Flame,
-  Award
+  Award,
+  Sun,
+  Moon
 } from "lucide-react";
 import jsPDF from "jspdf";
 
@@ -91,8 +93,17 @@ import ExtensionConfigModal from "./components/ExtensionConfigModal";
 import { WikiExtension, SEED_WIKI_EXTENSIONS } from "./data/notMediaWikiData";
 import { exportArticleFormattedPdf } from "./utils/pdfExport";
 import HighlightedText from "./components/HighlightedText";
+import {
+  ALLOWED_ARTICLE_COLLECTIONS,
+  validatePortalArticlePayload,
+  ArticleValidationError
+} from "./utils/articleSchema";
+import { useTheme } from "./hooks/useTheme";
 
 export default function App() {
+  // Persistent Theme State (Light / Dark)
+  const { theme, isDark, toggleTheme } = useTheme();
+
   // Authentication & Role States
   const [user, setUser] = useState<any | null>(null);
   const [isGuestUser, setIsGuestUser] = useState(false);
@@ -133,6 +144,7 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [articleFormErrors, setArticleFormErrors] = useState<Record<string, string>>({});
   const [isDiagnosticsOpen, setIsDiagnosticsOpen] = useState(false);
   const [toast, setToast] = useState<{ message: string; isError: boolean } | null>(null);
   const [citationCopied, setCitationCopied] = useState(false);
@@ -932,7 +944,12 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-[#F8F7F4] text-[#141414] flex flex-col font-sans selection:bg-[#141414] selection:text-white">
+    <div
+      data-theme={theme}
+      className={`${
+        isDark ? "dark theme-dark" : "theme-light"
+      } min-h-screen wzzm-theme-canvas bg-[#F8F7F4] dark:bg-[#111110] text-[#141414] dark:text-[#F5F4F0] flex flex-col font-sans selection:bg-[#141414] selection:text-white dark:selection:bg-amber-400 dark:selection:text-stone-950 transition-colors duration-150`}
+    >
       {/* 3.05.3.e: Top Banner de Manutenção Exclusivo para o Burocrata */}
       {isMaintenanceActive && isBurocrataUser && (
         <div className="bg-rose-700 text-white px-4 py-2.5 text-xs font-mono font-bold flex flex-col sm:flex-row items-center justify-between gap-2 border-b-2 border-rose-950 shadow-md sticky top-0 z-50">
@@ -976,11 +993,38 @@ export default function App() {
             </span>
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3 sm:gap-4 flex-wrap justify-center">
+            {/* Persistent Theme Switcher (Claro / Escuro) */}
+            <button
+              type="button"
+              onClick={() => {
+                const nextLabel = isDark ? "Claro" : "Escuro";
+                toggleTheme();
+                showToast(`Tema ${nextLabel} ativado.`);
+              }}
+              aria-pressed={isDark}
+              aria-label={isDark ? "Alternar para tema claro" : "Alternar para tema escuro"}
+              title={
+                isDark
+                  ? "Tema escuro ativo (salvo localmente). Clique para alternar para tema claro."
+                  : "Tema claro ativo (salvo localmente). Clique para alternar para tema escuro."
+              }
+              className="flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-mono font-bold uppercase tracking-wider whitespace-nowrap shrink-0 rounded border transition-colors cursor-pointer bg-stone-800 hover:bg-stone-700 text-amber-200 border-stone-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
+            >
+              {isDark ? (
+                <Sun className="w-3.5 h-3.5 text-amber-300 shrink-0" aria-hidden="true" />
+              ) : (
+                <Moon className="w-3.5 h-3.5 text-sky-300 shrink-0" aria-hidden="true" />
+              )}
+              <span>{isDark ? "Tema Claro" : "Tema Escuro"}</span>
+            </button>
+
+            <span className="text-stone-700 hidden sm:inline">|</span>
+
             {/* REGRAS LGPD À AMOSTRA (CIÊNCIA ABSOLUTA) */}
             <button
               onClick={() => setIsLgpdModalOpen(true)}
-              className="flex items-center gap-1.5 bg-emerald-950/90 hover:bg-emerald-900 text-emerald-300 border border-emerald-500 px-2.5 py-0.5 text-[10px] font-bold font-mono uppercase tracking-wider transition-all cursor-pointer shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]"
+              className="flex items-center gap-1.5 bg-emerald-950/90 hover:bg-emerald-900 text-emerald-300 border border-emerald-500 px-2.5 py-0.5 text-[10px] font-bold font-mono uppercase tracking-wider transition-all cursor-pointer shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] whitespace-nowrap shrink-0"
               title="Regras da LGPD (Lei 13.709/18) à mostra para ciência absoluta de cumprimento"
             >
               <Scale className="w-3 h-3 text-emerald-400 shrink-0" />
@@ -995,7 +1039,7 @@ export default function App() {
 
             <button
               onClick={() => setIsDiagnosticsOpen(!isDiagnosticsOpen)}
-              className="flex items-center gap-1.5 hover:text-white text-stone-400 transition-colors cursor-pointer text-[10px]"
+              className="flex items-center gap-1.5 hover:text-white text-stone-400 transition-colors cursor-pointer text-[10px] whitespace-nowrap shrink-0"
               title="Ver status da API e banco de dados"
             >
               <Database className="w-3 h-3 text-emerald-400" />
@@ -1022,15 +1066,15 @@ export default function App() {
 
               {/* Notification Popover */}
               {isNotifDropdownOpen && (
-                <div className="absolute right-0 mt-2 w-80 bg-white text-[#141414] border-2 border-[#141414] shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] z-50 p-4">
-                  <div className="flex items-center justify-between border-b pb-2 mb-3">
+                <div className="absolute right-0 mt-2 w-80 bg-white dark:bg-[#1A1A18] text-[#141414] dark:text-[#F5F4F0] border-2 border-[#141414] dark:border-[#3E3D38] shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] z-50 p-4">
+                  <div className="flex items-center justify-between border-b dark:border-[#2E2D28] pb-2 mb-3">
                     <span className="font-bold text-xs uppercase tracking-wider font-mono">
                       Notificações ({notifications.length})
                     </span>
                     {unreadNotificationsCount > 0 && (
                       <button
                         onClick={() => markAllNotificationsAsRead(notifications)}
-                        className="text-[10px] text-amber-700 hover:underline font-mono"
+                        className="text-[10px] text-amber-700 dark:text-amber-400 hover:underline font-mono"
                       >
                         Marcar lidas
                       </button>
@@ -1039,21 +1083,23 @@ export default function App() {
 
                   <div className="max-h-64 overflow-y-auto space-y-2">
                     {notifications.length === 0 ? (
-                      <p className="text-xs text-stone-500 py-3 text-center">Nenhuma notificação.</p>
+                      <p className="text-xs text-stone-500 dark:text-stone-400 py-3 text-center">Nenhuma notificação.</p>
                     ) : (
                       notifications.map((n) => (
                         <div
                           key={n.id}
                           onClick={() => markNotificationAsRead(n.id)}
                           className={`p-2.5 border text-xs cursor-pointer transition-colors ${
-                            n.lida ? "bg-stone-50 border-stone-200" : "bg-amber-50 border-amber-300 font-medium"
+                            n.lida
+                              ? "bg-stone-50 dark:bg-[#242320] border-stone-200 dark:border-[#34332F]"
+                              : "bg-amber-50 dark:bg-amber-950/50 border-amber-300 dark:border-amber-700 font-medium"
                           }`}
                         >
-                          <div className="flex items-center justify-between text-[10px] text-stone-500 mb-1">
+                          <div className="flex items-center justify-between text-[10px] text-stone-500 dark:text-stone-400 mb-1">
                             <span className="font-bold uppercase tracking-wider">{n.titulo}</span>
                             <span>{n.timestamp}</span>
                           </div>
-                          <p className="text-[11px] text-stone-800 leading-snug">{n.mensagem}</p>
+                          <p className="text-[11px] text-stone-800 dark:text-stone-200 leading-snug">{n.mensagem}</p>
                         </div>
                       ))
                     )}
@@ -1140,10 +1186,10 @@ export default function App() {
       {/* ============================================ */}
       {/* 2. MAIN NEWSPAPER MASTHEAD */}
       {/* ============================================ */}
-      <section className="bg-[#F8F7F4] border-b-4 border-[#141414] pt-8 pb-5 px-4">
+      <section className="bg-[#F8F7F4] dark:bg-[#151513] border-b-4 border-[#141414] dark:border-[#3E3D38] pt-8 pb-5 px-4 transition-colors">
         <div className="max-w-7xl mx-auto text-center">
           {/* Top Vintage Ornaments */}
-          <div className="flex items-center justify-center gap-4 text-xs font-mono uppercase tracking-widest text-stone-600 mb-2">
+          <div className="flex items-center justify-center gap-4 text-xs font-mono uppercase tracking-widest text-stone-600 dark:text-stone-400 mb-2">
             <span>Volume VII</span>
             <span>•</span>
             <span>Liberdade de Expressão & Conhecimento Aberto</span>
@@ -1151,8 +1197,8 @@ export default function App() {
             <span>Edição Web & TypeScript</span>
           </div>
 
-          <div className="border-t border-b border-[#141414] py-1 my-2">
-            <div className="border-t border-b border-[#141414] py-3">
+          <div className="border-t border-b border-[#141414] dark:border-[#3E3D38] py-1 my-2">
+            <div className="border-t border-b border-[#141414] dark:border-[#3E3D38] py-3">
               <div className="flex items-center justify-center mb-2">
                 <img
                   src="/favicom.png"
@@ -1160,24 +1206,24 @@ export default function App() {
                   className="w-12 h-12 object-contain drop-shadow-sm"
                 />
               </div>
-              <h1 className="text-4xl sm:text-6xl md:text-7xl lg:text-8xl font-black font-editorial tracking-tight uppercase leading-none text-[#141414]">
-                WAZZIMA<span className="text-[#B91C1C]">GIYGG</span>
+              <h1 className="text-4xl sm:text-6xl md:text-7xl lg:text-8xl font-black font-editorial tracking-tight uppercase leading-none text-[#141414] dark:text-[#F5F4F0]">
+                WAZZIMA<span className="text-[#B91C1C] dark:text-red-400">GIYGG</span>
               </h1>
-              <p className="mt-2 text-xs sm:text-sm font-mono uppercase tracking-[0.25em] text-stone-800 font-bold">
+              <p className="mt-2 text-xs sm:text-sm font-mono uppercase tracking-[0.25em] text-stone-800 dark:text-stone-300 font-bold">
                 Jornal, Acervo Acadêmico & Enciclopédia Colaborativa WZZM
               </p>
             </div>
           </div>
 
           {/* Subheader bar with quick metrics */}
-          <div className="flex flex-wrap items-center justify-between text-[11px] font-mono text-stone-700 pt-2 border-t border-stone-300">
+          <div className="flex flex-wrap items-center justify-between text-[11px] font-mono text-stone-700 dark:text-stone-300 pt-2 border-t border-stone-300 dark:border-[#2E2D28]">
             <div className="flex items-center gap-4">
               <span>FUNDADO SOB LEI Nº 12.965/2014 (MARCO CIVIL)</span>
               <span className="hidden sm:inline">•</span>
               <span className="hidden sm:inline">BASE FIRESTORE ORIGINAL MANTIDA</span>
             </div>
             <div className="flex items-center gap-4">
-              <span className="font-bold text-stone-900">
+              <span className="font-bold text-stone-900 dark:text-stone-100">
                 {Object.values(articles).reduce((acc, curr) => acc + curr.length, 0)} DOCUMENTOS NO ACERVO
               </span>
               <span>•</span>
@@ -1190,12 +1236,13 @@ export default function App() {
                     );
                     return;
                   }
+                  setArticleFormErrors({});
                   setIsCreateModalOpen(true);
                 }}
                 className={`px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 cursor-pointer transition-colors ${
                   isAuthorizedPublisherUser
-                    ? "bg-[#141414] text-white hover:bg-stone-800"
-                    : "bg-stone-800/80 text-amber-300 border border-amber-600/50 hover:bg-stone-800"
+                    ? "bg-[#141414] dark:bg-stone-100 text-white dark:text-stone-950 hover:bg-stone-800 dark:hover:bg-white"
+                    : "bg-stone-800/80 dark:bg-[#242320] text-amber-300 border border-amber-600/50 hover:bg-stone-800"
                 }`}
                 title="Publicar Artigo (Exclusivo para wazzimagiygg@gmail.com e pedrohenriquecardonaperes@gmail.com)"
               >
@@ -1210,7 +1257,7 @@ export default function App() {
       {/* ============================================ */}
       {/* 3. NAVIGATION TAB BAR */}
       {/* ============================================ */}
-      <nav className="bg-[#EBE8E1] border-b-2 border-[#141414] sticky top-0 z-40 px-4">
+      <nav className="bg-[#EBE8E1] dark:bg-[#1D1C19] border-b-2 border-[#141414] dark:border-[#3E3D38] sticky top-0 z-40 px-4 transition-colors">
         <div className="max-w-7xl mx-auto flex items-center justify-between overflow-x-auto no-scrollbar py-1">
           <div className="flex items-center gap-1 sm:gap-2">
             {[
@@ -1241,11 +1288,11 @@ export default function App() {
                   }}
                   className={`flex items-center gap-1.5 px-3 py-2 text-xs font-mono font-bold uppercase tracking-wider whitespace-nowrap transition-all cursor-pointer border ${
                     isActive
-                      ? "bg-[#141414] text-white border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,0.4)]"
-                      : "bg-transparent text-stone-800 border-transparent hover:bg-stone-200 hover:border-stone-400"
+                      ? "bg-[#141414] dark:bg-stone-100 text-white dark:text-stone-950 border-[#141414] dark:border-stone-100 shadow-[2px_2px_0px_0px_rgba(20,20,20,0.4)]"
+                      : "bg-transparent text-stone-800 dark:text-stone-200 border-transparent hover:bg-stone-200 dark:hover:bg-stone-800 hover:border-stone-400 dark:hover:border-stone-600"
                   }`}
                 >
-                  <Icon className={`w-3.5 h-3.5 ${isActive ? "text-amber-400" : "text-stone-600"}`} />
+                  <Icon className={`w-3.5 h-3.5 ${isActive ? "text-amber-400 dark:text-amber-700" : "text-stone-600 dark:text-stone-400"}`} />
                   <span>{tab.label}</span>
                 </button>
               );
@@ -1268,7 +1315,7 @@ export default function App() {
       {/* 4. SEARCH & SECTOR FILTER BAR */}
       {/* ============================================ */}
       {["wikiworldweb", "materiadeensaio", "academico", "materia", "uwgbooks"].includes(currentTab) && (
-        <div className="bg-white border-b border-stone-300 py-3 px-4">
+        <div className="bg-white dark:bg-[#1A1A18] border-b border-stone-300 dark:border-[#2E2D28] py-3 px-4 transition-colors">
           <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-3">
             {/* Search Input */}
             <div className="relative w-full md:w-96">
@@ -1278,12 +1325,12 @@ export default function App() {
                 placeholder="Pesquisar artigos, tópicos, autores ou palavras-chave..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-9 pr-4 py-2 text-xs font-mono bg-[#F8F7F4] border border-[#141414] focus:outline-none focus:ring-2 focus:ring-[#141414]"
+                className="w-full pl-9 pr-4 py-2 text-xs font-mono bg-[#F8F7F4] dark:bg-[#121210] text-[#141414] dark:text-stone-100 placeholder:text-stone-500 dark:placeholder:text-stone-400 border border-[#141414] dark:border-[#3E3D38] focus:outline-none focus:ring-2 focus:ring-[#141414] dark:focus:ring-stone-300"
               />
               {searchTerm && (
                 <button
                   onClick={() => setSearchTerm("")}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400 hover:text-black"
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400 hover:text-black dark:hover:text-white"
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>
@@ -1292,13 +1339,13 @@ export default function App() {
 
             {/* Sector Tags */}
             <div className="flex items-center gap-1.5 overflow-x-auto w-full md:w-auto text-xs font-mono">
-              <span className="text-[10px] text-stone-500 uppercase font-bold shrink-0">Filtrar:</span>
+              <span className="text-[10px] text-stone-500 dark:text-stone-400 uppercase font-bold shrink-0">Filtrar:</span>
               <button
                 onClick={() => setSelectedSector("todos")}
                 className={`px-2.5 py-1 text-[11px] font-bold border transition-colors cursor-pointer ${
                   selectedSector === "todos"
-                    ? "bg-[#141414] text-white border-[#141414]"
-                    : "bg-[#F8F7F4] text-stone-700 border-stone-300 hover:border-black"
+                    ? "bg-[#141414] dark:bg-stone-100 text-white dark:text-stone-950 border-[#141414] dark:border-stone-100"
+                    : "bg-[#F8F7F4] dark:bg-[#242320] text-stone-700 dark:text-stone-200 border-stone-300 dark:border-[#3E3D38] hover:border-black dark:hover:border-stone-300"
                 }`}
               >
                 Todos
@@ -1309,8 +1356,8 @@ export default function App() {
                   onClick={() => setSelectedSector(sector)}
                   className={`px-2.5 py-1 text-[11px] font-bold border whitespace-nowrap transition-colors cursor-pointer ${
                     selectedSector === sector
-                      ? "bg-[#141414] text-white border-[#141414]"
-                      : "bg-[#F8F7F4] text-stone-700 border-stone-300 hover:border-black"
+                      ? "bg-[#141414] dark:bg-stone-100 text-white dark:text-stone-950 border-[#141414] dark:border-stone-100"
+                      : "bg-[#F8F7F4] dark:bg-[#242320] text-stone-700 dark:text-stone-200 border-stone-300 dark:border-[#3E3D38] hover:border-black dark:hover:border-stone-300"
                   }`}
                 >
                   {sector}
@@ -1342,16 +1389,16 @@ export default function App() {
         {["wikiworldweb", "materiadeensaio", "academico", "materia", "uwgbooks"].includes(currentTab) && (
           <div>
             {/* Header info */}
-            <div className="flex items-center justify-between border-b-2 border-[#141414] pb-2 mb-6">
+            <div className="flex items-center justify-between border-b-2 border-[#141414] dark:border-[#3E3D38] pb-2 mb-6">
               <div>
-                <h2 className="text-2xl font-editorial font-bold text-[#141414] capitalize">
+                <h2 className="text-2xl font-editorial font-bold text-[#141414] dark:text-stone-100 capitalize">
                   {currentTab === "wikiworldweb" && "Edição Geral: Notícias & Sociedade"}
                   {currentTab === "materiadeensaio" && "Matérias de Ensaio & Opinião"}
                   {currentTab === "academico" && "Acervo de Metodologia e Pesquisa Acadêmica"}
                   {currentTab === "materia" && "Matérias Escolares e Ensino Fundamental/Médio"}
                   {currentTab === "uwgbooks" && "UWG Books: Acervo Digital de Livros e Obras"}
                 </h2>
-                <p className="text-xs font-mono text-stone-600 mt-0.5">
+                <p className="text-xs font-mono text-stone-600 dark:text-stone-400 mt-0.5">
                   Exibindo {currentTabArticles.length} publicações indexadas
                 </p>
               </div>
@@ -1365,7 +1412,7 @@ export default function App() {
                     showToast("Acervo atualizado.");
                   });
                 }}
-                className="flex items-center gap-1.5 text-xs font-mono font-bold bg-[#EBEAE8] hover:bg-stone-300 px-3 py-1.5 border border-[#141414] transition-colors cursor-pointer"
+                className="flex items-center gap-1.5 text-xs font-mono font-bold bg-[#EBEAE8] dark:bg-[#242320] text-[#141414] dark:text-stone-100 hover:bg-stone-300 dark:hover:bg-[#32302B] px-3 py-1.5 border border-[#141414] dark:border-[#3E3D38] transition-colors cursor-pointer"
                 title="Sincronizar com banco de dados"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? "animate-spin" : ""}`} />
@@ -1377,15 +1424,15 @@ export default function App() {
             {isLoading ? (
               <div className="py-20 text-center">
                 <RefreshCw className="w-8 h-8 animate-spin mx-auto text-stone-400 mb-3" />
-                <p className="font-mono text-xs text-stone-600 uppercase tracking-widest">
+                <p className="font-mono text-xs text-stone-600 dark:text-stone-400 uppercase tracking-widest">
                   Carregando acervo do banco de dados...
                 </p>
               </div>
             ) : currentTabArticles.length === 0 ? (
-              <div className="bg-white border-2 border-[#141414] p-12 text-center shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]">
+              <div className="bg-white dark:bg-[#1A1A18] border-2 border-[#141414] dark:border-[#3E3D38] p-12 text-center shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]">
                 <Newspaper className="w-12 h-12 text-stone-400 mx-auto mb-3" />
-                <h3 className="text-lg font-editorial font-bold">Nenhum artigo encontrado nesta categoria</h3>
-                <p className="text-xs font-mono text-stone-600 max-w-md mx-auto mt-2">
+                <h3 className="text-lg font-editorial font-bold dark:text-stone-100">Nenhum artigo encontrado nesta categoria</h3>
+                <p className="text-xs font-mono text-stone-600 dark:text-stone-400 max-w-md mx-auto mt-2">
                   Seja o primeiro colaborador a publicar um novo documento nesta seção usando o botão "Publicar Artigo".
                 </p>
                 <button
@@ -1397,6 +1444,7 @@ export default function App() {
                       );
                       return;
                     }
+                    setArticleFormErrors({});
                     setIsCreateModalOpen(true);
                   }}
                   className="mt-5 paper-button px-4 py-2 font-mono text-xs font-bold uppercase tracking-wider cursor-pointer inline-flex items-center gap-2"
@@ -1415,11 +1463,11 @@ export default function App() {
                   >
                     <div>
                       {/* Top tag & views */}
-                      <div className="flex items-center justify-between text-[10px] font-mono mb-2 text-stone-600">
-                        <span className="bg-[#EBEAE8] text-[#141414] font-bold px-2 py-0.5 border border-stone-300 uppercase tracking-wider">
+                      <div className="flex items-center justify-between text-[10px] font-mono mb-2 text-stone-600 dark:text-stone-400">
+                        <span className="bg-[#EBEAE8] dark:bg-[#242320] text-[#141414] dark:text-stone-200 font-bold px-2 py-0.5 border border-stone-300 dark:border-[#3E3D38] uppercase tracking-wider">
                           <HighlightedText text={article.setor || "Geral"} query={searchTerm} />
                         </span>
-                        <span className="flex items-center gap-1 font-mono text-stone-500">
+                        <span className="flex items-center gap-1 font-mono text-stone-500 dark:text-stone-400">
                           <Eye className="w-3 h-3" />
                           <span>{article.visualizacoes || 0}</span>
                         </span>
@@ -1428,13 +1476,13 @@ export default function App() {
                       {/* Title */}
                       <h3
                         onClick={() => handleOpenArticle(article)}
-                        className="text-lg font-editorial font-bold text-stone-950 group-hover:text-amber-800 transition-colors leading-snug cursor-pointer mb-2"
+                        className="text-lg font-editorial font-bold text-stone-950 dark:text-stone-100 group-hover:text-amber-800 dark:group-hover:text-amber-300 transition-colors leading-snug cursor-pointer mb-2"
                       >
                         <HighlightedText text={article.titulo} query={searchTerm} />
                       </h3>
 
                       {/* Excerpt */}
-                      <p className="text-xs text-stone-700 leading-relaxed font-serif line-clamp-4 mb-4">
+                      <p className="text-xs text-stone-700 dark:text-stone-300 leading-relaxed font-serif line-clamp-4 mb-4">
                         <HighlightedText
                           text={stripHtmlToPlainText(article.descricao) || "Sem resumo disponível."}
                           query={searchTerm}
@@ -1442,8 +1490,8 @@ export default function App() {
                       </p>
                     </div>
 
-                    <div className="pt-3 border-t border-stone-200 mt-2">
-                      <div className="flex items-center justify-between text-[10px] font-mono text-stone-500 mb-3">
+                    <div className="pt-3 border-t border-stone-200 dark:border-[#2E2D28] mt-2">
+                      <div className="flex items-center justify-between text-[10px] font-mono text-stone-500 dark:text-stone-400 mb-3">
                         <span>Autor: {article.criadorEmail?.split("@")[0] || "Redação"}</span>
                         <span>{article.ultimaEdicao || "Recente"}</span>
                       </div>
@@ -1451,7 +1499,7 @@ export default function App() {
                       <div className="flex items-center gap-2">
                         <button
                           onClick={() => handleOpenArticle(article)}
-                          className="flex-1 bg-[#141414] hover:bg-stone-800 text-white font-mono font-bold text-[11px] py-2 px-3 text-center transition-colors uppercase tracking-wider flex items-center justify-center gap-1 cursor-pointer"
+                          className="flex-1 bg-[#141414] dark:bg-stone-100 hover:bg-stone-800 dark:hover:bg-white text-white dark:text-stone-950 font-mono font-bold text-[11px] py-2 px-3 text-center transition-colors uppercase tracking-wider flex items-center justify-center gap-1 cursor-pointer"
                         >
                           <span>Ler Artigo</span>
                           <ChevronRight className="w-3.5 h-3.5" />
@@ -1475,11 +1523,11 @@ export default function App() {
                             handleSaveArticleAsPdf(article);
                           }}
                           disabled={isGeneratingPdf}
-                          className="bg-stone-100 hover:bg-stone-200 text-stone-800 border border-stone-400 p-2 text-center transition-colors cursor-pointer disabled:opacity-50"
+                          className="bg-stone-100 dark:bg-[#242320] hover:bg-stone-200 dark:hover:bg-[#32302B] text-stone-800 dark:text-stone-200 border border-stone-400 dark:border-[#3E3D38] p-2 text-center transition-colors cursor-pointer disabled:opacity-50"
                           title="Salvar como PDF (jsPDF)"
                           aria-label="Salvar artigo como PDF"
                         >
-                          <FileDown className="w-3.5 h-3.5 text-red-700" />
+                          <FileDown className="w-3.5 h-3.5 text-red-700 dark:text-red-400" />
                         </button>
                       </div>
                     </div>
@@ -1493,16 +1541,16 @@ export default function App() {
         {/* VIEW 2: WNPX / WIKINOTPEDIA (Alternative Encyclopedia) */}
         {currentTab === "wnpx" && (
           <div className="space-y-6">
-            <div className="bg-white border-2 border-[#141414] p-6 sm:p-8 shadow-[6px_6px_0px_0px_rgba(20,20,20,1)]">
-              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border-b-2 border-[#141414] pb-4 mb-6">
+            <div className="bg-white dark:bg-[#1A1A18] border-2 border-[#141414] dark:border-[#3E3D38] p-6 sm:p-8 shadow-[6px_6px_0px_0px_rgba(20,20,20,1)]">
+              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border-b-2 border-[#141414] dark:border-[#3E3D38] pb-4 mb-6">
                 <div>
                   <span className="bg-[#B91C1C] text-white font-mono text-[10px] font-bold px-2 py-0.5 uppercase tracking-widest">
                     PROJETO ESPECIAL
                   </span>
-                  <h2 className="text-3xl sm:text-4xl font-editorial font-bold mt-1 text-[#141414]">
+                  <h2 className="text-3xl sm:text-4xl font-editorial font-bold mt-1 text-[#141414] dark:text-stone-100">
                     WNPX — A Enciclopédia NotPedia
                   </h2>
-                  <p className="text-xs font-mono text-stone-700 mt-1">
+                  <p className="text-xs font-mono text-stone-700 dark:text-stone-300 mt-1">
                     Iniciativa editorial independente para documentação irrestrita de artigos, verbetes e história digital.
                   </p>
                 </div>
@@ -1518,9 +1566,9 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 font-serif text-xs text-stone-800 leading-relaxed">
-                <div className="p-4 bg-[#F8F7F4] border border-stone-300">
-                  <h4 className="font-editorial font-bold text-sm mb-2 text-[#141414] uppercase font-mono">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 font-serif text-xs text-stone-800 dark:text-stone-300 leading-relaxed">
+                <div className="p-4 bg-[#F8F7F4] dark:bg-[#141413] border border-stone-300 dark:border-[#34332F]">
+                  <h4 className="font-editorial font-bold text-sm mb-2 text-[#141414] dark:text-stone-100 uppercase font-mono">
                     1. Imparcialidade Real
                   </h4>
                   <p>
@@ -1528,8 +1576,8 @@ export default function App() {
                   </p>
                 </div>
 
-                <div className="p-4 bg-[#F8F7F4] border border-stone-300">
-                  <h4 className="font-editorial font-bold text-sm mb-2 text-[#141414] uppercase font-mono">
+                <div className="p-4 bg-[#F8F7F4] dark:bg-[#141413] border border-stone-300 dark:border-[#34332F]">
+                  <h4 className="font-editorial font-bold text-sm mb-2 text-[#141414] dark:text-stone-100 uppercase font-mono">
                     2. Garantia do Marco Civil
                   </h4>
                   <p>
@@ -1537,8 +1585,8 @@ export default function App() {
                   </p>
                 </div>
 
-                <div className="p-4 bg-[#F8F7F4] border border-stone-300">
-                  <h4 className="font-editorial font-bold text-sm mb-2 text-[#141414] uppercase font-mono">
+                <div className="p-4 bg-[#F8F7F4] dark:bg-[#141413] border border-stone-300 dark:border-[#34332F]">
+                  <h4 className="font-editorial font-bold text-sm mb-2 text-[#141414] dark:text-stone-100 uppercase font-mono">
                     3. Acervo Indexado
                   </h4>
                   <p>
@@ -1549,8 +1597,8 @@ export default function App() {
             </div>
 
             {/* Quick search inside WNPX articles */}
-            <div className="bg-[#EBE8E1] border-2 border-[#141414] p-6">
-              <h3 className="font-mono font-bold text-xs uppercase tracking-wider mb-3">
+            <div className="bg-[#EBE8E1] dark:bg-[#1D1C19] border-2 border-[#141414] dark:border-[#3E3D38] p-6">
+              <h3 className="font-mono font-bold text-xs uppercase tracking-wider mb-3 dark:text-stone-100">
                 Verbetes & Artigos Históricos Catalogados
               </h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 font-mono text-xs">
@@ -1570,7 +1618,7 @@ export default function App() {
                 ].map((item, idx) => (
                   <div
                     key={idx}
-                    className="p-3 bg-white border border-[#141414] hover:bg-amber-50 cursor-pointer flex items-center justify-between"
+                    className="p-3 bg-white dark:bg-[#1A1A18] text-[#141414] dark:text-stone-100 border border-[#141414] dark:border-[#3E3D38] hover:bg-amber-50 dark:hover:bg-[#242320] cursor-pointer flex items-center justify-between transition-colors"
                     onClick={() => {
                       showToast(`Carregando artigo: ${item}`);
                       switchTab("wikiworldweb");
@@ -1578,7 +1626,7 @@ export default function App() {
                     }}
                   >
                     <span className="font-bold">{item}</span>
-                    <ChevronRight className="w-3.5 h-3.5 text-stone-500" />
+                    <ChevronRight className="w-3.5 h-3.5 text-stone-500 dark:text-stone-400" />
                   </div>
                 ))}
               </div>
@@ -1604,14 +1652,14 @@ export default function App() {
         {currentTab === "tickets" && (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
             {/* 3.05.3.b: Banner da Extensão de Suporte & Tickets */}
-            <div className="lg:col-span-12 p-4 bg-sky-50 border-2 border-sky-600 shadow-[4px_4px_0px_0px_rgba(2,132,199,1)] flex flex-col sm:flex-row sm:items-center justify-between gap-4 font-mono text-xs">
+            <div className="lg:col-span-12 p-4 bg-sky-50 dark:bg-sky-950/40 border-2 border-sky-600 shadow-[4px_4px_0px_0px_rgba(2,132,199,1)] flex flex-col sm:flex-row sm:items-center justify-between gap-4 font-mono text-xs">
               <div>
-                <div className="flex items-center gap-2 text-sky-950 font-bold text-sm">
-                  <Ticket className="w-4 h-4 text-sky-700" />
+                <div className="flex items-center gap-2 text-sky-950 dark:text-sky-200 font-bold text-sm">
+                  <Ticket className="w-4 h-4 text-sky-700 dark:text-sky-400" />
                   <span>Extensão de Suporte & Central de Tickets WZZM (3.05.3.b)</span>
                 </div>
-                <p className="text-stone-700 font-serif text-xs mt-1 leading-relaxed">
-                  Canal oficial parametrizado: <strong className="text-sky-900 break-all">{supportConfig.supportUrl}</strong> • Modo atual: <span className="font-bold">{supportConfig.openMode === 'redirect' ? 'Redirecionamento Externo' : 'Aba Interna'}</span>
+                <p className="text-stone-700 dark:text-stone-300 font-serif text-xs mt-1 leading-relaxed">
+                  Canal oficial parametrizado: <strong className="text-sky-900 dark:text-sky-300 break-all">{supportConfig.supportUrl}</strong> • Modo atual: <span className="font-bold">{supportConfig.openMode === 'redirect' ? 'Redirecionamento Externo' : 'Aba Interna'}</span>
                 </p>
               </div>
               <div className="flex items-center gap-2 flex-wrap">
@@ -1626,56 +1674,56 @@ export default function App() {
                 {isAdmin && (
                   <button
                     onClick={() => setEditingExtensionConfig(supportExtension || null)}
-                    className="px-3.5 py-2 bg-white hover:bg-stone-100 text-stone-900 font-bold uppercase tracking-wider flex items-center gap-1.5 border-2 border-stone-800 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] text-xs cursor-pointer"
+                    className="px-3.5 py-2 bg-white dark:bg-[#242320] hover:bg-stone-100 dark:hover:bg-[#2E2D28] text-stone-900 dark:text-stone-100 font-bold uppercase tracking-wider flex items-center gap-1.5 border-2 border-stone-800 dark:border-[#3E3D38] shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] text-xs cursor-pointer"
                   >
-                    <Sliders className="w-3.5 h-3.5 text-amber-600" /> Configurar Link
+                    <Sliders className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" /> Configurar Link
                   </button>
                 )}
               </div>
             </div>
 
-            <div className="lg:col-span-6 bg-white border-2 border-[#141414] p-6 shadow-[6px_6px_0px_0px_rgba(20,20,20,1)]">
-              <div className="flex items-center gap-2 text-stone-900 border-b-2 border-[#141414] pb-3 mb-5">
-                <Ticket className="w-5 h-5 text-amber-600" />
+            <div className="lg:col-span-6 bg-white dark:bg-[#1A1A18] border-2 border-[#141414] dark:border-[#3E3D38] p-6 shadow-[6px_6px_0px_0px_rgba(20,20,20,1)]">
+              <div className="flex items-center gap-2 text-stone-900 dark:text-stone-100 border-b-2 border-[#141414] dark:border-[#3E3D38] pb-3 mb-5">
+                <Ticket className="w-5 h-5 text-amber-600 dark:text-amber-400" />
                 <h3 className="font-mono font-bold text-sm uppercase tracking-wider">
                   Central de Ouvidoria & Tickets de Privacidade
                 </h3>
               </div>
-              <p className="text-xs font-serif text-stone-700 mb-5 leading-relaxed">
+              <p className="text-xs font-serif text-stone-700 dark:text-stone-300 mb-5 leading-relaxed">
                 Abra uma solicitação formal referente a direitos da LGPD (exclusão de dados, retificação de nome), comunicação de erro editorial ou denúncia de abusos.
               </p>
 
               <form onSubmit={handleSubmitTicket} className="space-y-4 font-mono text-xs">
                 <div>
-                  <label className="block text-stone-700 uppercase font-bold mb-1">Seu Nome / Razão Social:</label>
+                  <label className="block text-stone-700 dark:text-stone-300 uppercase font-bold mb-1">Seu Nome / Razão Social:</label>
                   <input
                     type="text"
                     required
                     value={ticketForm.nome}
                     onChange={(e) => setTicketForm({ ...ticketForm, nome: e.target.value })}
                     placeholder="Nome completo ou pseudônimo"
-                    className="w-full p-2.5 border border-[#141414] bg-[#F8F7F4] focus:outline-none"
+                    className="w-full p-2.5 border border-[#141414] dark:border-[#3E3D38] bg-[#F8F7F4] dark:bg-[#121210] dark:text-stone-100 focus:outline-none"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-stone-700 uppercase font-bold mb-1">E-mail para Resposta:</label>
+                  <label className="block text-stone-700 dark:text-stone-300 uppercase font-bold mb-1">E-mail para Resposta:</label>
                   <input
                     type="email"
                     required
                     value={ticketForm.email}
                     onChange={(e) => setTicketForm({ ...ticketForm, email: e.target.value })}
                     placeholder="seu.email@exemplo.com"
-                    className="w-full p-2.5 border border-[#141414] bg-[#F8F7F4] focus:outline-none"
+                    className="w-full p-2.5 border border-[#141414] dark:border-[#3E3D38] bg-[#F8F7F4] dark:bg-[#121210] dark:text-stone-100 focus:outline-none"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-stone-700 uppercase font-bold mb-1">Tipo de Solicitação:</label>
+                  <label className="block text-stone-700 dark:text-stone-300 uppercase font-bold mb-1">Tipo de Solicitação:</label>
                   <select
                     value={ticketForm.tipo}
                     onChange={(e) => setTicketForm({ ...ticketForm, tipo: e.target.value })}
-                    className="w-full p-2.5 border border-[#141414] bg-[#F8F7F4] focus:outline-none"
+                    className="w-full p-2.5 border border-[#141414] dark:border-[#3E3D38] bg-[#F8F7F4] dark:bg-[#121210] dark:text-stone-100 focus:outline-none"
                   >
                     <option value="Direito de Esquecimento (LGPD)">Direito de Esquecimento (LGPD - Exclusão de Dados)</option>
                     <option value="Retificação de Conteúdo">Retificação de Conteúdo / Direito de Resposta</option>
@@ -1685,14 +1733,14 @@ export default function App() {
                 </div>
 
                 <div>
-                  <label className="block text-stone-700 uppercase font-bold mb-1">Mensagem Detalhada:</label>
+                  <label className="block text-stone-700 dark:text-stone-300 uppercase font-bold mb-1">Mensagem Detalhada:</label>
                   <textarea
                     rows={4}
                     required
                     value={ticketForm.mensagem}
                     onChange={(e) => setTicketForm({ ...ticketForm, mensagem: e.target.value })}
                     placeholder="Descreva detalhadamente sua solicitação, páginas envolvidas ou justificativa legal..."
-                    className="w-full p-2.5 border border-[#141414] bg-[#F8F7F4] focus:outline-none"
+                    className="w-full p-2.5 border border-[#141414] dark:border-[#3E3D38] bg-[#F8F7F4] dark:bg-[#121210] dark:text-stone-100 focus:outline-none"
                   ></textarea>
                 </div>
 
@@ -1701,29 +1749,29 @@ export default function App() {
                   disabled={isSubmittingTicket}
                   className="paper-button w-full py-3 text-xs font-mono font-bold uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer"
                 >
-                  <Send className="w-3.5 h-3.5 text-amber-400" />
+                  <Send className="w-3.5 h-3.5 text-amber-400 dark:text-amber-600" />
                   <span>{isSubmittingTicket ? "Enviando Protocolo..." : "Registrar Chamado Oficial"}</span>
                 </button>
               </form>
             </div>
 
-            <div className="lg:col-span-6 bg-[#EBE8E1] border-2 border-[#141414] p-6 shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] flex flex-col justify-between">
+            <div className="lg:col-span-6 bg-[#EBE8E1] dark:bg-[#1D1C19] border-2 border-[#141414] dark:border-[#3E3D38] p-6 shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] flex flex-col justify-between">
               <div>
-                <h3 className="font-mono font-bold text-sm uppercase tracking-wider border-b-2 border-[#141414] pb-3 mb-4">
+                <h3 className="font-mono font-bold text-sm uppercase tracking-wider border-b-2 border-[#141414] dark:border-[#3E3D38] pb-3 mb-4 dark:text-stone-100">
                   Protocolos Registrados no Sistema
                 </h3>
                 <div className="space-y-3 max-h-96 overflow-y-auto">
                   {ticketsList.map((ticket, idx) => (
-                    <div key={idx} className="bg-white border border-[#141414] p-4 font-mono text-xs">
-                      <div className="flex items-center justify-between text-[10px] text-stone-500 mb-1">
-                        <span className="font-bold text-amber-800">{ticket.id}</span>
-                        <span className="bg-stone-100 px-2 py-0.5 border border-stone-300 font-bold uppercase">
+                    <div key={idx} className="bg-white dark:bg-[#1A1A18] border border-[#141414] dark:border-[#3E3D38] p-4 font-mono text-xs">
+                      <div className="flex items-center justify-between text-[10px] text-stone-500 dark:text-stone-400 mb-1">
+                        <span className="font-bold text-amber-800 dark:text-amber-400">{ticket.id}</span>
+                        <span className="bg-stone-100 dark:bg-[#242320] px-2 py-0.5 border border-stone-300 dark:border-[#3E3D38] font-bold uppercase dark:text-stone-200">
                           {ticket.status}
                         </span>
                       </div>
-                      <h4 className="font-bold text-stone-900 mb-1">{ticket.tipo}</h4>
-                      <p className="text-[11px] text-stone-700 font-serif line-clamp-2">{ticket.mensagem}</p>
-                      <div className="mt-2 text-[10px] text-stone-500">
+                      <h4 className="font-bold text-stone-900 dark:text-stone-100 mb-1">{ticket.tipo}</h4>
+                      <p className="text-[11px] text-stone-700 dark:text-stone-300 font-serif line-clamp-2">{ticket.mensagem}</p>
+                      <div className="mt-2 text-[10px] text-stone-500 dark:text-stone-400">
                         Aberto em: {new Date(ticket.criadoEm).toLocaleDateString("pt-BR")}
                       </div>
                     </div>
@@ -1731,7 +1779,7 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="mt-6 pt-4 border-t border-stone-400 text-[10px] font-mono text-stone-600">
+              <div className="mt-6 pt-4 border-t border-stone-400 dark:border-[#3E3D38] text-[10px] font-mono text-stone-600 dark:text-stone-400">
                 Os prazos de resposta seguem os termos do Marco Civil da Internet e resoluções da ANPD (Autoridade Nacional de Proteção de Dados).
               </div>
             </div>
@@ -1740,7 +1788,7 @@ export default function App() {
 
         {/* VIEW 5: CHAT & MENSAGENS (JSONBin + Firestore Compatibility) */}
         {currentTab === "chat" && (
-          <div className="max-w-3xl mx-auto bg-white border-2 border-[#141414] shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] overflow-hidden">
+          <div className="max-w-3xl mx-auto bg-white dark:bg-[#1A1A18] border-2 border-[#141414] dark:border-[#3E3D38] shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] overflow-hidden">
             <div className="bg-[#141414] text-white p-4 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <MessageSquare className="w-5 h-5 text-amber-400" />
@@ -1759,9 +1807,9 @@ export default function App() {
             </div>
 
             {/* Messages Scroll Area */}
-            <div className="p-4 h-96 overflow-y-auto space-y-3 bg-[#F8F7F4] border-b-2 border-[#141414]">
+            <div className="p-4 h-96 overflow-y-auto space-y-3 bg-[#F8F7F4] dark:bg-[#141413] border-b-2 border-[#141414] dark:border-[#3E3D38]">
               {chatMessages.length === 0 ? (
-                <p className="text-center text-xs font-mono text-stone-500 py-12">
+                <p className="text-center text-xs font-mono text-stone-500 dark:text-stone-400 py-12">
                   Nenhuma mensagem registrada no canal. Inicie o diálogo abaixo.
                 </p>
               ) : (
@@ -1772,13 +1820,15 @@ export default function App() {
                       key={msg.id || i}
                       className={`flex flex-col ${isMe ? "items-end" : "items-start"}`}
                     >
-                      <div className="text-[10px] font-mono text-stone-500 mb-0.5">
+                      <div className="text-[10px] font-mono text-stone-500 dark:text-stone-400 mb-0.5">
                         <span className="font-bold">{msg.senderName || "Anônimo"}</span> •{" "}
                         {new Date(msg.timestamp).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
                       </div>
                       <div
-                        className={`max-w-md p-3 border border-[#141414] text-xs font-mono shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] ${
-                          isMe ? "bg-amber-100 text-stone-900" : "bg-white text-stone-900"
+                        className={`max-w-md p-3 border border-[#141414] dark:border-[#3E3D38] text-xs font-mono shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] ${
+                          isMe
+                            ? "bg-amber-100 dark:bg-amber-950/70 text-stone-900 dark:text-amber-100"
+                            : "bg-white dark:bg-[#242320] text-stone-900 dark:text-stone-100"
                         }`}
                       >
                         {msg.text}
@@ -1790,20 +1840,20 @@ export default function App() {
             </div>
 
             {/* Input Bar */}
-            <form onSubmit={handleSendMessage} className="p-3 bg-white flex items-center gap-2">
+            <form onSubmit={handleSendMessage} className="p-3 bg-white dark:bg-[#1A1A18] flex items-center gap-2">
               <input
                 type="text"
                 placeholder={user ? "Digite sua mensagem..." : "Faça login ou envie como leitor convidado..."}
                 value={chatInput}
                 onChange={(e) => setChatInput(e.target.value)}
-                className="flex-1 p-2.5 border border-[#141414] text-xs font-mono bg-[#F8F7F4] focus:outline-none"
+                className="flex-1 p-2.5 border border-[#141414] dark:border-[#3E3D38] text-xs font-mono bg-[#F8F7F4] dark:bg-[#121210] dark:text-stone-100 focus:outline-none"
               />
               <button
                 type="submit"
                 disabled={isSendingMessage || !chatInput.trim()}
                 className="paper-button px-5 py-2.5 text-xs font-mono font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
               >
-                <Send className="w-3.5 h-3.5 text-amber-400" />
+                <Send className="w-3.5 h-3.5 text-amber-400 dark:text-amber-600" />
                 <span>Enviar</span>
               </button>
             </form>
@@ -1874,7 +1924,7 @@ export default function App() {
       {/* ============================================ */}
       {selectedArticle && (
         <div className="fixed inset-0 bg-stone-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#FAF9F5] border-4 border-[#141414] shadow-[12px_12px_0px_0px_rgba(20,20,20,1)] max-w-4xl w-full max-h-[90vh] flex flex-col overflow-hidden text-left">
+          <div className="bg-[#FAF9F5] dark:bg-[#181816] border-4 border-[#141414] dark:border-[#3E3D38] shadow-[12px_12px_0px_0px_rgba(20,20,20,1)] max-w-4xl w-full max-h-[90vh] flex flex-col overflow-hidden text-left">
             {/* Modal Top Bar */}
             <div className="bg-[#141414] text-white p-4 flex items-center justify-between border-b-2 border-black">
               <div className="flex items-center gap-2 text-xs font-mono">
@@ -1919,18 +1969,18 @@ export default function App() {
             </div>
 
             {/* Article Content Area */}
-            <div className="p-6 sm:p-10 overflow-y-auto flex-1 font-serif text-stone-900">
-              <div className="border-b-2 border-[#141414] pb-4 mb-6">
-                <h1 className="text-3xl sm:text-4xl lg:text-5xl font-editorial font-bold text-stone-950 leading-tight">
+            <div className="p-6 sm:p-10 overflow-y-auto flex-1 font-serif text-stone-900 dark:text-stone-100">
+              <div className="border-b-2 border-[#141414] dark:border-[#3E3D38] pb-4 mb-6">
+                <h1 className="text-3xl sm:text-4xl lg:text-5xl font-editorial font-bold text-stone-950 dark:text-stone-50 leading-tight">
                   {selectedArticle.titulo}
                 </h1>
 
-                <div className="flex flex-wrap items-center gap-4 text-xs font-mono text-stone-600 mt-4 pt-3 border-t border-stone-300">
-                  <span>Autor: <strong>{selectedArticle.criadorEmail || "Redação WZZM"}</strong></span>
+                <div className="flex flex-wrap items-center gap-4 text-xs font-mono text-stone-600 dark:text-stone-400 mt-4 pt-3 border-t border-stone-300 dark:border-[#2E2D28]">
+                  <span>Autor: <strong className="dark:text-stone-200">{selectedArticle.criadorEmail || "Redação WZZM"}</strong></span>
                   <span>•</span>
                   <span>Atualizado: {selectedArticle.ultimaEdicao || "Recente"}</span>
                   <span>•</span>
-                  <span className="flex items-center gap-1 font-bold text-stone-800">
+                  <span className="flex items-center gap-1 font-bold text-stone-800 dark:text-stone-200">
                     <Eye className="w-3.5 h-3.5" />
                     <span>{selectedArticle.visualizacoes || 0} leituras</span>
                   </span>
@@ -1939,7 +1989,7 @@ export default function App() {
 
               {/* Sanitize and render HTML */}
               <div
-                className="prose prose-stone max-w-none text-base leading-relaxed space-y-4"
+                className="prose prose-stone dark:prose-invert max-w-none text-base leading-relaxed space-y-4"
                 dangerouslySetInnerHTML={{
                   __html: DOMPurify.sanitize(
                     selectedArticle.conteudo || selectedArticle.descricao || "Nenhum conteúdo adicional disponível."
@@ -1948,11 +1998,11 @@ export default function App() {
               />
 
               {/* ABNT Citation Box with Article UID Link */}
-              <div className="mt-10 p-4 bg-white border-2 border-[#141414] font-mono text-xs shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]">
+              <div className="mt-10 p-4 bg-white dark:bg-[#1E1E1B] border-2 border-[#141414] dark:border-[#3E3D38] font-mono text-xs shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]">
                 <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
                   <div className="flex items-center gap-2">
-                    <FileText className="w-4 h-4 text-stone-700" />
-                    <span className="font-bold text-stone-800 uppercase tracking-wider text-[11px]">
+                    <FileText className="w-4 h-4 text-stone-700 dark:text-stone-300" />
+                    <span className="font-bold text-stone-800 dark:text-stone-200 uppercase tracking-wider text-[11px]">
                       Como Citar Este Documento (Normas ABNT):
                     </span>
                   </div>
@@ -1962,7 +2012,7 @@ export default function App() {
                       className="paper-button px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 cursor-pointer"
                       title="Copiar citação formatada para a área de transferência"
                     >
-                      {citationCopied ? <CheckCircle className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3 text-amber-400" />}
+                      {citationCopied ? <CheckCircle className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3 text-amber-400 dark:text-amber-600" />}
                       <span>{citationCopied ? "Copiado!" : "Copiar Citação"}</span>
                     </button>
                     <button
@@ -1974,7 +2024,7 @@ export default function App() {
                       className="paper-button-secondary px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 cursor-pointer"
                       title="Copiar apenas o link do UID"
                     >
-                      <Share2 className="w-3 h-3 text-stone-700" />
+                      <Share2 className="w-3 h-3 text-stone-700 dark:text-stone-300" />
                       <span>Copiar Link do UID</span>
                     </button>
                     <button
@@ -1994,7 +2044,7 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="text-stone-700 select-all bg-stone-50 p-3 border border-stone-300 text-[11px] leading-relaxed break-all">
+                <div className="text-stone-700 dark:text-stone-300 select-all bg-stone-50 dark:bg-[#141413] p-3 border border-stone-300 dark:border-[#34332F] text-[11px] leading-relaxed break-all">
                   <span>
                     {(selectedArticle.criadorEmail || "WAZZIMAGIYGG").split("@")[0].toUpperCase()}. {selectedArticle.titulo.toUpperCase()}. WazzimaGiygg Gazette & Knowledge Portal, {new Date().getFullYear()}. Disponível em: &lt;
                   </span>
@@ -2002,7 +2052,7 @@ export default function App() {
                     href={getArticleUidUrl(selectedArticle)}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-blue-700 hover:text-red-700 underline font-bold"
+                    className="text-blue-700 dark:text-sky-400 hover:text-red-700 dark:hover:text-red-400 underline font-bold"
                     title={`Abrir UID do artigo: ${selectedArticle.id}`}
                   >
                     {getArticleUidUrl(selectedArticle)}
@@ -2011,10 +2061,10 @@ export default function App() {
                 </div>
 
                 {/* Permanent UID Reference Link Badge */}
-                <div className="mt-2.5 pt-2 border-t border-stone-200 flex flex-wrap items-center justify-between gap-2 text-[10px] text-stone-600">
+                <div className="mt-2.5 pt-2 border-t border-stone-200 dark:border-[#2E2D28] flex flex-wrap items-center justify-between gap-2 text-[10px] text-stone-600 dark:text-stone-400">
                   <div className="flex items-center gap-1.5">
-                    <span className="font-bold text-stone-800 uppercase">Referência UID:</span>
-                    <span className="bg-amber-100 text-stone-900 font-bold px-1.5 py-0.5 border border-amber-300">
+                    <span className="font-bold text-stone-800 dark:text-stone-200 uppercase">Referência UID:</span>
+                    <span className="bg-amber-100 dark:bg-amber-950/60 text-stone-900 dark:text-amber-200 font-bold px-1.5 py-0.5 border border-amber-300 dark:border-amber-700">
                       {selectedArticle.id}
                     </span>
                   </div>
@@ -2022,7 +2072,7 @@ export default function App() {
                     href={getArticleUidUrl(selectedArticle)}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-blue-700 hover:text-blue-900 underline font-mono flex items-center gap-1 font-semibold"
+                    className="text-blue-700 dark:text-sky-400 hover:text-blue-900 dark:hover:text-sky-300 underline font-mono flex items-center gap-1 font-semibold"
                   >
                     <span>Vincular por UID (?uid={selectedArticle.id})</span>
                     <ExternalLink className="w-3 h-3" />
@@ -2032,7 +2082,7 @@ export default function App() {
             </div>
 
             {/* Modal Bottom Controls */}
-            <div className="bg-[#EBE8E1] border-t-2 border-[#141414] p-4 flex flex-wrap items-center justify-between gap-3">
+            <div className="bg-[#EBE8E1] dark:bg-[#22211E] border-t-2 border-[#141414] dark:border-[#3E3D38] p-4 flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2.5 flex-wrap">
                 <button
                   onClick={() => handleSaveArticleAsPdf(selectedArticle)}
@@ -2090,16 +2140,34 @@ export default function App() {
       {/* ============================================ */}
       {/* 7. CREATE ARTICLE MODAL (Colaborativo) */}
       {/* ============================================ */}
-      {isCreateModalOpen && (
+      {isCreateModalOpen && (() => {
+        const defaultCollectionForModal = (
+          ALLOWED_ARTICLE_COLLECTIONS as readonly string[]
+        ).includes(currentTab)
+          ? currentTab
+          : "wikiworldweb";
+        const clearFieldError = (field: string) => {
+          setArticleFormErrors((prev) => {
+            if (!prev[field]) return prev;
+            const next = { ...prev };
+            delete next[field];
+            return next;
+          });
+        };
+
+        return (
         <div className="fixed inset-0 bg-stone-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white border-4 border-[#141414] shadow-[10px_10px_0px_0px_rgba(20,20,20,1)] max-w-xl w-full p-6 text-left">
-            <div className="flex items-center justify-between border-b-2 border-[#141414] pb-3 mb-4">
-              <h3 className="font-editorial text-2xl font-bold text-[#141414]">
+          <div className="bg-white dark:bg-[#1A1A18] border-4 border-[#141414] dark:border-[#3E3D38] shadow-[10px_10px_0px_0px_rgba(20,20,20,1)] max-w-xl w-full p-6 text-left max-h-[92vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b-2 border-[#141414] dark:border-[#3E3D38] pb-3 mb-4">
+              <h3 className="font-editorial text-2xl font-bold text-[#141414] dark:text-stone-100">
                 Publicar Novo Documento / Artigo
               </h3>
               <button
-                onClick={() => setIsCreateModalOpen(false)}
-                className="text-stone-500 hover:text-black cursor-pointer"
+                onClick={() => {
+                  setArticleFormErrors({});
+                  setIsCreateModalOpen(false);
+                }}
+                className="text-stone-500 hover:text-black dark:hover:text-white cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -2108,17 +2176,17 @@ export default function App() {
             {/* Banner de Restrição Rigorosa de Publicação */}
             <div className={`p-3 border-2 mb-4 font-mono text-xs ${
               isAuthorizedPublisherUser
-                ? "bg-emerald-50 border-emerald-600 text-emerald-950"
-                : "bg-amber-50 border-amber-600 text-amber-950"
+                ? "bg-emerald-50 dark:bg-emerald-950/40 border-emerald-600 text-emerald-950 dark:text-emerald-200"
+                : "bg-amber-50 dark:bg-amber-950/40 border-amber-600 text-amber-950 dark:text-amber-200"
             }`}>
               <div className="flex items-center gap-1.5 font-bold mb-1">
-                <Shield className="w-4 h-4 text-amber-600" />
+                <Shield className="w-4 h-4 text-amber-600 dark:text-amber-400" />
                 <span className="uppercase tracking-wider">Regra de Publicação Oficial de Artigos:</span>
               </div>
               <p className="text-[11px] leading-relaxed">
                 Qualquer publicação de artigo só deve ser feita pelas contas dos e-mails autorizados:
                 <br />
-                <strong className="text-black font-mono">wazzimagiygg@gmail.com</strong> e <strong className="text-black font-mono">pedrohenriquecardonaperes@gmail.com</strong>
+                <strong className="text-black dark:text-white font-mono">wazzimagiygg@gmail.com</strong> e <strong className="text-black dark:text-white font-mono">pedrohenriquecardonaperes@gmail.com</strong>
               </p>
               <div className="mt-2 text-[10px] pt-1.5 border-t border-current/20 flex items-center justify-between">
                 <span>Conta ativa: <strong>{user?.email || "Nenhum usuário logado"}</strong></span>
@@ -2130,7 +2198,14 @@ export default function App() {
               </div>
             </div>
 
+            {(articleFormErrors._form || articleFormErrors.criadorEmail) && (
+              <div role="alert" className="p-2.5 mb-3 border-2 border-red-700 bg-red-50 dark:bg-red-950/50 text-red-900 dark:text-red-200 font-mono text-[11px] font-bold">
+                {articleFormErrors._form || articleFormErrors.criadorEmail}
+              </div>
+            )}
+
             <form
+              noValidate
               onSubmit={async (e) => {
                 e.preventDefault();
                 if (!user || !isAuthorizedPublisher(user.email)) {
@@ -2141,70 +2216,98 @@ export default function App() {
                   return;
                 }
                 const formData = new FormData(e.currentTarget);
-                const titulo = formData.get("titulo") as string;
-                const colecao = formData.get("colecao") as string;
-                const setor = formData.get("setor") as string;
-                const descricao = formData.get("descricao") as string;
+                const rawTitulo = formData.get("titulo");
+                const rawColecao = formData.get("colecao");
+                const rawSetor = formData.get("setor");
+                const rawDescricao = formData.get("descricao");
 
-                if (!titulo || !descricao) {
-                  showToast("Título e conteúdo são obrigatórios.", true);
+                const validation = validatePortalArticlePayload({
+                  titulo: typeof rawTitulo === "string" ? rawTitulo : null,
+                  colecao: typeof rawColecao === "string" ? rawColecao : null,
+                  setor: typeof rawSetor === "string" ? rawSetor : undefined,
+                  descricao: typeof rawDescricao === "string" ? rawDescricao : null,
+                  criadorEmail: user?.email ?? null
+                });
+
+                if (!validation.valid || !validation.data) {
+                  setArticleFormErrors(validation.fieldErrors);
+                  showToast(validation.message, true);
                   return;
                 }
 
+                setArticleFormErrors({});
+                const validated = validation.data;
+
                 const newArt: Article = {
                   id: `art_${Date.now()}`,
-                  titulo,
-                  descricao,
-                  setor: setor || "Geral",
-                  criadorEmail: user.email,
-                  colecao,
+                  titulo: validated.titulo,
+                  descricao: validated.descricao,
+                  setor: validated.setor,
+                  criadorEmail: validated.criadorEmail,
+                  colecao: validated.colecao,
                   dataCriacao: new Date().toLocaleDateString("pt-BR"),
                   ultimaEdicao: new Date().toLocaleDateString("pt-BR"),
-                  visualizacoes: 1
+                  visualizacoes: validated.visualizacoes
                 };
 
                 try {
-                  // Save to Firestore collections
-                  await createArticle({
-                    titulo,
-                    descricao,
-                    setor: setor || "Geral",
-                    criadorEmail: user.email,
-                    colecao
-                  });
+                  // Save to Firestore collections (schema asserted before write)
+                  await createArticle(validated);
 
                   // Update local state
                   setArticles((prev) => ({
                     ...prev,
-                    [colecao]: [newArt, ...(prev[colecao] || [])]
+                    [validated.colecao]: [newArt, ...(prev[validated.colecao] || [])]
                   }));
 
+                  setArticleFormErrors({});
                   setIsCreateModalOpen(false);
                   showToast("Artigo publicado com sucesso no acervo!");
                 } catch (publishErr: any) {
-                  showToast(publishErr.message || "Erro ao publicar artigo.", true);
+                  if (publishErr instanceof ArticleValidationError) {
+                    setArticleFormErrors(publishErr.fieldErrors);
+                  }
+                  showToast(publishErr?.message || "Erro ao publicar artigo.", true);
                 }
               }}
               className="space-y-4 font-mono text-xs"
             >
               <div>
-                <label className="block text-stone-700 uppercase font-bold mb-1">Título da Publicação:</label>
+                <label className="block text-stone-700 dark:text-stone-300 uppercase font-bold mb-1">
+                  Título da Publicação: <span className="text-red-700 dark:text-red-400">*</span>
+                </label>
                 <input
                   name="titulo"
                   type="text"
                   required
-                  placeholder="Ex: Metodologia e Impactos da Inteligência Artificial"
-                  className="w-full p-2.5 border border-[#141414] bg-[#F8F7F4] focus:outline-none"
+                  maxLength={300}
+                  onChange={() => clearFieldError("titulo")}
+                  placeholder="Ex: Metodologia e Impactos da Inteligência Artificial (mín. 3 caracteres)"
+                  className={`w-full p-2.5 border bg-[#F8F7F4] dark:bg-[#121210] dark:text-stone-100 focus:outline-none ${
+                    articleFormErrors.titulo ? "border-red-700 bg-red-50/40 dark:bg-red-950/30" : "border-[#141414] dark:border-[#3E3D38]"
+                  }`}
                 />
+                {articleFormErrors.titulo && (
+                  <p role="alert" className="mt-1 text-[11px] font-bold text-red-700 dark:text-red-400">
+                    {articleFormErrors.titulo}
+                  </p>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-stone-700 uppercase font-bold mb-1">Coleção / Seção:</label>
+                  <label className="block text-stone-700 dark:text-stone-300 uppercase font-bold mb-1">
+                    Coleção / Seção: <span className="text-red-700 dark:text-red-400">*</span>
+                  </label>
                   <select
+                    key={`${isCreateModalOpen}-${defaultCollectionForModal}`}
                     name="colecao"
-                    defaultValue={currentTab}
-                    className="w-full p-2.5 border border-[#141414] bg-[#F8F7F4] focus:outline-none"
+                    required
+                    defaultValue={defaultCollectionForModal}
+                    onChange={() => clearFieldError("colecao")}
+                    className={`w-full p-2.5 border bg-[#F8F7F4] dark:bg-[#121210] dark:text-stone-100 focus:outline-none ${
+                      articleFormErrors.colecao ? "border-red-700 bg-red-50/40 dark:bg-red-950/30" : "border-[#141414] dark:border-[#3E3D38]"
+                    }`}
                   >
                     <option value="wikiworldweb">WikiWorldWeb (Notícias)</option>
                     <option value="materiadeensaio">Matéria de Ensaio</option>
@@ -2212,34 +2315,61 @@ export default function App() {
                     <option value="materia">Matérias Didáticas</option>
                     <option value="uwgbooks">UWG Books</option>
                   </select>
+                  {articleFormErrors.colecao && (
+                    <p role="alert" className="mt-1 text-[11px] font-bold text-red-700 dark:text-red-400">
+                      {articleFormErrors.colecao}
+                    </p>
+                  )}
                 </div>
 
                 <div>
-                  <label className="block text-stone-700 uppercase font-bold mb-1">Setor / Disciplina:</label>
+                  <label className="block text-stone-700 dark:text-stone-300 uppercase font-bold mb-1">Setor / Disciplina:</label>
                   <input
                     name="setor"
                     type="text"
-                    placeholder="Ex: Epistemologia, Saúde Mental"
-                    className="w-full p-2.5 border border-[#141414] bg-[#F8F7F4] focus:outline-none"
+                    maxLength={100}
+                    onChange={() => clearFieldError("setor")}
+                    placeholder="Ex: Epistemologia, Saúde Mental (padrão: Geral)"
+                    className={`w-full p-2.5 border bg-[#F8F7F4] dark:bg-[#121210] dark:text-stone-100 focus:outline-none ${
+                      articleFormErrors.setor ? "border-red-700 bg-red-50/40 dark:bg-red-950/30" : "border-[#141414] dark:border-[#3E3D38]"
+                    }`}
                   />
+                  {articleFormErrors.setor && (
+                    <p role="alert" className="mt-1 text-[11px] font-bold text-red-700 dark:text-red-400">
+                      {articleFormErrors.setor}
+                    </p>
+                  )}
                 </div>
               </div>
 
               <div>
-                <label className="block text-stone-700 uppercase font-bold mb-1">Conteúdo do Artigo (Texto ou HTML):</label>
+                <label className="block text-stone-700 dark:text-stone-300 uppercase font-bold mb-1">
+                  Conteúdo do Artigo (Texto ou HTML): <span className="text-red-700 dark:text-red-400">*</span>
+                </label>
                 <textarea
                   name="descricao"
                   rows={6}
                   required
-                  placeholder="Redija o texto do artigo ou ensaio..."
-                  className="w-full p-2.5 border border-[#141414] bg-[#F8F7F4] focus:outline-none font-serif text-sm"
+                  onChange={() => clearFieldError("descricao")}
+                  placeholder="Redija o texto do artigo ou ensaio (mínimo de 10 caracteres úteis)..."
+                  className={`w-full p-2.5 border bg-[#F8F7F4] dark:bg-[#121210] dark:text-stone-100 focus:outline-none font-serif text-sm ${
+                    articleFormErrors.descricao ? "border-red-700 bg-red-50/40 dark:bg-red-950/30" : "border-[#141414] dark:border-[#3E3D38]"
+                  }`}
                 ></textarea>
+                {articleFormErrors.descricao && (
+                  <p role="alert" className="mt-1 text-[11px] font-bold text-red-700 dark:text-red-400">
+                    {articleFormErrors.descricao}
+                  </p>
+                )}
               </div>
 
-              <div className="flex items-center justify-end gap-3 pt-3 border-t">
+              <div className="flex items-center justify-end gap-3 pt-3 border-t dark:border-[#2E2D28]">
                 <button
                   type="button"
-                  onClick={() => setIsCreateModalOpen(false)}
+                  onClick={() => {
+                    setArticleFormErrors({});
+                    setIsCreateModalOpen(false);
+                  }}
                   className="paper-button-secondary px-4 py-2 font-mono text-xs font-bold uppercase cursor-pointer"
                 >
                   Cancelar
@@ -2255,27 +2385,28 @@ export default function App() {
             </form>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* ============================================ */}
       {/* 8. LOGIN MODAL */}
       {/* ============================================ */}
       {isLoginModalOpen && (
         <div className="fixed inset-0 bg-stone-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white border-4 border-[#141414] shadow-[10px_10px_0px_0px_rgba(20,20,20,1)] max-w-sm w-full p-8 text-center relative">
+          <div className="bg-white dark:bg-[#1A1A18] border-4 border-[#141414] dark:border-[#3E3D38] shadow-[10px_10px_0px_0px_rgba(20,20,20,1)] max-w-sm w-full p-8 text-center relative">
             <button
               onClick={() => setIsLoginModalOpen(false)}
-              className="absolute top-4 right-4 text-stone-500 hover:text-black cursor-pointer"
+              className="absolute top-4 right-4 text-stone-500 hover:text-black dark:hover:text-white cursor-pointer"
             >
               <X className="w-5 h-5" />
             </button>
 
-            <div className="w-12 h-12 bg-[#EBEAE8] border-2 border-[#141414] flex items-center justify-center mx-auto mb-4">
-              <User className="w-6 h-6 text-[#141414]" />
+            <div className="w-12 h-12 bg-[#EBEAE8] dark:bg-[#242320] border-2 border-[#141414] dark:border-[#3E3D38] flex items-center justify-center mx-auto mb-4">
+              <User className="w-6 h-6 text-[#141414] dark:text-stone-100" />
             </div>
 
-            <h3 className="font-editorial text-2xl font-bold uppercase mb-2">Identificação do Leitor</h3>
-            <p className="text-xs font-serif text-stone-600 mb-6 leading-relaxed">
+            <h3 className="font-editorial text-2xl font-bold uppercase mb-2 dark:text-stone-100">Identificação do Leitor</h3>
+            <p className="text-xs font-serif text-stone-600 dark:text-stone-400 mb-6 leading-relaxed">
               Acesse sua conta para publicar artigos, participar do canal interno e sincronizar preferências do portal.
             </p>
 
@@ -2291,7 +2422,7 @@ export default function App() {
                 onClick={handleCreateGuestUser}
                 className="paper-button w-full py-3 px-4 flex items-center justify-center gap-3 cursor-pointer shadow-[3px_3px_0px_0px_rgba(20,20,20,1)]"
               >
-                <Monitor className="w-4 h-4 text-stone-300" />
+                <Monitor className="w-4 h-4 text-stone-300 dark:text-stone-700" />
                 <span>ACESSO CONVIDADO (24H)</span>
               </button>
             </div>
@@ -2344,14 +2475,14 @@ export default function App() {
       {/* 10. LGPD & COOKIE CONSENT BANNER */}
       {/* ============================================ */}
       {!cookieConsent && (
-        <div className="fixed bottom-4 left-4 right-4 md:left-auto md:right-4 max-w-lg bg-white border-2 border-[#141414] shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] p-5 z-40 text-left font-sans">
+        <div className="fixed bottom-4 left-4 right-4 md:left-auto md:right-4 max-w-lg bg-white dark:bg-[#1A1A18] border-2 border-[#141414] dark:border-[#3E3D38] shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] p-5 z-40 text-left font-sans">
           <div className="flex items-start gap-3">
-            <Scale className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+            <Scale className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
             <div>
-              <h4 className="font-mono font-bold text-xs uppercase tracking-wider text-stone-900">
+              <h4 className="font-mono font-bold text-xs uppercase tracking-wider text-stone-900 dark:text-stone-100">
                 Aviso de Privacidade & Conformidade LGPD
               </h4>
-              <p className="text-xs font-serif text-stone-700 mt-1 leading-relaxed">
+              <p className="text-xs font-serif text-stone-700 dark:text-stone-300 mt-1 leading-relaxed">
                 Utilizamos cookies estritamente necessários e armazenamento local para assegurar a autenticação e conformidade com o Marco Civil da Internet (Lei nº 12.965/2014).
               </p>
               <div className="flex flex-wrap items-center justify-between gap-2 mt-4 font-mono text-xs">
@@ -2372,9 +2503,9 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => setIsLgpdModalOpen(true)}
-                  className="text-[10px] text-emerald-800 hover:text-emerald-950 font-bold uppercase underline cursor-pointer flex items-center gap-1"
+                  className="text-[10px] text-emerald-800 dark:text-emerald-400 hover:text-emerald-950 dark:hover:text-emerald-300 font-bold uppercase underline cursor-pointer flex items-center gap-1"
                 >
-                  <Scale className="w-3 h-3 text-emerald-700" />
+                  <Scale className="w-3 h-3 text-emerald-700 dark:text-emerald-400" />
                   <span>Ver Regras da LGPD à Amostra →</span>
                 </button>
               </div>

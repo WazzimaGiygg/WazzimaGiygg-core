@@ -94,6 +94,10 @@ import {
 } from '../../firebase';
 import { stripHtmlToPlainText } from '../../utils/text';
 import HighlightedText from '../HighlightedText';
+import {
+  validateWikiArticlePayload,
+  ArticleValidationError
+} from '../../utils/articleSchema';
 
 interface NotMediaWikiPortalProps {
   currentUser?: any;
@@ -124,6 +128,7 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
   const [editorIsMinor, setEditorIsMinor] = useState<boolean>(false);
   const [editorTab, setEditorTab] = useState<'split' | 'code' | 'preview'>('split');
   const [isSavingArticle, setIsSavingArticle] = useState<boolean>(false);
+  const [editorFieldErrors, setEditorFieldErrors] = useState<Record<string, string>>({});
 
   // History / Diff States
   const [selectedOldRevId, setSelectedOldRevId] = useState<string>('');
@@ -698,6 +703,7 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
       setEditorTitle(target.title);
       setEditorWikitext(target.wikitext);
       setEditorSummary(`Edição em ${target.title}`);
+      setEditorFieldErrors({});
       setActiveTab('editor');
     }
   };
@@ -707,20 +713,42 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
     setEditorTitle('');
     setEditorWikitext(`== Introdução ==\nEscreva aqui a introdução do novo verbete...\n\n== Seções ==\n* Tópico 1\n* Tópico 2\n\n== Referências ==\n<references />\n\n[[Category:Geral]]`);
     setEditorSummary('Criação de novo verbete');
+    setEditorFieldErrors({});
     setActiveTab('editor');
   };
 
   // Save or Update Article Revision
   const handleSaveArticle = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editorTitle.trim() || !editorWikitext.trim()) {
-      showToast('Título e wikitexto são obrigatórios.', true);
+    const candidateSlug = editorTitle.trim() ? editorTitle.trim().replace(/\s+/g, '_') : '';
+    const existingIndex = candidateSlug
+      ? articles.findIndex((a) => a.slug.toLowerCase() === candidateSlug.toLowerCase())
+      : -1;
+    const existingArticle = existingIndex >= 0 ? articles[existingIndex] : null;
+
+    const validation = validateWikiArticlePayload({
+      id: existingArticle?.id || `art-${Date.now()}`,
+      slug: candidateSlug,
+      title: editorTitle,
+      namespace: editorTitle.trim().startsWith('Talk:') || editorTitle.trim().startsWith('Discussão:') ? 1 : 0,
+      wikitext: editorWikitext,
+      summary: editorSummary.trim() || undefined,
+      categories: existingArticle?.categories || ['Geral', 'Comunidade'],
+      views: existingArticle ? (existingArticle.views || 0) + 1 : 1
+    });
+
+    if (!validation.valid || !validation.data) {
+      setEditorFieldErrors(validation.fieldErrors);
+      showToast(validation.message, true);
       return;
     }
 
+    setEditorFieldErrors({});
+    const validatedWiki = validation.data;
+
     setIsSavingArticle(true);
     try {
-      const slug = editorTitle.trim().replace(/\s+/g, '_');
+      const slug = validatedWiki.slug;
       const authorName = currentUser?.displayName || currentUser?.name || currentUser?.email || 'Editor Comunitário';
       const authorId = currentUser?.uid || 'usr_community';
 
@@ -729,40 +757,40 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
         id: revId,
         articleSlug: slug,
         parentRevisionId: currentArticle?.latestRevisionId || null,
-        wikitext: editorWikitext,
+        wikitext: validatedWiki.wikitext,
         comment: editorSummary.trim() || 'Atualização de conteúdo no banco de dados',
         author: { id: authorId, name: authorName, isBot: false },
         timestamp: new Date().toISOString(),
         sha256: Math.random().toString(36).substring(2, 18),
-        byteSize: editorWikitext.length,
+        byteSize: validatedWiki.wikitext.length,
         isMinor: editorIsMinor
       };
 
-      const existingIndex = articles.findIndex((a) => a.slug.toLowerCase() === slug.toLowerCase());
       let savedArt: WikiArticle;
 
-      if (existingIndex >= 0) {
+      if (existingArticle) {
         savedArt = {
-          ...articles[existingIndex],
-          title: editorTitle.trim(),
-          wikitext: editorWikitext,
+          ...existingArticle,
+          title: validatedWiki.title,
+          wikitext: validatedWiki.wikitext,
+          summary: validatedWiki.summary,
           latestRevisionId: revId,
           updatedAt: new Date().toISOString(),
-          views: (articles[existingIndex].views || 0) + 1
+          views: validatedWiki.views
         };
       } else {
         savedArt = {
-          id: `art-${Date.now()}`,
+          id: validatedWiki.id,
           slug,
-          title: editorTitle.trim(),
-          namespace: editorTitle.startsWith('Talk:') || editorTitle.startsWith('Discussão:') ? 1 : 0,
-          wikitext: editorWikitext,
-          summary: editorWikitext.substring(0, 150).replace(/[=[\]{}|]/g, '') + '...',
+          title: validatedWiki.title,
+          namespace: validatedWiki.namespace,
+          wikitext: validatedWiki.wikitext,
+          summary: validatedWiki.summary,
           latestRevisionId: revId,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
-          categories: ['Geral', 'Comunidade'],
-          views: 1
+          categories: validatedWiki.categories,
+          views: validatedWiki.views
         };
       }
 
@@ -787,24 +815,29 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
           stream: 'mediawiki.recentchange'
         },
         database: 'wzzmwiki',
-        page_title: editorTitle,
+        page_title: validatedWiki.title,
         page_namespace: savedArt.namespace,
         rev_id: revId,
         rev_timestamp: new Date().toISOString(),
         rev_sha1: newRev.sha256,
         rev_minor_edit: editorIsMinor,
-        rev_len: editorWikitext.length,
+        rev_len: validatedWiki.wikitext.length,
         user_text: authorName,
         comment: editorSummary || 'Edição no acervo',
-        type: existingIndex >= 0 ? 'edit' : 'new'
+        type: existingArticle ? 'edit' : 'new'
       };
       setEvents((prev) => [newEvent, ...prev]);
 
       setCurrentSlug(slug);
       setActiveTab('reader');
-      showToast(`✓ Artigo "${editorTitle}" gravado com sucesso no banco de dados!`);
-    } catch {
-      showToast('Erro ao gravar artigo no banco de dados.', true);
+      showToast(`✓ Artigo "${validatedWiki.title}" gravado com sucesso no banco de dados!`);
+    } catch (err: any) {
+      if (err instanceof ArticleValidationError) {
+        setEditorFieldErrors(err.fieldErrors);
+        showToast(err.message, true);
+      } else {
+        showToast(err?.message || 'Erro ao gravar artigo no banco de dados.', true);
+      }
     } finally {
       setIsSavingArticle(false);
     }
@@ -1401,19 +1434,38 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
             </div>
           </div>
 
-          <form onSubmit={handleSaveArticle} className="space-y-4 font-mono text-xs">
+          <form noValidate onSubmit={handleSaveArticle} className="space-y-4 font-mono text-xs">
             <div>
               <label className="block text-stone-700 font-bold uppercase text-[10px] mb-1">
-                Título do Verbete:
+                Título do Verbete: <span className="text-red-700">*</span>
               </label>
               <input
                 type="text"
                 required
+                maxLength={300}
                 value={editorTitle}
-                onChange={(e) => setEditorTitle(e.target.value)}
+                onChange={(e) => {
+                  setEditorTitle(e.target.value);
+                  setEditorFieldErrors((prev) => {
+                    if (!prev.title && !prev.slug) return prev;
+                    const next = { ...prev };
+                    delete next.title;
+                    delete next.slug;
+                    return next;
+                  });
+                }}
                 placeholder="Ex: Parsoid, Sistemas Distribuídos"
-                className="w-full p-2.5 border border-[#141414] bg-[#F8F7F4] focus:outline-none text-sm font-editorial font-bold"
+                className={`w-full p-2.5 border bg-[#F8F7F4] focus:outline-none text-sm font-editorial font-bold ${
+                  editorFieldErrors.title || editorFieldErrors.slug
+                    ? 'border-red-700 bg-red-50/40'
+                    : 'border-[#141414]'
+                }`}
               />
+              {(editorFieldErrors.title || editorFieldErrors.slug) && (
+                <p role="alert" className="mt-1 text-[11px] font-bold text-red-700">
+                  {editorFieldErrors.title || editorFieldErrors.slug}
+                </p>
+              )}
             </div>
 
             {/* Code / Preview Area */}
@@ -1421,16 +1473,31 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
               {(editorTab === 'split' || editorTab === 'code') && (
                 <div>
                   <label className="block text-stone-700 font-bold uppercase text-[10px] mb-1">
-                    Código Wikitexto:
+                    Código Wikitexto: <span className="text-red-700">*</span>
                   </label>
                   <textarea
                     rows={18}
                     required
                     value={editorWikitext}
-                    onChange={(e) => setEditorWikitext(e.target.value)}
+                    onChange={(e) => {
+                      setEditorWikitext(e.target.value);
+                      setEditorFieldErrors((prev) => {
+                        if (!prev.wikitext) return prev;
+                        const next = { ...prev };
+                        delete next.wikitext;
+                        return next;
+                      });
+                    }}
                     placeholder="Escreva em wikitexto..."
-                    className="w-full p-3 border border-[#141414] bg-[#F8F7F4] font-mono text-xs focus:outline-none leading-relaxed"
+                    className={`w-full p-3 border bg-[#F8F7F4] font-mono text-xs focus:outline-none leading-relaxed ${
+                      editorFieldErrors.wikitext ? 'border-red-700 bg-red-50/40' : 'border-[#141414]'
+                    }`}
                   />
+                  {editorFieldErrors.wikitext && (
+                    <p role="alert" className="mt-1 text-[11px] font-bold text-red-700">
+                      {editorFieldErrors.wikitext}
+                    </p>
+                  )}
                 </div>
               )}
 
