@@ -60,8 +60,8 @@ export const DOSSIE_CASES = [
   },
   {
     id: "caso-edmond",
-    titulo: "Caso Edmond Dantès (Gean Victor) • Reversões e Censura Transnacional",
-    moderador: "Edmond Dantès (Gean Victor)",
+    titulo: "Caso Edmond Dantès • Reversões e Censura Transnacional",
+    moderador: "Edmond Dantès",
     localidade: "Montreal (Canadá)",
     artigoReferencia: "wazzimagiygg.wikidot.com/relacionados-a-wikipedia#edmond",
     gravidade: "Alta",
@@ -73,9 +73,9 @@ export const DOSSIE_CASES = [
     ]
   },
   {
-    id: "caso-rui-gabriel",
-    titulo: "Caso Rui Gabriel Correia • Monitoramento e Assédio Off-Wiki",
-    moderador: "Rui Gabriel Correia",
+    id: "caso-off-wiki",
+    titulo: "Caso Monitoramento e Assédio Off-Wiki • Vigilância Externa",
+    moderador: "Operador Off-Wiki",
     localidade: "Johannesburg (África do Sul)",
     artigoReferencia: "wazzimagiygg.com/averdade/off-wiki",
     gravidade: "Crítica",

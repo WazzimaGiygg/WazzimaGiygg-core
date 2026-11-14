@@ -45,7 +45,8 @@ import {
   Flame,
   Award,
   Sun,
-  Moon
+  Moon,
+  ShieldCheck
 } from "lucide-react";
 import jsPDF from "jspdf";
 
@@ -99,6 +100,7 @@ import {
   ArticleValidationError
 } from "./utils/articleSchema";
 import { useTheme } from "./hooks/useTheme";
+import AiEthicsShowcase from "./components/AiEthicsShowcase";
 
 export default function App() {
   // Persistent Theme State (Light / Dark)
@@ -112,6 +114,7 @@ export default function App() {
   const [isAdminPanelOpen, setIsAdminPanelOpen] = useState(false);
   const [banReason] = useState("Violação dos Termos ou Conta sob Moderação");
   const [isLgpdModalOpen, setIsLgpdModalOpen] = useState(false);
+  const [isAiEthicsModalOpen, setIsAiEthicsModalOpen] = useState(false);
 
   // Navigation & Content States (initialized from URL ?uid= if present)
   const [currentTab, setCurrentTab] = useState<PortalTabId>(() => {
@@ -1272,7 +1275,8 @@ export default function App() {
               { id: "chat", label: "Chat & Mensagens", icon: MessageSquare },
               { id: "notmediawiki", label: "NotMediaWiki (Beta)", icon: Database },
               { id: "bemtevi", label: "Bemtevi (Rede Social)", icon: MessageCircle },
-              { id: "lgpd", label: "Regras LGPD (Lei 13.709)", icon: Scale }
+              { id: "lgpd", label: "Regras LGPD (Lei 13.709)", icon: Scale },
+              { id: "eticaia", label: "Ética (IA & Firebase)", icon: ShieldCheck }
             ].map((tab) => {
               const Icon = tab.icon;
               const isActive = currentTab === tab.id;
@@ -1917,6 +1921,22 @@ export default function App() {
             }}
           />
         )}
+
+        {/* VIEW 9: ÉTICA DE USO DE IA, FIREBASE & INDEPENDÊNCIA DA WIKIMEDIA */}
+        {currentTab === "eticaia" && (
+          <AiEthicsShowcase
+            isModal={false}
+            currentUser={user}
+            showToast={showToast}
+            onOpenDossie={() => switchTab("dossie")}
+            onOpenTicketForm={(tipo) => {
+              switchTab("tickets");
+              if (tipo) {
+                setTicketForm((prev) => ({ ...prev, tipo }));
+              }
+            }}
+          />
+        )}
       </main>
 
       {/* ============================================ */}
@@ -2195,6 +2215,16 @@ export default function App() {
                 ) : (
                   <span className="bg-red-600 text-white px-1.5 py-0.5 font-bold uppercase">Publicação Bloqueada</span>
                 )}
+              </div>
+              <div className="mt-2 pt-1.5 border-t border-current/20 flex items-center justify-between gap-2 text-[10px]">
+                <span>Publicações exigem autoria humana e fontes verificadas.</span>
+                <button
+                  type="button"
+                  onClick={() => setIsAiEthicsModalOpen(true)}
+                  className="underline font-bold hover:text-black dark:hover:text-white cursor-pointer shrink-0"
+                >
+                  Ler Ética de Uso da IA →
+                </button>
               </div>
             </div>
 
@@ -2566,6 +2596,14 @@ export default function App() {
               <span>Regras da LGPD (Ciência Absoluta)</span>
             </button>
             <span className="text-stone-700">•</span>
+            <button
+              onClick={() => setIsAiEthicsModalOpen(true)}
+              className="text-sky-300 hover:text-sky-200 font-bold flex items-center gap-1 cursor-pointer"
+            >
+              <ShieldCheck className="w-3 h-3 text-sky-400" />
+              <span>Ética (IA, Firebase &amp; Wikimedia)</span>
+            </button>
+            <span className="text-stone-700">•</span>
             <button onClick={handleTicketsTabClick} className="hover:text-amber-400 cursor-pointer">
               Ouvidoria & Tickets
             </button>
@@ -2651,6 +2689,27 @@ export default function App() {
           onOpenTicketForm={(tipo) => {
             switchTab("tickets");
             setIsLgpdModalOpen(false);
+            if (tipo) {
+              setTicketForm((prev) => ({ ...prev, tipo }));
+            }
+          }}
+        />
+      )}
+
+      {/* 15.1 MODAL DE ÉTICA DE USO DA IA, FIREBASE E WIKIMEDIA */}
+      {isAiEthicsModalOpen && (
+        <AiEthicsShowcase
+          isModal={true}
+          currentUser={user}
+          showToast={showToast}
+          onClose={() => setIsAiEthicsModalOpen(false)}
+          onOpenDossie={() => {
+            switchTab("dossie");
+            setIsAiEthicsModalOpen(false);
+          }}
+          onOpenTicketForm={(tipo) => {
+            switchTab("tickets");
+            setIsAiEthicsModalOpen(false);
             if (tipo) {
               setTicketForm((prev) => ({ ...prev, tipo }));
             }
