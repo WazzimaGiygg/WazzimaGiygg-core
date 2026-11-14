@@ -101,6 +101,7 @@ import {
 } from "./utils/articleSchema";
 import { useTheme } from "./hooks/useTheme";
 import AiEthicsShowcase from "./components/AiEthicsShowcase";
+import { FooterBadges } from "./wiki/components/FooterBadges";
 
 export default function App() {
   // Persistent Theme State (Light / Dark)
@@ -2623,6 +2624,23 @@ export default function App() {
             >
               <span>💝 Doações</span>
             </a>
+          </div>
+
+          {/* Faixa de ícones do rodapé (estilo Wiki-alternative / FooterBadges) */}
+          <div className="border-t border-stone-800 pt-5 pb-6 flex justify-center">
+            <FooterBadges
+              className="justify-center"
+              supportUrl={supportConfig.externalUrl || "https://support.wazzimagiygg.com/"}
+              onNavigate={(view) => {
+                if (view === "hub") {
+                  switchTab("wikiwazzimagiygg");
+                  window.scrollTo({ top: 0, behavior: "smooth" });
+                } else if (view === "privacy") {
+                  switchTab("lgpd");
+                  window.scrollTo({ top: 0, behavior: "smooth" });
+                }
+              }}
+            />
           </div>
 
           <div className="border-t border-stone-800 pt-6 flex flex-col sm:flex-row items-center justify-between text-[10px] text-stone-500 gap-3">

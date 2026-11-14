@@ -242,12 +242,14 @@ export const LgpdMarcoCivilBadge: React.FC<{ onClick?: () => void }> = ({ onClic
   </button>
 );
 
-export const WazzimaSupportBadge: React.FC = () => (
+export const WazzimaSupportBadge: React.FC<{ supportUrl?: string }> = ({
+  supportUrl = "https://support.wazzimagiygg.com/",
+}) => (
   <a
-    href={formatExternalUrl("https://support.wazzimagiygg.com/")}
+    href={formatExternalUrl(supportUrl)}
     target="_blank"
     rel="noopener noreferrer"
-    title="Central de Suporte, Tickets e Atendimento dos Serviços WazzimaGiygg: https://support.wazzimagiygg.com/"
+    title={`Central de Suporte, Tickets e Atendimento dos Serviços WazzimaGiygg: ${supportUrl}`}
     className="inline-flex items-center justify-between w-[88px] h-[31px] bg-gradient-to-br from-[#1e1b4b] via-[#0f172a] to-[#020617] border border-indigo-500/70 hover:border-indigo-400 rounded transition p-1 shadow-xs group"
   >
     {/* Headset / Lifebuoy / Ticket Support Icon */}
@@ -286,11 +288,19 @@ export const WikiZeroBadge: React.FC<{ onClick?: () => void }> = ({ onClick }) =
   </button>
 );
 
-export const FooterBadges: React.FC<{ onNavigate?: (view: any) => void }> = ({ onNavigate }) => {
+export const FooterBadges: React.FC<{
+  onNavigate?: (view: any) => void;
+  className?: string;
+  supportUrl?: string;
+}> = ({ onNavigate, className, supportUrl }) => {
   return (
-    <div className="flex flex-wrap items-center justify-center sm:justify-end gap-2 pt-1">
+    <div
+      className={`flex flex-wrap items-center gap-2 pt-1 ${
+        className ?? "justify-center sm:justify-end"
+      }`}
+    >
       <WikiZeroBadge onClick={() => onNavigate && onNavigate('hub')} />
-      <WazzimaSupportBadge />
+      <WazzimaSupportBadge supportUrl={supportUrl} />
       <LgpdMarcoCivilBadge onClick={() => onNavigate && onNavigate('privacy')} />
       <FirebaseBadge />
       <GoDaddyBadge />
