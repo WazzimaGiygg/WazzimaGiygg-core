@@ -85,7 +85,7 @@ import BemteviHub from "./components/bemtevi/BemteviHub";
 import { useUidNavigation, PortalTabId, parseTabFromUid } from "./hooks/useUidNavigation";
 import UidNavigationBar from "./components/UidNavigationBar";
 import UserProfileModal from "./components/UserProfileModal";
-import LgpdRulesShowcase from "./components/LgpdRulesShowcase";
+import LgpdRulesShowcase, { LgpdShowcaseTab } from "./components/LgpdRulesShowcase";
 import LgpdFloatingComplianceBadge from "./components/LgpdFloatingComplianceBadge";
 import DossieAbusosView from "./components/DossieAbusosView";
 import MaintenanceScreen from "./components/MaintenanceScreen";
@@ -112,6 +112,15 @@ import {
   enforceCookiePreferences,
   subscribeCookieConsent,
 } from "./utils/cookieConsent";
+import {
+  PrivacyComplianceSettings,
+  MARCO_CIVIL_LOG_RETENTION_DAYS,
+  getPrivacySettings,
+  subscribePrivacySettings,
+  isBrowserDoNotTrackActive,
+  formatPublicAuthorIdentifier,
+  purgeOptionalLocalSessionData,
+} from "./utils/privacySettings";
 
 export default function App() {
   // Persistent Theme State (Light / Dark)
@@ -125,7 +134,9 @@ export default function App() {
   const [isAdminPanelOpen, setIsAdminPanelOpen] = useState(false);
   const [banReason] = useState("Violação dos Termos ou Conta sob Moderação");
   const [isLgpdModalOpen, setIsLgpdModalOpen] = useState(false);
+  const [lgpdModalInitialTab, setLgpdModalInitialTab] = useState<LgpdShowcaseTab>("principios");
   const [isAiEthicsModalOpen, setIsAiEthicsModalOpen] = useState(false);
+  const [loginLgpdConsentAccepted, setLoginLgpdConsentAccepted] = useState(false);
 
   // Navigation & Content States (initialized from URL ?uid= if present)
   const [currentTab, setCurrentTab] = useState<PortalTabId>(() => {
@@ -182,15 +193,31 @@ export default function App() {
   // Sanctions List (cidades_sancionadas.json)
   const [sanctionsList, setSanctionsList] = useState<any[]>([]);
 
-  // Cookie Consent State (LGPD / ANPD)
+  // Cookie Consent & Privacy-by-Default State (LGPD / ANPD / Marco Civil)
   const [cookieConsent, setCookieConsent] = useState<LgpdCookieConsent | null>(() => getStoredCookieConsent());
   const [isCookiePreferencesOpen, setIsCookiePreferencesOpen] = useState(false);
+  const [privacySettings, setPrivacySettings] = useState<PrivacyComplianceSettings>(() => getPrivacySettings());
 
   useEffect(() => {
-    enforceCookiePreferences(getStoredCookieConsent());
-    return subscribeCookieConsent((updated) => {
+    const currentSettings = getPrivacySettings();
+    const dntOn = currentSettings.respectBrowserDnt && isBrowserDoNotTrackActive();
+    const storedConsent = getStoredCookieConsent();
+    if (dntOn && storedConsent && (storedConsent.functional || storedConsent.analytics || storedConsent.thirdParty)) {
+      const revoked = revokeAllNonEssentialCookies();
+      setCookieConsent(revoked);
+    } else {
+      enforceCookiePreferences(storedConsent);
+    }
+    const unsubCookies = subscribeCookieConsent((updated) => {
       setCookieConsent(updated);
     });
+    const unsubPrivacy = subscribePrivacySettings((updated) => {
+      setPrivacySettings(updated);
+    });
+    return () => {
+      unsubCookies();
+      unsubPrivacy();
+    };
   }, []);
 
   // Diagnostics Data
@@ -358,20 +385,22 @@ export default function App() {
       e.preventDefault();
     }
     const isWhitelisted = (redirectorConfig.whitelistDomains || []).some((dom: string) => url.includes(dom));
-    if (isWhitelisted || !redirectorConfig.enabled) {
-      window.open(url, "_blank");
+    if (isWhitelisted) {
+      window.open(url, "_blank", "noopener,noreferrer");
       return;
     }
 
-    if (redirectorConfig.showNoticeModal !== false) {
+    if (privacySettings.confirmExternalLinks || (redirectorConfig.enabled && redirectorConfig.showNoticeModal !== false)) {
       setExternalRedirectTarget(url);
+    } else if (!redirectorConfig.enabled) {
+      window.open(url, "_blank", "noopener,noreferrer");
     } else {
       const base = redirectorConfig.redirectBaseUrl || "https://wazzimagiygg.com/rv/?uid=";
       const activeUid = uidNav.currentUid || user?.uid || "usr_pedro_cardona_official";
       const outbound = redirectorConfig.appendUid !== false
         ? `${base}${encodeURIComponent(activeUid)}&dest=${encodeURIComponent(url)}`
         : `${base}&dest=${encodeURIComponent(url)}`;
-      window.open(outbound, "_blank");
+      window.open(outbound, "_blank", "noopener,noreferrer");
     }
   };
 
@@ -485,19 +514,25 @@ export default function App() {
   const generateGuestUID = () => "convid_" + Math.random().toString(36).substring(2, 12);
 
   const handleCreateGuestUser = () => {
+    if (!loginLgpdConsentAccepted) {
+      showToast("Confirme o aceite da LGPD e do Marco Civil antes de iniciar sessão.", true);
+      return;
+    }
     const guestUID = generateGuestUID();
     const expiry = Date.now() + 24 * 60 * 60 * 1000;
     const guestData = {
       uid: guestUID,
       displayName: "Leitor Convidado (24h)",
       email: `${guestUID}@guest.local`,
-      isGuest: true
+      isGuest: true,
+      lgpdConsentAt: new Date().toISOString(),
     };
     localStorage.setItem("wzzm_guest_user", JSON.stringify(guestData));
     localStorage.setItem("wzzm_guest_expiry", expiry.toString());
     setUser(guestData);
     setIsGuestUser(true);
     setIsLoginModalOpen(false);
+    setLoginLgpdConsentAccepted(false);
     registerAuditLog(guestUID, "guest_login");
     showToast("Acesso concedido como leitor convidado (válido por 24 horas).");
   };
@@ -517,13 +552,24 @@ export default function App() {
   };
 
   const handleGoogleLogin = async () => {
+    if (isLoginModalOpen && !loginLgpdConsentAccepted) {
+      showToast("Confirme o aceite da LGPD e do Marco Civil antes de autenticar.", true);
+      return;
+    }
     try {
       const result = await signInWithPopup(auth, googleProvider);
       clearGuestUser();
       setIsGuestUser(false);
       setIsLoginModalOpen(false);
+      setLoginLgpdConsentAccepted(false);
       showToast(`Bem-vindo(a), ${result.user.displayName || "Leitor"}!`);
-      registerAuditLog(result.user.uid, "google_login", { email: result.user.email });
+      registerAuditLog(
+        result.user.uid,
+        "google_login",
+        privacySettings.minimalDataCollectionMode
+          ? { consentBasis: "LGPD Art. 7, I" }
+          : { email: result.user.email, consentBasis: "LGPD Art. 7, I" }
+      );
     } catch (error: any) {
       console.error("Login error:", error);
       showToast(error.message || "Erro na autenticação com Google.", true);
@@ -536,12 +582,22 @@ export default function App() {
       setUser(null);
       setIsGuestUser(false);
       setIsAdmin(false);
-      showToast("Sessão de convidado encerrada.");
+      if (privacySettings.autoPurgeLocalCacheOnLogout) {
+        purgeOptionalLocalSessionData();
+      }
+      showToast("Sessão de convidado encerrada e caches locais limpos.");
     } else {
       await signOut(auth);
       setUser(null);
       setIsAdmin(false);
-      showToast("Desconectado com sucesso.");
+      if (privacySettings.autoPurgeLocalCacheOnLogout) {
+        purgeOptionalLocalSessionData();
+      }
+      showToast(
+        privacySettings.autoPurgeLocalCacheOnLogout
+          ? "Desconectado com limpeza automática de caches locais (LGPD Art. 16)."
+          : "Desconectado com sucesso."
+      );
     }
   };
 
@@ -1531,7 +1587,14 @@ export default function App() {
 
                     <div className="pt-3 border-t border-stone-200 dark:border-[#2E2D28] mt-2">
                       <div className="flex items-center justify-between text-[10px] font-mono text-stone-500 dark:text-stone-400 mb-3">
-                        <span>Autor: {article.criadorEmail?.split("@")[0] || "Redação"}</span>
+                        <span>
+                          Autor:{" "}
+                          {formatPublicAuthorIdentifier(
+                            article.criadorEmail,
+                            privacySettings.maskEmailInPublicViews,
+                            "Redação"
+                          )}
+                        </span>
                         <span>{article.ultimaEdicao || "Recente"}</span>
                       </div>
 
@@ -1764,8 +1827,12 @@ export default function App() {
                     onChange={(e) => setTicketForm({ ...ticketForm, tipo: e.target.value })}
                     className="w-full p-2.5 border border-[#141414] dark:border-[#3E3D38] bg-[#F8F7F4] dark:bg-[#121210] dark:text-stone-100 focus:outline-none"
                   >
-                    <option value="Direito de Esquecimento (LGPD)">Direito de Esquecimento (LGPD - Exclusão de Dados)</option>
-                    <option value="Retificação de Conteúdo">Retificação de Conteúdo / Direito de Resposta</option>
+                    <option value="Direito de Esquecimento (LGPD)">Direito de Esquecimento / Eliminação (LGPD Art. 18, VI)</option>
+                    <option value="Portabilidade / Acesso aos Dados (LGPD Art. 18, II e V)">Portabilidade ou Acesso aos Dados (LGPD Art. 18, II e V)</option>
+                    <option value="Retificação ou Oposição (LGPD Art. 18, III)">Retificação de Dados Inexatos (LGPD Art. 18, III)</option>
+                    <option value="Notificação de Remoção - Conteúdo Íntimo (Marco Civil Art. 21)">Notificação de Remoção — Violação de Intimidade (Marco Civil Art. 21)</option>
+                    <option value="Cumprimento de Ordem Judicial / URL ?uid= (Marco Civil Art. 19)">Notificação Judicial com URL ?uid= Específica (Marco Civil Art. 19)</option>
+                    <option value="Retificação de Conteúdo">Retificação Editorial / Direito de Resposta</option>
                     <option value="Denúncia de Assédio ou Moderação">Denúncia de Assédio ou Moderação Abusiva</option>
                     <option value="Dúvida Geral / Apoio Técnico">Dúvida Geral / Apoio Técnico</option>
                   </select>
@@ -1818,8 +1885,13 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="mt-6 pt-4 border-t border-stone-400 dark:border-[#3E3D38] text-[10px] font-mono text-stone-600 dark:text-stone-400">
-                Os prazos de resposta seguem os termos do Marco Civil da Internet e resoluções da ANPD (Autoridade Nacional de Proteção de Dados).
+              <div className="mt-6 pt-4 border-t border-stone-400 dark:border-[#3E3D38] text-[10px] font-mono text-stone-600 dark:text-stone-400 space-y-1">
+                <div>
+                  <strong>Prazos Legais:</strong> Atendimento LGPD em até <strong>15 dias corridos</strong> (Art. 19, II da Lei 13.709/2018); retirada prioritária sem ordem judicial para conteúdo íntimo não consentido (Art. 21 da Lei 12.965/2014).
+                </div>
+                <div>
+                  <strong>Guarda Sigilosa:</strong> Registros técnicos protegidos por {MARCO_CIVIL_LOG_RETENTION_DAYS} dias (Art. 15 do Marco Civil) sob reserva de jurisdição (Art. 22).
+                </div>
               </div>
             </div>
           </div>
@@ -2032,7 +2104,16 @@ export default function App() {
                 </h1>
 
                 <div className="flex flex-wrap items-center gap-4 text-xs font-mono text-stone-600 dark:text-stone-400 mt-4 pt-3 border-t border-stone-300 dark:border-[#2E2D28]">
-                  <span>Autor: <strong className="dark:text-stone-200">{selectedArticle.criadorEmail || "Redação WZZM"}</strong></span>
+                  <span>
+                    Autor:{" "}
+                    <strong className="dark:text-stone-200">
+                      {formatPublicAuthorIdentifier(
+                        selectedArticle.criadorEmail,
+                        privacySettings.maskEmailInPublicViews,
+                        "Redação WZZM"
+                      )}
+                    </strong>
+                  </span>
                   <span>•</span>
                   <span>Atualizado: {selectedArticle.ultimaEdicao || "Recente"}</span>
                   <span>•</span>
@@ -2455,38 +2536,72 @@ export default function App() {
       })()}
 
       {/* ============================================ */}
-      {/* 8. LOGIN MODAL */}
+      {/* 8. LOGIN MODAL (COM CONSENTIMENTO EXPLÍCITO LGPD & MARCO CIVIL) */}
       {/* ============================================ */}
       {isLoginModalOpen && (
         <div className="fixed inset-0 bg-stone-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-[#1A1A18] border-4 border-[#141414] dark:border-[#3E3D38] shadow-[10px_10px_0px_0px_rgba(20,20,20,1)] max-w-sm w-full p-8 text-center relative">
+          <div className="bg-white dark:bg-[#1A1A18] border-4 border-[#141414] dark:border-[#3E3D38] shadow-[10px_10px_0px_0px_rgba(20,20,20,1)] max-w-md w-full p-7 text-center relative">
             <button
-              onClick={() => setIsLoginModalOpen(false)}
+              onClick={() => {
+                setIsLoginModalOpen(false);
+                setLoginLgpdConsentAccepted(false);
+              }}
               className="absolute top-4 right-4 text-stone-500 hover:text-black dark:hover:text-white cursor-pointer"
             >
               <X className="w-5 h-5" />
             </button>
 
-            <div className="w-12 h-12 bg-[#EBEAE8] dark:bg-[#242320] border-2 border-[#141414] dark:border-[#3E3D38] flex items-center justify-center mx-auto mb-4">
+            <div className="w-12 h-12 bg-[#EBEAE8] dark:bg-[#242320] border-2 border-[#141414] dark:border-[#3E3D38] flex items-center justify-center mx-auto mb-3">
               <User className="w-6 h-6 text-[#141414] dark:text-stone-100" />
             </div>
 
             <h3 className="font-editorial text-2xl font-bold uppercase mb-2 dark:text-stone-100">Identificação do Leitor</h3>
-            <p className="text-xs font-serif text-stone-600 dark:text-stone-400 mb-6 leading-relaxed">
-              Acesse sua conta para publicar artigos, participar do canal interno e sincronizar preferências do portal.
+            <p className="text-xs font-serif text-stone-600 dark:text-stone-400 mb-4 leading-relaxed">
+              Coletamos apenas o mínimo necessário (<strong>UID, nome público e e-mail</strong>) para autenticação e atribuição autoral CC-BY-SA, sem CPF, telefone ou comercialização de dados.
             </p>
+
+            {/* Aviso & Opt-in LGPD / Marco Civil */}
+            <div className="text-left bg-[#F8F7F4] dark:bg-[#121210] border-2 border-stone-300 dark:border-[#3E3D38] p-3 mb-4 space-y-2">
+              <div className="text-[10px] font-mono text-stone-600 dark:text-stone-400 leading-relaxed">
+                <strong>Bases legais:</strong> Consentimento expresso (LGPD Art. 7º, I) e guarda sigilosa de registro de acesso por {MARCO_CIVIL_LOG_RETENTION_DAYS} dias (Marco Civil Art. 15). Acesso de leitura aos artigos não exige login.
+              </div>
+              <label className="flex items-start gap-2 text-[11px] font-serif text-stone-800 dark:text-stone-200 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={loginLgpdConsentAccepted}
+                  onChange={(e) => setLoginLgpdConsentAccepted(e.target.checked)}
+                  className="mt-0.5 accent-emerald-700 cursor-pointer shrink-0"
+                />
+                <span>
+                  Li e autorizo o tratamento dos meus dados de identificação conforme a{' '}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsLoginModalOpen(false);
+                      setLgpdModalInitialTab("privacidade");
+                      setIsLgpdModalOpen(true);
+                    }}
+                    className="underline font-bold text-emerald-700 dark:text-emerald-400 cursor-pointer"
+                  >
+                    Política LGPD &amp; Marco Civil
+                  </button>.
+                </span>
+              </label>
+            </div>
 
             <div className="space-y-3 font-mono text-xs font-bold">
               <button
                 onClick={handleGoogleLogin}
-                className="w-full bg-[#4285F4] hover:bg-[#357ae8] text-white py-3 px-4 border border-[#141414] flex items-center justify-center gap-3 transition-colors cursor-pointer shadow-[3px_3px_0px_0px_rgba(20,20,20,1)]"
+                disabled={!loginLgpdConsentAccepted}
+                className="w-full bg-[#4285F4] hover:bg-[#357ae8] disabled:opacity-45 disabled:cursor-not-allowed text-white py-3 px-4 border border-[#141414] flex items-center justify-center gap-3 transition-colors cursor-pointer shadow-[3px_3px_0px_0px_rgba(20,20,20,1)]"
               >
                 <span>ENTRAR COM GOOGLE</span>
               </button>
 
               <button
                 onClick={handleCreateGuestUser}
-                className="paper-button w-full py-3 px-4 flex items-center justify-center gap-3 cursor-pointer shadow-[3px_3px_0px_0px_rgba(20,20,20,1)]"
+                disabled={!loginLgpdConsentAccepted}
+                className="paper-button w-full py-3 px-4 flex items-center justify-center gap-3 cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed shadow-[3px_3px_0px_0px_rgba(20,20,20,1)]"
               >
                 <Monitor className="w-4 h-4 text-stone-300 dark:text-stone-700" />
                 <span>ACESSO CONVIDADO (24H)</span>
@@ -2599,11 +2714,36 @@ export default function App() {
             </button>
             <span className="text-stone-700">•</span>
             <button
-              onClick={() => setIsLgpdModalOpen(true)}
+              onClick={() => {
+                setLgpdModalInitialTab("principios");
+                setIsLgpdModalOpen(true);
+              }}
               className="text-emerald-400 hover:text-emerald-300 font-bold flex items-center gap-1 cursor-pointer"
             >
               <Scale className="w-3 h-3 text-emerald-400" />
               <span>Regras da LGPD (Ciência Absoluta)</span>
+            </button>
+            <span className="text-stone-700">•</span>
+            <button
+              onClick={() => {
+                setLgpdModalInitialTab("privacidade");
+                setIsLgpdModalOpen(true);
+              }}
+              className="text-emerald-300 hover:text-emerald-200 font-bold flex items-center gap-1 cursor-pointer"
+            >
+              <ShieldCheck className="w-3 h-3 text-emerald-300" />
+              <span>Privacidade &amp; Meus Dados (Art. 18)</span>
+            </button>
+            <span className="text-stone-700">•</span>
+            <button
+              onClick={() => {
+                setLgpdModalInitialTab("marcoCivil");
+                setIsLgpdModalOpen(true);
+              }}
+              className="text-sky-300 hover:text-sky-200 font-bold flex items-center gap-1 cursor-pointer"
+            >
+              <Globe className="w-3 h-3 text-sky-300" />
+              <span>Marco Civil (12.965/14)</span>
             </button>
             <span className="text-stone-700">•</span>
             <button
@@ -2661,8 +2801,8 @@ export default function App() {
           </div>
 
           <div className="border-t border-stone-800 pt-6 flex flex-col sm:flex-row items-center justify-between text-[10px] text-stone-500 gap-3">
-            <span>© 2026 WazzimaGiygg. Todos os direitos reservados sob licença CC-BY-SA 4.0.</span>
-            <span>Versão TypeScript 2.0 • Banco de Dados Firebase Integrado</span>
+            <span>© 2026 WazzimaGiygg. Licença CC-BY-SA 4.0 • LGPD (Lei 13.709/18) • Marco Civil (Lei 12.965/14) • Decreto 8.771/16.</span>
+            <span>DPO: pedrohenriquecardonaperes@gmail.com • Guarda de Logs Art. 15 MCI: 180 dias</span>
           </div>
         </div>
       </footer>
@@ -2718,6 +2858,7 @@ export default function App() {
       {isLgpdModalOpen && (
         <LgpdRulesShowcase
           isModal={true}
+          initialSubTab={lgpdModalInitialTab}
           currentUser={user}
           showToast={showToast}
           onClose={() => setIsLgpdModalOpen(false)}

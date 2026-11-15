@@ -31,10 +31,14 @@ import {
   ShieldAlert,
   Sliders,
   RotateCcw,
-  Ban
+  Ban,
+  Globe,
+  EyeOff,
+  HardDrive
 } from 'lucide-react';
 import jsPDF from 'jspdf';
-import { registerAuditLog } from '../firebase';
+import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
+import { db, registerAuditLog, sanitizeFirestoreData } from '../firebase';
 import {
   COOKIE_CATEGORIES,
   COOKIE_INVENTORY,
@@ -44,6 +48,28 @@ import {
   exportCookieConsentProof,
   subscribeCookieConsent,
 } from '../utils/cookieConsent';
+import {
+  PrivacyComplianceSettings,
+  MARCO_CIVIL_LOG_RETENTION_DAYS,
+  getPrivacySettings,
+  savePrivacySettings,
+  resetPrivacySettingsToDefault,
+  subscribePrivacySettings,
+  isBrowserDoNotTrackActive,
+  purgeOptionalLocalSessionData,
+  inspectTitularLocalInventory,
+  exportTitularPersonalDataPackage,
+} from '../utils/privacySettings';
+
+export type LgpdShowcaseTab =
+  | 'principios'
+  | 'direitos'
+  | 'cookies'
+  | 'marcoCivil'
+  | 'privacidade'
+  | 'bases'
+  | 'dpo'
+  | 'termoCiencia';
 
 export interface LgpdRulesShowcaseProps {
   onClose?: () => void;
@@ -52,6 +78,7 @@ export interface LgpdRulesShowcaseProps {
   currentUser?: any;
   showToast?: (msg: string, isError?: boolean) => void;
   isModal?: boolean;
+  initialSubTab?: LgpdShowcaseTab;
 }
 
 export const LGPD_PRINCIPIOS = [
@@ -188,24 +215,161 @@ export const LGPD_DIREITOS = [
   }
 ];
 
+export const MARCO_CIVIL_GARANTIAS = [
+  {
+    artigo: "Arts. 3º e 9º • Neutralidade de Rede",
+    titulo: "Acesso Isonômico e Livre ao Conhecimento",
+    descricao: "Todo pacote de dados e consulta a verbetes recebe tratamento isonômico sem bloqueio comercial, discriminação de conteúdo, paywalls ou priorização paga.",
+    implementacao: "Leitura irrestrita de artigos sem necessidade de login ou aceitação de cookies opcionais."
+  },
+  {
+    artigo: "Art. 7º, I a VIII • Direitos do Usuário",
+    titulo: "Inviolabilidade da Intimidade e Transparência",
+    descricao: "Garantia de informações claras sobre coleta, uso, armazenamento e tratamento, além de não fornecimento de dados a terceiros sem consentimento livre, expresso e informado.",
+    implementacao: "Consentimento granular destacado no login e nos cookies, além de cláusula expressa de não-comercialização."
+  },
+  {
+    artigo: "Arts. 10, 15 e 22 • Guarda de Registros (6 Meses)",
+    titulo: "Sigilo de Registros e Reserva de Jurisdição",
+    descricao: "Registros de acesso a aplicações de internet são guardados sob sigilo pelo prazo legal de 6 meses (180 dias) e somente podem ser disponibilizados mediante ordem judicial específica.",
+    implementacao: "Proibição administrativa estrita de exposição de IPs (como os abusos de CheckUser relatados no Dossiê) e trilha criptográfica de auditoria."
+  },
+  {
+    artigo: "Arts. 19 e 21 • Conteúdo de Terceiros",
+    titulo: "Notificação e Retirada Estruturada",
+    descricao: "Canal formal para cumprimento de ordem judicial com indicação clara e específica da URL (?uid=) e remoção ágil sem ordem judicial nos casos de violação de intimidade previstos no Art. 21.",
+    implementacao: "Formulário dedicado na Ouvidoria & Tickets com categorias específicas para Art. 19 e Art. 21 do Marco Civil."
+  },
+  {
+    artigo: "Decreto nº 8.771/2016 • Padrões de Segurança",
+    titulo: "Controle de Acesso, Criptografia e Sigilo",
+    descricao: "Exige controle estrito sobre acesso aos dados, autenticação segura, registro de acessos autorizados e técnicas de encriptação/sanitização.",
+    implementacao: "Transporte TLS/HTTPS, Firebase Auth com tokens verificados, sanitização DOMPurify e segregação de privilégios de Burocrata."
+  }
+];
+
 export default function LgpdRulesShowcase({
   onClose,
   onOpenTicketForm,
   onOpenCookiePreferences,
   currentUser,
   showToast,
-  isModal = true
+  isModal = true,
+  initialSubTab = 'principios'
 }: LgpdRulesShowcaseProps) {
-  const [activeSubTab, setActiveSubTab] = useState<
-    'principios' | 'direitos' | 'cookies' | 'bases' | 'dpo' | 'termoCiencia'
-  >('principios');
+  const [activeSubTab, setActiveSubTab] = useState<LgpdShowcaseTab>(initialSubTab);
   const [cookieConsentState, setCookieConsentState] = useState<LgpdCookieConsent | null>(() =>
     getStoredCookieConsent()
   );
+  const [privacySettings, setPrivacySettings] = useState<PrivacyComplianceSettings>(() =>
+    getPrivacySettings()
+  );
+  const [deletionReason, setDeletionReason] = useState(
+    'Solicitação formal de eliminação de dados pessoais e encerramento de vínculo nos termos do Art. 18, VI da LGPD e Art. 7º, X do Marco Civil da Internet.'
+  );
+  const [deletionEmailInput, setDeletionEmailInput] = useState<string>(currentUser?.email || '');
+  const [deletionConfirmChecked, setDeletionConfirmChecked] = useState(false);
+  const [isSubmittingDeletion, setIsSubmittingDeletion] = useState(false);
+  const [lastDeletionProtocol, setLastDeletionProtocol] = useState<string | null>(null);
 
   React.useEffect(() => {
-    return subscribeCookieConsent((next) => setCookieConsentState(next));
+    setActiveSubTab(initialSubTab);
+  }, [initialSubTab]);
+
+  React.useEffect(() => {
+    if (currentUser?.email && !deletionEmailInput) {
+      setDeletionEmailInput(currentUser.email);
+    }
+  }, [currentUser?.email]);
+
+  React.useEffect(() => {
+    const unsubCookies = subscribeCookieConsent((next) => setCookieConsentState(next));
+    const unsubPrivacy = subscribePrivacySettings((next) => setPrivacySettings(next));
+    return () => {
+      unsubCookies();
+      unsubPrivacy();
+    };
   }, []);
+
+  const dntActive = isBrowserDoNotTrackActive();
+  const titularInventory = inspectTitularLocalInventory(currentUser);
+
+  const handleTogglePrivacySetting = (
+    key: keyof Omit<PrivacyComplianceSettings, 'updatedAt'>
+  ) => {
+    const next = savePrivacySettings({ [key]: !privacySettings[key] });
+    setPrivacySettings(next);
+    if (key === 'respectBrowserDnt' && next.respectBrowserDnt && dntActive) {
+      const revoked = revokeAllNonEssentialCookies();
+      setCookieConsentState(revoked);
+    }
+    if (showToast) {
+      showToast('Configuração de privacidade (LGPD / Marco Civil) atualizada.');
+    }
+  };
+
+  const handleExportMyDataPortability = () => {
+    const res = exportTitularPersonalDataPackage({
+      user: currentUser,
+      isGuestUser: Boolean(currentUser?.isGuest),
+    });
+    if (currentUser?.uid) {
+      registerAuditLog(currentUser.uid, 'lgpd_portability_exported', {
+        filename: res.filename,
+        exportedAt: res.exportedAt,
+      }).catch(() => {});
+    }
+    if (showToast) {
+      showToast(`Pacote de portabilidade (Art. 18, V) baixado: ${res.filename}`);
+    }
+  };
+
+  const handleSubmitDirectDeletion = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!deletionConfirmChecked) {
+      if (showToast) showToast('Confirme a ciência da eliminação definitiva antes de protocolar.', true);
+      return;
+    }
+    setIsSubmittingDeletion(true);
+    const protocolId = `LGPD-DEL-${Date.now().toString(36).toUpperCase()}`;
+    try {
+      await addDoc(
+        collection(db, 'deletion_requests'),
+        sanitizeFirestoreData({
+          protocolo: protocolId,
+          uid: currentUser?.uid || 'anonimo_sessao',
+          name: currentUser?.displayName || 'Titular Solicitante',
+          nomeCompleto: currentUser?.displayName || 'Titular Solicitante',
+          email: deletionEmailInput.trim() || currentUser?.email || 'nao-informado@local',
+          reason: deletionReason.trim(),
+          motivo: deletionReason.trim(),
+          dataTypes: ['Conta/UID', 'Preferências', 'Caches Locais', 'Histórico Opcional'],
+          tipoDado: 'Eliminação Completa (LGPD Art. 18, VI & Marco Civil Art. 7º, X)',
+          status: 'pending',
+          requestDate: serverTimestamp(),
+          marcoCivilNotice: `Registros técnicos obrigatórios sob Art. 15 da Lei 12.965/2014 mantidos apenas pelo prazo legal de ${MARCO_CIVIL_LOG_RETENTION_DAYS} dias sob sigilo.`,
+        })
+      ).catch(() => {});
+
+      const clearedKeys = purgeOptionalLocalSessionData();
+      const revoked = revokeAllNonEssentialCookies();
+      setCookieConsentState(revoked);
+      setLastDeletionProtocol(protocolId);
+
+      registerAuditLog(currentUser?.uid || 'anon', 'lgpd_deletion_requested', {
+        protocolId,
+        clearedLocalKeysCount: clearedKeys.length,
+      }).catch(() => {});
+
+      if (showToast) {
+        showToast(`Solicitação protocolada (${protocolId}) e dados locais opcionais limpos.`);
+      }
+    } catch {
+      if (showToast) showToast('Erro ao registrar solicitação de exclusão.', true);
+    } finally {
+      setIsSubmittingDeletion(false);
+    }
+  };
 
   const [copiedProtocol, setCopiedProtocol] = useState(false);
   const [searchFilter, setSearchFilter] = useState('');
@@ -459,11 +623,13 @@ export default function LgpdRulesShowcase({
           <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
             {[
               { id: 'principios', label: '10 Princípios (Art. 6º)', count: 10 },
-              { id: 'direitos', label: 'Direitos do Titular (Art. 18)', count: 8 },
+              { id: 'direitos', label: 'Direitos (Art. 18)', count: 8 },
+              { id: 'privacidade', label: 'Configurações & Meus Dados', count: null },
+              { id: 'marcoCivil', label: 'Marco Civil (12.965/14)', count: MARCO_CIVIL_GARANTIAS.length },
               { id: 'cookies', label: 'Cookies & ANPD', count: COOKIE_CATEGORIES.length },
-              { id: 'bases', label: 'Bases Legais & Tratamento', count: null },
-              { id: 'dpo', label: 'Encarregado (DPO) & Ouvidoria', count: null },
-              { id: 'termoCiencia', label: 'Certidão de Ciência Absoluta', count: cienciaRegistrada ? '✓' : '!' }
+              { id: 'bases', label: 'Bases Legais', count: null },
+              { id: 'dpo', label: 'DPO & Ouvidoria', count: null },
+              { id: 'termoCiencia', label: 'Ciência Absoluta', count: cienciaRegistrada ? '✓' : '!' }
             ].map((tab) => (
               <button
                 key={tab.id}
@@ -606,6 +772,22 @@ export default function LgpdRulesShowcase({
                       <button
                         type="button"
                         onClick={() => {
+                          if (d.inciso === 'Art. 18, V') {
+                            handleExportMyDataPortability();
+                            return;
+                          }
+                          if (d.inciso === 'Art. 18, I' || d.inciso === 'Art. 18, II') {
+                            setActiveSubTab('privacidade');
+                            return;
+                          }
+                          if (d.inciso === 'Art. 18, IX') {
+                            setActiveSubTab('cookies');
+                            return;
+                          }
+                          if (d.inciso === 'Art. 18, VII') {
+                            setActiveSubTab('bases');
+                            return;
+                          }
                           if (onOpenTicketForm) {
                             onOpenTicketForm(d.titulo);
                             if (isModal && onClose) onClose();
@@ -621,6 +803,276 @@ export default function LgpdRulesShowcase({
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+
+          {/* TAB 2C: CONFIGURAÇÕES DE PRIVACIDADE POR PADRÃO & PORTABILIDADE/EXCLUSÃO (ART. 18 & ART. 46 § 2º) */}
+          {activeSubTab === 'privacidade' && (
+            <div className="space-y-6">
+              <div className="border-b border-stone-300 pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-xl font-editorial font-bold text-[#141414] flex items-center gap-2">
+                    <EyeOff className="w-5 h-5 text-emerald-700" />
+                    <span>Privacidade por Padrão (Art. 46, § 2º) &amp; Autoatendimento (Art. 18)</span>
+                  </h3>
+                  <p className="text-xs font-serif text-stone-700 mt-1">
+                    Ajuste as configurações de proteção automática do portal, consulte os dados armazenados nesta sessão e exerça portabilidade ou eliminação imediata.
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 font-mono text-[11px]">
+                  <button
+                    type="button"
+                    onClick={handleExportMyDataPortability}
+                    className="bg-[#141414] hover:bg-stone-800 text-white font-bold uppercase px-3 py-2 cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Download className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Portabilidade JSON (Art. 18, V)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const reset = resetPrivacySettingsToDefault();
+                      setPrivacySettings(reset);
+                      if (showToast) showToast('Configurações restauradas para proteção máxima padrão.');
+                    }}
+                    className="bg-stone-100 hover:bg-stone-200 text-stone-900 border border-stone-400 font-bold uppercase px-3 py-2 cursor-pointer flex items-center gap-1.5"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>Padrão Máximo</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Controles de Privacy by Default */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                {[
+                  {
+                    key: 'maskEmailInPublicViews' as const,
+                    title: 'Mascarar E-mail em Visualizações Públicas',
+                    legal: 'LGPD Art. 6º, III (Minimização) e Art. 46, § 2º',
+                    desc: 'Substitui endereços completos por formato ofuscado (ex.: ped***@gmail.com) nos cards e leitores de artigos.',
+                  },
+                  {
+                    key: 'confirmExternalLinks' as const,
+                    title: 'Aviso Obrigatório em Links Externos',
+                    legal: 'Marco Civil Art. 7º, VI e VIII',
+                    desc: 'Exibe confirmação transparente antes de abrir domínios externos, evitando vazamento silencioso de navegação.',
+                  },
+                  {
+                    key: 'respectBrowserDnt' as const,
+                    title: `Respeitar Sinal Do Not Track / GPC (${dntActive ? 'Detectado no navegador' : 'Inativo no navegador'})`,
+                    legal: 'LGPD Art. 8º & Guia ANPD',
+                    desc: 'Quando o navegador envia DNT/GPC, bloqueia automaticamente cookies e métricas não essenciais.',
+                  },
+                  {
+                    key: 'autoPurgeLocalCacheOnLogout' as const,
+                    title: 'Limpeza Automática de Cache ao Sair',
+                    legal: 'LGPD Art. 16 (Término do Tratamento)',
+                    desc: 'Remove sessões de convidado, caches locais de chat e leituras recentes ao desconectar.',
+                  },
+                ].map((opt) => {
+                  const enabled = privacySettings[opt.key];
+                  return (
+                    <label
+                      key={opt.key}
+                      className="bg-white border-2 border-stone-800 p-4 shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] flex items-start justify-between gap-3 cursor-pointer"
+                    >
+                      <div className="space-y-1">
+                        <div className="font-mono font-bold text-xs text-stone-900">{opt.title}</div>
+                        <div className="text-[10px] font-mono text-emerald-800 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 w-fit">
+                          {opt.legal}
+                        </div>
+                        <p className="text-xs font-serif text-stone-700 leading-relaxed">{opt.desc}</p>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={enabled}
+                        onChange={() => handleTogglePrivacySetting(opt.key)}
+                        className="mt-1 h-4 w-4 accent-emerald-700 cursor-pointer shrink-0"
+                      />
+                    </label>
+                  );
+                })}
+              </div>
+
+              {/* Inventário Pessoal em Tempo Real (Livre Acesso) */}
+              <div className="bg-white border-2 border-stone-800 p-4 overflow-x-auto">
+                <h4 className="font-mono font-bold text-xs uppercase text-stone-900 mb-3 flex items-center gap-2">
+                  <HardDrive className="w-4 h-4 text-amber-700" />
+                  <span>Inventário em Tempo Real dos Seus Dados neste Dispositivo (Art. 6º, IV &amp; Art. 18, II)</span>
+                </h4>
+                <table className="w-full text-left border-collapse font-mono text-[11px]">
+                  <thead>
+                    <tr className="border-b border-stone-300 text-stone-600">
+                      <th className="py-2 pr-3 font-bold">Registro / Chave</th>
+                      <th className="py-2 pr-3 font-bold">Situação Atual</th>
+                      <th className="py-2 font-bold">Base Legal</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-stone-200 text-stone-800">
+                    {titularInventory.map((item) => (
+                      <tr key={item.chave}>
+                        <td className="py-2 pr-3 align-top">
+                          <div className="font-bold">{item.chave}</div>
+                          <div className="text-[10px] font-sans text-stone-600">{item.finalidade}</div>
+                        </td>
+                        <td className="py-2 pr-3 align-top">
+                          <span
+                            className={`inline-block text-[10px] px-1.5 py-0.5 border mb-1 font-bold ${
+                              item.presenteNoDispositivo
+                                ? 'bg-amber-50 text-amber-900 border-amber-300'
+                                : 'bg-stone-100 text-stone-600 border-stone-300'
+                            }`}
+                          >
+                            {item.presenteNoDispositivo ? 'Ativo' : 'Ausente'}
+                          </span>
+                          <div className="text-[10px] text-stone-700">{item.resumoValor}</div>
+                        </td>
+                        <td className="py-2 align-top text-[10px] text-stone-600">{item.baseLegal}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Solicitação Direta de Eliminação (Art. 18, VI LGPD & Art. 7º, X Marco Civil) */}
+              <form
+                onSubmit={handleSubmitDirectDeletion}
+                className="bg-red-50/60 border-2 border-red-800 p-4 space-y-3"
+              >
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <h4 className="font-mono font-bold text-xs uppercase text-red-950 flex items-center gap-1.5">
+                    <Trash2 className="w-4 h-4 text-red-700" />
+                    <span>Solicitar Eliminação de Dados / Direito ao Esquecimento (Art. 18, VI LGPD • Art. 7º, X MCI)</span>
+                  </h4>
+                  <span className="font-mono text-[10px] bg-white border border-red-300 text-red-900 px-2 py-0.5">
+                    Prazo: até 15 dias (Art. 19, II)
+                  </span>
+                </div>
+
+                {lastDeletionProtocol && (
+                  <div className="p-3 bg-emerald-50 border border-emerald-600 font-mono text-xs text-emerald-950">
+                    ✓ Protocolo registrado: <strong>{lastDeletionProtocol}</strong>. Caches e cookies opcionais locais foram imediatamente limpos.
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 font-mono text-xs">
+                  <div>
+                    <label className="block text-[10px] font-bold uppercase text-stone-700 mb-1">
+                      E-mail para confirmação do certificado de exclusão:
+                    </label>
+                    <input
+                      type="email"
+                      value={deletionEmailInput}
+                      onChange={(e) => setDeletionEmailInput(e.target.value)}
+                      placeholder="seu.email@exemplo.com"
+                      className="w-full p-2 bg-white border border-stone-500 text-xs focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold uppercase text-stone-700 mb-1">
+                      Justificativa / Escopo (opcional):
+                    </label>
+                    <input
+                      type="text"
+                      value={deletionReason}
+                      onChange={(e) => setDeletionReason(e.target.value)}
+                      className="w-full p-2 bg-white border border-stone-500 text-xs focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <label className="flex items-start gap-2 text-xs font-serif text-stone-800 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={deletionConfirmChecked}
+                    onChange={(e) => setDeletionConfirmChecked(e.target.checked)}
+                    className="mt-0.5 accent-red-700"
+                  />
+                  <span>
+                    Estou ciente de que registros estritamente exigidos por lei (Art. 15 do Marco Civil da Internet — prazo de {MARCO_CIVIL_LOG_RETENTION_DAYS} dias sob sigilo) permanecem bloqueados apenas até o termo legal, sendo os demais dados pessoais definitivamente eliminados.
+                  </span>
+                </label>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="submit"
+                    disabled={isSubmittingDeletion}
+                    className="bg-red-800 hover:bg-red-900 text-white font-mono text-xs font-bold uppercase px-4 py-2 cursor-pointer disabled:opacity-60 flex items-center gap-1.5"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>{isSubmittingDeletion ? 'Protocolando...' : 'Protocolar Eliminação & Limpar Dados Locais'}</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {/* TAB 2D: MARCO CIVIL DA INTERNET (LEI Nº 12.965/2014 & DECRETO Nº 8.771/2016) */}
+          {activeSubTab === 'marcoCivil' && (
+            <div className="space-y-5">
+              <div className="border-b border-stone-300 pb-3">
+                <h3 className="text-xl font-editorial font-bold text-[#141414] flex items-center gap-2">
+                  <Globe className="w-5 h-5 text-sky-700" />
+                  <span>Marco Civil da Internet (Lei nº 12.965/2014) &amp; Decreto nº 8.771/2016</span>
+                </h3>
+                <p className="text-xs font-serif text-stone-700 mt-1">
+                  Diretrizes técnicas e jurídicas aplicadas no portal para assegurar neutralidade de rede, sigilo das comunicações, guarda controlada de registros ({MARCO_CIVIL_LOG_RETENTION_DAYS} dias) e devido processo na retirada de conteúdo.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                {MARCO_CIVIL_GARANTIAS.map((g) => (
+                  <div
+                    key={g.artigo}
+                    className="bg-white border-2 border-stone-800 p-4 shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] space-y-2"
+                  >
+                    <span className="font-mono font-bold text-[10px] bg-sky-100 text-sky-900 px-1.5 py-0.5 border border-sky-300 uppercase inline-block">
+                      {g.artigo}
+                    </span>
+                    <h4 className="font-mono font-bold text-xs uppercase text-stone-900">{g.titulo}</h4>
+                    <p className="text-xs font-serif text-stone-700 leading-relaxed">{g.descricao}</p>
+                    <div className="p-2 bg-stone-50 border-l-2 border-sky-700 text-[11px] font-sans text-stone-800">
+                      <strong className="font-mono text-[10px] uppercase block text-sky-900">Aplicação técnica:</strong>
+                      {g.implementacao}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {onOpenTicketForm && (
+                <div className="bg-[#EBEAE5] border-2 border-stone-800 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="text-xs font-serif text-stone-800">
+                    <strong className="font-mono uppercase block text-[11px] text-stone-900">
+                      Canais de Notificação do Marco Civil (Arts. 19 e 21)
+                    </strong>
+                    Protocolos de retirada por violação de intimidade (Art. 21) ou cumprimento de ordem judicial com URL ?uid= específica (Art. 19).
+                  </div>
+                  <div className="flex flex-wrap gap-2 font-mono text-[11px] shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onOpenTicketForm('Notificação de Remoção - Conteúdo Íntimo (Marco Civil Art. 21)');
+                        if (isModal && onClose) onClose();
+                      }}
+                      className="bg-red-800 hover:bg-red-900 text-white font-bold uppercase px-3 py-2 cursor-pointer"
+                    >
+                      Notificar Art. 21
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onOpenTicketForm('Cumprimento de Ordem Judicial / URL ?uid= (Marco Civil Art. 19)');
+                        if (isModal && onClose) onClose();
+                      }}
+                      className="bg-[#141414] hover:bg-stone-800 text-white font-bold uppercase px-3 py-2 cursor-pointer"
+                    >
+                      Notificar Art. 19
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -988,7 +1440,7 @@ export default function LgpdRulesShowcase({
         <footer className="bg-[#EBEAE5] border-t-2 border-[#141414] p-3 px-6 flex flex-col sm:flex-row items-center justify-between gap-2 text-[10px] font-mono text-stone-600">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="font-bold uppercase text-stone-800">
-              LEI Nº 13.709/2018 (LGPD) • MARCO CIVIL Nº 12.965/2014
+              LEI Nº 13.709/2018 (LGPD) • MARCO CIVIL Nº 12.965/2014 • DECRETO Nº 8.771/2016
             </span>
             <span>•</span>
             <span>DPO: pedrohenriquecardonaperes@gmail.com</span>
