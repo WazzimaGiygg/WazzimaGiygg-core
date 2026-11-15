@@ -1472,21 +1472,29 @@ export type ExtensionCategory =
   | 'security'       // Segurança, Anti-Spam, Moderação, Auditoria
   | 'ferramenta'     // Ferramentas Interativas (Calculadora, Previsão, Relógio)
   | 'tool'           // Alias para ferramenta
+  | 'theme'          // Temas visuais
   | 'editor'         // Botões da barra de ferramentas, Snippets, Assistentes de Edição
+  | 'widget'         // Widgets laterais/rodapé
+  | 'moderation'     // Moderação
+  | 'communication'  // Comunicação e Chat
+  | 'community'      // Comunidade e Checklists
+  | 'export'         // Exportação e Backups
   | 'multimedia'     // Áudio, Web Speech, Leitores Multimídia, Podcasts, Modelos
   | 'gamification'   // Quizzes, Flashcards, Conquistas, Barnstars, Medalhas
   | 'social'         // Compartilhamento, QR Code, Cartões de Redes Sociais
   | 'automation'     // Bots automáticos de manutenção, Corretores, Normalização
   | 'analytics';     // Análise de dados, Métricas de Engajamento, Visualizações
 
-export interface ExtensionSettingSchema {
+export interface ExtensionSettingField {
   key: string;
   label: string;
-  description?: string;
-  type: 'boolean' | 'string' | 'number' | 'select';
-  options?: { label: string; value: any }[];
+  type: 'boolean' | 'string' | 'number' | 'select' | 'color';
   defaultValue: any;
+  options?: Array<string | { label: string; value: any }>;
+  description?: string;
 }
+
+export type ExtensionSettingSchema = ExtensionSettingField;
 
 export interface EditorButtonDefinition {
   id: string;
@@ -1540,50 +1548,85 @@ export interface RegisteredToolMeta {
   component?: React.ComponentType<any>;
 }
 
-export interface CustomToolInput {
+export interface CustomWikitextTagRule {
+  tag: string;
+  template: string;
+  description?: string;
+  hasClosingTag?: boolean;
+}
+
+export interface CustomToolInputField {
   id: string;
   label: string;
-  type?: 'text' | 'number' | 'select';
-  placeholder?: string;
+  type?: 'number' | 'text' | 'select';
   defaultValue?: any;
-  options?: { label: string; value: any }[];
+  placeholder?: string;
+  options?: { label: string; value: string | number }[];
+  helpText?: string;
 }
+
+export type CustomToolInput = CustomToolInputField;
 
 export interface CustomToolConfig {
-  id: string;
-  name: string;
+  toolId: string;
+  id?: string;
+  name?: string;
   title: string;
   subtitle?: string;
+  icon?: string;
   description?: string;
-  icon?: string;
-  extensionName?: string;
   badge?: string;
-  toolId?: string;
-  resultLabel?: string;
-  htmlWidget?: string;
-  inputs?: CustomToolInput[];
-  calculationFormula?: string;
-  unitSuffix?: string;
-}
-
-export interface CustomEditorPluginConfig {
-  buttonId: string;
-  label: string;
-  tooltip?: string;
-  icon?: string;
-  snippetTemplate: string;
+  category?: string;
   extensionName?: string;
+  htmlWidget?: string;
+  inputs?: CustomToolInputField[];
+  calculationFormula?: string;
+  resultLabel?: string;
+  unitSuffix?: string;
 }
 
 export interface CustomThemeConfig {
   themeId: string;
   displayName: string;
   description?: string;
+  baseTheme?: 'light' | 'dark' | 'retro' | 'cyberpunk' | 'monochrome' | string;
   accentColor?: string;
-  baseTheme?: 'light' | 'dark' | 'cyberpunk' | string;
+  backgroundColor?: string;
+  textColor?: string;
+  fontFamily?: string;
+  previewGradient?: string;
+  customCss?: string;
   cssVariables?: Record<string, string>;
   extensionName?: string;
 }
+
+export interface CustomEditorPluginConfig {
+  buttonId: string;
+  label: string;
+  icon?: string;
+  tooltip?: string;
+  snippetTemplate: string;
+  shortcut?: string;
+  extensionName?: string;
+}
+
+export interface CustomArticleBannerConfig {
+  bannerId: string;
+  title: string;
+  message: string;
+  type: 'info' | 'warning' | 'alert' | 'success' | 'tip';
+  position?: 'top' | 'bottom';
+  targetNamespace?: string;
+}
+
+export interface CustomContentFilterRule {
+  pattern: string;
+  replacement: string;
+  isRegex?: boolean;
+  description?: string;
+}
+
+export type ExtensionSyncStatus = 'synced' | 'local_only' | 'cloud_only' | 'conflict' | 'pending';
 
 export interface InstalledExtensionMeta {
   id: string;
@@ -1601,15 +1644,57 @@ export interface InstalledExtensionMeta {
   website?: string;
   hooks: string[];
   customScript?: string;
+  customCss?: string;
+  customTags?: CustomWikitextTagRule[];
+  toolConfig?: CustomToolConfig;
+  themeConfig?: CustomThemeConfig;
+  editorPluginConfig?: CustomEditorPluginConfig;
+  bannerConfig?: CustomArticleBannerConfig;
+  filterRules?: CustomContentFilterRule[];
+  dependencies?: string[];
+  settingsSchema?: ExtensionSettingField[];
   settings?: Record<string, any>;
-  settingsSchema?: ExtensionSettingSchema[];
+  permissions?: string[];
+  tags?: string[];
+  syncStatus?: ExtensionSyncStatus;
+  originFile?: string;
+  uploadedFile?: string;
+  securityLayer?: boolean;
+  noCloudSync?: boolean;
+  syncedAt?: string;
+  syncedBy?: string;
+}
+
+export interface ExtensionConflict {
+  id: string;
+  extensionName: string;
+  type: 'orphan_cloud' | 'orphan_local' | 'collision_name' | 'collision_function';
+  title: string;
+  description: string;
+  localVersion?: string;
+  cloudVersion?: string;
+  localMeta?: InstalledExtensionMeta;
+  cloudMeta?: InstalledExtensionMeta;
+  detectedAt: string;
+}
+
+export interface FirebaseExtensionRegistryDoc {
+  id: string;
+  states: Record<string, boolean>;
+  settings?: Record<string, Record<string, any>>;
+  version: string;
+  updatedAt: string;
+  updatedBy: string;
+  securityHash?: string;
+  totalExtensions?: number;
+  activeCount?: number;
 }
 
 export interface ExtensionActionLog {
   id: string;
   extensionId: string;
   extensionName: string;
-  action: 'activated' | 'deactivated' | 'added' | 'removed' | 'configured';
+  action: 'activated' | 'deactivated' | 'added' | 'removed' | 'configured' | 'synced_cloud' | 'cloud_removed' | 'conflict_resolved';
   operatorUid: string;
   operatorUsername: string;
   operatorRole: string;
@@ -1617,6 +1702,87 @@ export interface ExtensionActionLog {
   details?: string;
 }
 
+// ==========================================
+// DISPOSITIVOS DE SEGURANÇA DE EXTENSÕES (3.05.9.a & 3.05.9.b)
+// ==========================================
 
+export type SyncIntegrityState = 'verified' | 'tampered' | 'unverified' | 'drift' | 'quarantined';
 
+export interface SyncSecurityCheckpoint {
+  id: string;
+  timestamp: string;
+  operatorUid: string;
+  operatorUsername: string;
+  snapshotStates: Record<string, boolean>;
+  snapshotHashes: Record<string, string>;
+  totalExtensions: number;
+  note: string;
+}
 
+export interface SyncQuarantineRecord {
+  id: string;
+  extensionName: string;
+  version: string;
+  source: 'cloud_sync' | 'file_upload' | 'manual';
+  quarantinedAt: string;
+  reason: string;
+  severity: 'critical' | 'high' | 'medium';
+  hash: string;
+  rawContent?: string;
+  status: 'quarantined' | 'approved' | 'rejected' | 'sanitized';
+  reviewedBy?: string;
+  reviewedAt?: string;
+}
+
+export interface SyncSecurityAuditLog {
+  id: string;
+  timestamp: string;
+  action: 'hash_check' | 'quarantined' | 'released' | 'blocked' | 'checkpoint_created' | 'rollback_executed' | 'drift_detected';
+  extensionName?: string;
+  operator: string;
+  details: string;
+  hash?: string;
+}
+
+export type MalwareSeverity = 'critical' | 'high' | 'medium' | 'low' | 'clean';
+
+export type MalwareThreatCategory =
+  | 'rce'
+  | 'xss_injection'
+  | 'data_exfiltration'
+  | 'credential_theft'
+  | 'cryptomining'
+  | 'obfuscation'
+  | 'prototype_pollution'
+  | 'phishing_overlay';
+
+export interface MalwareThreatFinding {
+  id: string;
+  category: MalwareThreatCategory;
+  severity: MalwareSeverity;
+  title: string;
+  description: string;
+  codeSnippet: string;
+  lineNumber?: number;
+  columnNumber?: number;
+  recommendation: string;
+  signatureId: string;
+  cweId?: string;
+}
+
+export interface ExtensionMalwareScanReport {
+  extensionName: string;
+  version?: string;
+  scannedAt: string;
+  totalFilesScanned: number;
+  threatsFound: MalwareThreatFinding[];
+  severity: MalwareSeverity;
+  isSafe: boolean;
+  securityScore: number;
+  fileMetrics: {
+    linesCount: number;
+    bytesCount: number;
+    sha256: string;
+  };
+  status: 'clean' | 'threats_detected' | 'quarantined' | 'sanitized';
+}

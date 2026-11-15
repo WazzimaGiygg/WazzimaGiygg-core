@@ -38,7 +38,8 @@ import {
   Globe,
   FileCode,
   PieChart as PieChartIcon,
-  BarChart2
+  BarChart2,
+  Puzzle
 } from "lucide-react";
 import { signInWithPopup } from "firebase/auth";
 import { collection, addDoc, serverTimestamp } from "firebase/firestore";
@@ -75,6 +76,8 @@ import {
 } from "../data/ferramentasSource";
 import FerramentasHub from "./FerramentasHub";
 import DeletionRequestsDashboard from "./DeletionRequestsDashboard";
+import { AdminExtensionsManagementView } from "../wiki/components/AdminExtensionsManagementView";
+import type { UserProfile as WikiUserProfile } from "../wiki/types";
 
 interface AdminPanelProps {
   currentUser: any;
@@ -99,8 +102,26 @@ export default function AdminPanel({
 }: AdminPanelProps) {
   // Navigation inside Admin Core
   const [adminTab, setAdminTab] = useState<
-    "dashboard" | "usuarios" | "artigos" | "tickets" | "sancoes" | "checkuser" | "ferramentas" | "exclusao"
+    "dashboard" | "usuarios" | "artigos" | "tickets" | "sancoes" | "checkuser" | "ferramentas" | "exclusao" | "extensoes"
   >("dashboard");
+
+  const wikiExtensionUser: WikiUserProfile | null = useMemo(() => {
+    if (!currentUser) return null;
+    const displayName = currentUser.displayName || currentUser.name || currentUser.email || "Usuário";
+    return {
+      uid: currentUser.uid || currentUser.id || "portal-user",
+      username: displayName,
+      displayName,
+      email: currentUser.email || "",
+      photoURL: currentUser.photoURL || undefined,
+      role: isAdmin ? "admin" : "leitor",
+      group: isAdmin ? "burocrata" : "usuario",
+      isGuest: false,
+      isBanned: false,
+      createdAt: new Date().toISOString(),
+      dataCriacao: new Date().toISOString(),
+    };
+  }, [currentUser, isAdmin]);
 
   // Solicitacao de Exclusao LGPD State (admin/admintools/solicitacaodeexlusao/)
   const [deletionRequestsList, setDeletionRequestsList] = useState<DeletionRequest[]>([]);
@@ -1001,6 +1022,7 @@ export default function AdminPanel({
             { id: "tickets", label: "Ouvidoria & LGPD", icon: Ticket },
             { id: "sancoes", label: "Cidades Sancionadas", icon: Scale },
             { id: "checkuser", label: "Auditoria Forense", icon: Shield },
+            { id: "extensoes", label: "Extensões", icon: Puzzle },
             { id: "ferramentas", label: "Ferramentas da WZZM", icon: Settings }
           ].map((tab) => {
             const Icon = tab.icon;
@@ -1540,6 +1562,16 @@ export default function AdminPanel({
             selectedToolHref={selectedToolHref}
             onSelectToolHref={(href) => setSelectedToolHref(href)}
           />
+        )}
+
+        {/* SUB-VIEW 7B: SISTEMA MODULAR DE EXTENSÕES (WIKI-ALTERNATIVE) */}
+        {adminTab === "extensoes" && (
+          <div className="bg-white border-2 border-[#141414] p-4 sm:p-6 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]">
+            <AdminExtensionsManagementView
+              currentUser={wikiExtensionUser}
+              onBack={() => setAdminTab("dashboard")}
+            />
+          </div>
         )}
 
         {/* SUB-VIEW 8: EXCLUSÃO DE DADOS LGPD (admin/admintools/solicitacaodeexlusao/) */}

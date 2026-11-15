@@ -54,3 +54,13 @@ export function getDbSafe(): Firestore | null {
 export function getAuthSafe() {
   return auth;
 }
+
+export async function getFirebaseIdTokenSafe(): Promise<string | null> {
+  try {
+    const user = auth?.currentUser;
+    if (!user) return null;
+    return await user.getIdToken();
+  } catch {
+    return null;
+  }
+}

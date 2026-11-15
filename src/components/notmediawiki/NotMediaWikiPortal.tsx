@@ -53,7 +53,8 @@ import {
   Cpu,
   Sliders,
   Copy,
-  Share2
+  Share2,
+  Puzzle
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import ExtensionConfigModal from '../ExtensionConfigModal';
@@ -98,6 +99,8 @@ import {
   validateWikiArticlePayload,
   ArticleValidationError
 } from '../../utils/articleSchema';
+import { AdminExtensionsManagementView } from '../../wiki/components/AdminExtensionsManagementView';
+import type { UserProfile as WikiUserProfile } from '../../wiki/types';
 
 interface NotMediaWikiPortalProps {
   currentUser?: any;
@@ -115,7 +118,29 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
   const [revisions, setRevisions] = useState<WikiRevision[]>([]);
   const [events, setEvents] = useState<WikiEvent[]>([]);
   const [extensions, setExtensions] = useState<WikiExtension[]>(SEED_WIKI_EXTENSIONS);
+  const [extensionSuiteMode, setExtensionSuiteMode] = useState<'wiki-alternative' | 'classic'>('wiki-alternative');
   const [isLoadingWikiData, setIsLoadingWikiData] = useState<boolean>(true);
+
+  const wikiExtensionUser: WikiUserProfile | null = useMemo(() => {
+    if (!currentUser) return null;
+    const displayName = currentUser.displayName || currentUser.name || currentUser.email || 'Usuário';
+    const isBurocrataUser =
+      currentUser.email?.toLowerCase() === 'pedrohenriquecardonaperes@gmail.com' ||
+      Boolean(currentUser.isAdmin);
+    return {
+      uid: currentUser.uid || 'portal-user',
+      username: displayName,
+      displayName,
+      email: currentUser.email || '',
+      photoURL: currentUser.photoURL || undefined,
+      role: isBurocrataUser ? 'admin' : 'leitor',
+      group: isBurocrataUser ? 'burocrata' : 'usuario',
+      isGuest: false,
+      isBanned: false,
+      createdAt: new Date().toISOString(),
+      dataCriacao: new Date().toISOString(),
+    };
+  }, [currentUser]);
 
   // Active Article in Reader
   const [currentSlug, setCurrentSlug] = useState<string>('');
@@ -1896,6 +1921,45 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
       {/* TAB 7: EXTENSÕES & DISPOSITIVOS DE SEGURANÇA (3.05.9.a & 3.05.9.b)    */}
       {/* ===================================================================== */}
       {activeTab === 'extensions' && (
+        <div className="space-y-4">
+          <div className="bg-white border-2 border-[#141414] p-3 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] flex flex-wrap items-center justify-between gap-2 font-mono text-xs">
+            <div className="flex items-center gap-2">
+              <Puzzle className="w-4 h-4 text-purple-700" />
+              <span className="font-bold uppercase tracking-wider text-stone-900">
+                Sistema Modular de Extensões
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setExtensionSuiteMode('wiki-alternative')}
+                className={`px-3 py-1.5 font-bold uppercase border-2 cursor-pointer transition-colors ${
+                  extensionSuiteMode === 'wiki-alternative'
+                    ? 'bg-[#141414] text-white border-[#141414]'
+                    : 'bg-stone-100 text-stone-700 border-stone-300 hover:bg-stone-200'
+                }`}
+              >
+                Wiki-alternative (Sistema Completo)
+              </button>
+              <button
+                type="button"
+                onClick={() => setExtensionSuiteMode('classic')}
+                className={`px-3 py-1.5 font-bold uppercase border-2 cursor-pointer transition-colors ${
+                  extensionSuiteMode === 'classic'
+                    ? 'bg-[#141414] text-white border-[#141414]'
+                    : 'bg-stone-100 text-stone-700 border-stone-300 hover:bg-stone-200'
+                }`}
+              >
+                Catálogo NotMediaWiki (3.05.9)
+              </button>
+            </div>
+          </div>
+
+          {extensionSuiteMode === 'wiki-alternative' ? (
+            <div className="bg-white border-2 border-[#141414] p-4 sm:p-6 shadow-[6px_6px_0px_0px_rgba(20,20,20,1)]">
+              <AdminExtensionsManagementView currentUser={wikiExtensionUser} />
+            </div>
+          ) : (
         <div className="bg-white border-2 border-[#141414] p-6 shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] space-y-6">
           {/* Header & Device Status */}
           <div className="border-b-2 border-[#141414] pb-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -2595,6 +2659,8 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
                 </div>
               </div>
             </div>
+          )}
+        </div>
           )}
         </div>
       )}

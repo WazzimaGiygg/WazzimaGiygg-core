@@ -5,11 +5,15 @@
  */
 
 import {
+  ExtensionSettingField,
   ExtensionCategory,
+  CustomToolConfig,
+  CustomThemeConfig,
+  CustomEditorPluginConfig,
+  CustomArticleBannerConfig,
   EditorButtonDefinition,
   ArticleActionDefinition,
   ArticleWidgetDefinition,
-  ExtensionSettingSchema,
 } from '../types';
 
 /**
@@ -335,6 +339,13 @@ export class HookRegistry {
     this.filters.clear();
     this.actions.clear();
   }
+
+  /**
+   * Remove filtros associados a uma extensão específica (alias para compatibilidade).
+   */
+  public removeFiltersForExtension(extensionName: string): void {
+    this.removeAllHooksForExtension(extensionName);
+  }
 }
 
 /**
@@ -356,10 +367,8 @@ export interface WikiExtension {
   /**
    * Método de ciclo de vida chamado no momento em que a extensão é carregada pelo ExtensionManager.
    * Permite à extensão registrar suas ações, filtros e manipuladores no HookRegistry.
-   *
-   * @param hooks Instância central do registro de hooks do WikiWorldWeb
    */
-  onRegister(hooks: HookRegistry): void;
+  onRegister(hooks: HookRegistry, context?: { settings?: Record<string, any>; manager?: any }): void;
 
   /**
    * Descrição opcional da funcionalidade da extensão.
@@ -377,44 +386,14 @@ export interface WikiExtension {
   getCategory?(): ExtensionCategory;
 
   /**
-   * Componente React interativo principal fornecido pela extensão (para Ferramentas ou views especiais).
-   */
-  getComponent?(): any;
-
-  /**
-   * Botões customizados que a extensão injeta na barra de ferramentas do WikitextEditor.
-   */
-  getEditorButtons?(): EditorButtonDefinition[];
-
-  /**
-   * Botões de ação rápida que a extensão injeta na barra superior do ArticleViewer.
-   */
-  getArticleActions?(): ArticleActionDefinition[];
-
-  /**
-   * Widgets informativos ou interativos que a extensão exibe no rodapé ou na lateral do artigo.
-   */
-  getWidgets?(): ArticleWidgetDefinition[];
-
-  /**
-   * Esquema descritivo de opções customizáveis pelo Burocrata ou usuário.
-   */
-  getSettingsSchema?(): ExtensionSettingSchema[] | undefined;
-
-  /**
-   * Obtém valores de configuração atuais.
-   */
-  getSettings?(): Record<string, any>;
-
-  /**
-   * Disparado quando as configurações da extensão são alteradas.
-   */
-  onConfigChange?(newSettings: Record<string, any>): void;
-
-  /**
    * Indica se é uma extensão nativa / essencial da Wiki.
    */
   isCore?(): boolean;
+
+  /**
+   * Indica se a extensão pode ser sincronizada com a nuvem (Firebase).
+   */
+  isSyncableWithCloud?(): boolean;
 
   /**
    * Link da documentação oficial da extensão.
@@ -425,4 +404,54 @@ export interface WikiExtension {
    * Método opcional executado quando a extensão for descarregada/desativada.
    */
   onUnregister?(hooks: HookRegistry): void;
+
+  /**
+   * CSS customizado opcional fornecido pela extensão, injetado no DOM quando ativa.
+   */
+  getCustomCss?(): string | undefined;
+
+  /**
+   * Esquema de opções configuráveis pelo burocrata no painel administrativo.
+   */
+  getSettingsSchema?(): ExtensionSettingField[] | undefined;
+
+  /**
+   * Lista de permissões ou capacidades requeridas pela extensão.
+   */
+  getPermissions?(): string[] | undefined;
+
+  /**
+   * Configuração de ferramenta interativa fornecida pela extensão.
+   */
+  getToolConfig?(): CustomToolConfig | undefined;
+
+  /**
+   * Configuração de tema visual fornecido pela extensão.
+   */
+  getThemeConfig?(): CustomThemeConfig | undefined;
+
+  /**
+   * Configuração de plugin para a barra do editor wikitext.
+   */
+  getEditorPluginConfig?(): CustomEditorPluginConfig | undefined;
+
+  /**
+   * Configuração de banner ou aviso para artigos.
+   */
+  getBannerConfig?(): CustomArticleBannerConfig | undefined;
+
+  /**
+   * Dependências declaradas requeridas para esta extensão funcionar.
+   */
+  getDependencies?(): string[] | undefined;
+
+  /**
+   * Métodos legados mantidos para compatibilidade retroativa.
+   */
+  getComponent?(): any;
+  getEditorButtons?(): EditorButtonDefinition[];
+  getArticleActions?(): ArticleActionDefinition[];
+  getWidgets?(): ArticleWidgetDefinition[];
+  getSettings?(): Record<string, any>;
+  onConfigChange?(newSettings: Record<string, any>): void;
 }
