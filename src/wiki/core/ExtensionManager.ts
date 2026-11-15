@@ -106,20 +106,9 @@ import PlagiarismCheckerExtension from '../extensions/plagiarism-checker';
 import OnlineStatusVerifierExtension from '../extensions/online-status-verifier';
 import OnlineStatusExtension from './extensions/OnlineStatusExtension';
 import { NetworkStatusService } from '../services/networkStatusService';
+import { isUserBureaucrat } from '../utils/bureaucratAuth';
 
-/**
- * Função utilitária central para validar se um usuário possui o status de Burocrata.
- */
-export function isUserBureaucrat(user: UserProfile | null): boolean {
-  if (!user) return false;
-  // Sysop fundador e e-mail institucional mestre
-  if (user.email === 'pedrohenriquecardonaperes@gmail.com') return true;
-  // Usuário associado explicitamente ao grupo 'burocrata'
-  if (user.group && user.group.toLowerCase().includes('burocrata')) return true;
-  // Administradores plenos da Wiki
-  if (user.role === 'admin') return true;
-  return false;
-}
+export { isUserBureaucrat };
 
 export class ExtensionManager {
   private static instance: ExtensionManager;

@@ -91,6 +91,12 @@ import { ACTIVE_FIREBASE_CONFIG, getActiveFirebaseConfig } from '../config/fireb
 import { FirebaseUsageMetricsService } from './firebaseUsageMetricsService';
 import { CURATED_FEATURED_ARTICLES } from '../data/curatedArticles';
 import { isAuthorizedPublisher } from '../../firebase';
+import {
+  getStoredCookieConsent,
+  saveLgpdCookieConsent,
+  resetCookieConsentPrompt,
+  enforceCookiePreferences,
+} from '../../utils/cookieConsent';
 
 // Configuração ativa do Firebase derivada do arquivo de configuração do desenvolvedor (src/config/firebaseCustomConfig.ts)
 export const firebaseConfig = {
@@ -1995,15 +2001,84 @@ export const StorageService = {
 
   // === COOKIES & LGPD ===
   getCookieConsent(): CookieConsent | null {
-    const raw = localStorage.getItem(STORAGE_KEYS.CONSENT);
-    return raw ? JSON.parse(raw) : null;
+    try {
+      const unified = getStoredCookieConsent();
+      const raw = localStorage.getItem(STORAGE_KEYS.CONSENT);
+      if (raw) {
+        const parsed = JSON.parse(raw) as CookieConsent;
+        if (parsed && parsed.essential === true) {
+          if (parsed.expiresAt) {
+            const expTime = new Date(parsed.expiresAt).getTime();
+            if (!isNaN(expTime) && Date.now() > expTime) {
+              localStorage.removeItem(STORAGE_KEYS.CONSENT);
+              enforceCookiePreferences(null);
+              return null;
+            }
+          }
+          if (unified && unified.version === parsed.version) {
+            return parsed;
+          }
+        }
+      }
+      if (unified) {
+        const mapped: CookieConsent = {
+          essential: true,
+          functional: unified.functional,
+          analytics: unified.analytics,
+          advertising: unified.advertising,
+          thirdParty: unified.thirdParty,
+          timestamp: unified.timestamp,
+          expiresAt: unified.expiresAt,
+          protocolId: unified.protocolId,
+          decisionMethod: unified.decisionMethod,
+          version: unified.version,
+        };
+        localStorage.setItem(STORAGE_KEYS.CONSENT, JSON.stringify(mapped));
+        return mapped;
+      }
+      return null;
+    } catch {
+      return null;
+    }
   },
 
   saveCookieConsent(consent: Omit<CookieConsent, 'timestamp' | 'version'>): CookieConsent {
+    const thirdPartyAllowed = Boolean(consent.thirdParty ?? consent.advertising);
+    const functionalAllowed = Boolean(consent.functional ?? (consent.analytics || thirdPartyAllowed));
+    const analyticsAllowed = Boolean(consent.analytics);
+
+    const method =
+      consent.decisionMethod === 'accept_all' ||
+      consent.decisionMethod === 'reject_non_essential' ||
+      consent.decisionMethod === 'custom' ||
+      consent.decisionMethod === 'revoked'
+        ? consent.decisionMethod
+        : functionalAllowed && analyticsAllowed && thirdPartyAllowed
+          ? 'accept_all'
+          : !functionalAllowed && !analyticsAllowed && !thirdPartyAllowed
+            ? 'reject_non_essential'
+            : 'custom';
+
+    const saved = saveLgpdCookieConsent(
+      {
+        functional: functionalAllowed,
+        analytics: analyticsAllowed,
+        thirdParty: thirdPartyAllowed,
+      },
+      method
+    );
+
     const fullConsent: CookieConsent = {
-      ...consent,
-      timestamp: new Date().toISOString(),
-      version: '2.0',
+      essential: true,
+      functional: saved.functional,
+      analytics: saved.analytics,
+      advertising: saved.advertising,
+      thirdParty: saved.thirdParty,
+      timestamp: saved.timestamp,
+      expiresAt: saved.expiresAt,
+      protocolId: saved.protocolId,
+      decisionMethod: saved.decisionMethod,
+      version: saved.version,
     };
     localStorage.setItem(STORAGE_KEYS.CONSENT, JSON.stringify(fullConsent));
     return fullConsent;
@@ -2107,12 +2182,13 @@ export const StorageService = {
     localStorage.removeItem(STORAGE_KEYS.CONSENT);
     localStorage.removeItem(STORAGE_KEYS.BIRTHDATE);
     localStorage.removeItem(STORAGE_KEYS.USER_AGE);
+    resetCookieConsentPrompt();
 
     const notifPrefs = this.getLgpdNotificationPreferences();
     if (notifPrefs.notifyOnPrivacyUpdate) {
       this.addNotification({
         title: 'Consentimento LGPD Revogado',
-        message: 'Suas permissões e cookies foram revogados conforme o Artigo 18 da LGPD.',
+        message: 'Suas permissões e cookies não essenciais foram revogados e removidos conforme o Art. 8º, § 5º e Art. 18, IX da LGPD.',
         link: '#mydata',
         type: 'warning',
       });

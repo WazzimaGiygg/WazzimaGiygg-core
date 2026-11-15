@@ -354,9 +354,14 @@ export interface NotificationItem {
 
 export interface CookieConsent {
   essential: boolean;
+  functional?: boolean;
   analytics: boolean;
   advertising: boolean;
+  thirdParty?: boolean;
   timestamp: string;
+  expiresAt?: string;
+  protocolId?: string;
+  decisionMethod?: string;
   version: string;
 }
 

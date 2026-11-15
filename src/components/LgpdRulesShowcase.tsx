@@ -28,14 +28,27 @@ import {
   Trash2,
   HelpCircle,
   FileCheck,
-  ShieldAlert
+  ShieldAlert,
+  Sliders,
+  RotateCcw,
+  Ban
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import { registerAuditLog } from '../firebase';
+import {
+  COOKIE_CATEGORIES,
+  COOKIE_INVENTORY,
+  LgpdCookieConsent,
+  getStoredCookieConsent,
+  revokeAllNonEssentialCookies,
+  exportCookieConsentProof,
+  subscribeCookieConsent,
+} from '../utils/cookieConsent';
 
 export interface LgpdRulesShowcaseProps {
   onClose?: () => void;
   onOpenTicketForm?: (tipo?: string) => void;
+  onOpenCookiePreferences?: () => void;
   currentUser?: any;
   showToast?: (msg: string, isError?: boolean) => void;
   isModal?: boolean;
@@ -63,7 +76,7 @@ export const LGPD_PRINCIPIOS = [
     nome: "Necessidade (Minimização)",
     artigo: "Art. 6º, III",
     resumoLegal: "Limitação do tratamento ao mínimo necessário para a realização de suas finalidades, com abrangência dos dados pertinentes, proporcionais e não excessivos.",
-    cumprimentoPortal: "Não coletamos telefone, endereço físico, CPF, dados de cartão ou cookies de rastreamento invasivo. Leitores podem ler 100% do acervo como convidados anônimos sem qualquer cadastro.",
+    cumprimentoPortal: "Não coletamos telefone, endereço físico, CPF, dados de cartão ou cookies de rastreamento invasivo. Cookies não essenciais iniciam desativados por padrão (opt-in estrito) e leitores podem ler 100% do acervo sem aceitar rastreamento.",
     status: "100% CUMPRIDO"
   },
   {
@@ -170,7 +183,7 @@ export const LGPD_DIREITOS = [
   {
     inciso: "Art. 18, IX",
     titulo: "Revogação do Consentimento",
-    descricao: "O consentimento para login pode ser revogado a qualquer momento mediante exclusão da conta ou logout.",
+    descricao: "O consentimento para login e para cookies não essenciais pode ser revogado a qualquer momento de forma gratuita e imediata.",
     acaoLabel: "Revogar Consentimento"
   }
 ];
@@ -178,13 +191,21 @@ export const LGPD_DIREITOS = [
 export default function LgpdRulesShowcase({
   onClose,
   onOpenTicketForm,
+  onOpenCookiePreferences,
   currentUser,
   showToast,
   isModal = true
 }: LgpdRulesShowcaseProps) {
   const [activeSubTab, setActiveSubTab] = useState<
-    'principios' | 'direitos' | 'bases' | 'dpo' | 'termoCiencia'
+    'principios' | 'direitos' | 'cookies' | 'bases' | 'dpo' | 'termoCiencia'
   >('principios');
+  const [cookieConsentState, setCookieConsentState] = useState<LgpdCookieConsent | null>(() =>
+    getStoredCookieConsent()
+  );
+
+  React.useEffect(() => {
+    return subscribeCookieConsent((next) => setCookieConsentState(next));
+  }, []);
 
   const [copiedProtocol, setCopiedProtocol] = useState(false);
   const [searchFilter, setSearchFilter] = useState('');
@@ -439,6 +460,7 @@ export default function LgpdRulesShowcase({
             {[
               { id: 'principios', label: '10 Princípios (Art. 6º)', count: 10 },
               { id: 'direitos', label: 'Direitos do Titular (Art. 18)', count: 8 },
+              { id: 'cookies', label: 'Cookies & ANPD', count: COOKIE_CATEGORIES.length },
               { id: 'bases', label: 'Bases Legais & Tratamento', count: null },
               { id: 'dpo', label: 'Encarregado (DPO) & Ouvidoria', count: null },
               { id: 'termoCiencia', label: 'Certidão de Ciência Absoluta', count: cienciaRegistrada ? '✓' : '!' }
@@ -656,6 +678,136 @@ export default function LgpdRulesShowcase({
                 <p className="text-xs font-serif text-stone-200 leading-relaxed">
                   A WazzimaGiygg assegura expressamente que <strong>JAMAIS vendeu, vende ou venderá</strong> dados pessoais de seus leitores, autores ou visitantes para corretores de dados (data brokers), empresas de publicidade programática, telemarketing ou parceiros comerciais. Todo o financiamento do projeto dá-se via contribuições voluntárias e acervo público independente.
                 </p>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 2B: GESTÃO E TRANSPARÊNCIA DE COOKIES (ANPD / LGPD) */}
+          {activeSubTab === 'cookies' && (
+            <div className="space-y-5">
+              <div className="border-b border-stone-300 pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-xl font-editorial font-bold text-[#141414] flex items-center gap-2">
+                    <Sliders className="w-5 h-5 text-amber-700" />
+                    <span>Política e Gestão de Cookies (LGPD &amp; Guia ANPD)</span>
+                  </h3>
+                  <p className="text-xs font-serif text-stone-700 mt-1">
+                    Todas as categorias não essenciais operam em regime de <strong>opt-in estrito</strong> (desativadas até autorização expressa) e podem ser revogadas imediatamente.
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 font-mono text-[11px] shrink-0">
+                  {onOpenCookiePreferences && (
+                    <button
+                      type="button"
+                      onClick={onOpenCookiePreferences}
+                      className="bg-[#141414] hover:bg-stone-800 text-white font-bold uppercase px-3 py-2 cursor-pointer flex items-center gap-1.5"
+                    >
+                      <Sliders className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Configurar Preferências</span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const res = revokeAllNonEssentialCookies();
+                      setCookieConsentState(res);
+                      if (showToast) showToast("Cookies não essenciais revogados e limpos conforme Art. 18, IX da LGPD.");
+                    }}
+                    className="bg-red-50 hover:bg-red-100 text-red-900 border border-red-700 font-bold uppercase px-3 py-2 cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Ban className="w-3.5 h-3.5" />
+                    <span>Revogar Opcionais</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Resumo do Consentimento Atual */}
+              <div className="bg-white border-2 border-stone-800 p-4 shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="font-mono text-xs space-y-1">
+                  <div className="font-bold text-stone-900 flex items-center gap-1.5">
+                    <ShieldCheck className="w-4 h-4 text-emerald-700" />
+                    <span>
+                      {cookieConsentState
+                        ? `Protocolo ativo: ${cookieConsentState.protocolId} (${cookieConsentState.decisionMethod})`
+                        : 'Sem consentimento opcional registrado — apenas cookies estritamente necessários ativos'}
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-stone-600">
+                    {cookieConsentState
+                      ? `Registrado em ${new Date(cookieConsentState.timestamp).toLocaleString('pt-BR')} • Válido até ${new Date(cookieConsentState.expiresAt).toLocaleDateString('pt-BR')}`
+                      : 'Base legal aplicada: Art. 7º, V e IX da Lei nº 13.709/2018.'}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => exportCookieConsentProof(currentUser?.email || currentUser?.uid)}
+                  className="bg-stone-100 hover:bg-stone-200 text-stone-900 border border-stone-400 font-mono text-[11px] font-bold uppercase px-3 py-1.5 cursor-pointer flex items-center gap-1.5 shrink-0"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Baixar Comprovante (JSON)</span>
+                </button>
+              </div>
+
+              {/* Categorias */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                {COOKIE_CATEGORIES.map((cat) => {
+                  const isActive =
+                    cat.id === 'essential'
+                      ? true
+                      : Boolean(cookieConsentState && cookieConsentState[cat.id]);
+                  return (
+                    <div
+                      key={cat.id}
+                      className="bg-white border-2 border-stone-800 p-4 shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] space-y-2"
+                    >
+                      <div className="flex items-center justify-between gap-2 border-b border-stone-200 pb-2">
+                        <span className="font-mono font-bold text-xs text-stone-900">{cat.name}</span>
+                        <span
+                          className={`font-mono text-[10px] font-bold px-1.5 py-0.5 border ${
+                            isActive
+                              ? 'bg-emerald-50 text-emerald-800 border-emerald-400'
+                              : 'bg-stone-100 text-stone-700 border-stone-300'
+                          }`}
+                        >
+                          {cat.required ? 'Obrigatório' : isActive ? 'Autorizado' : 'Desativado'}
+                        </span>
+                      </div>
+                      <p className="text-xs font-serif text-stone-700 leading-relaxed">{cat.purpose}</p>
+                      <div className="font-mono text-[10px] text-stone-600 pt-1 space-y-0.5">
+                        <div><strong>Base legal:</strong> {cat.legalBasis}</div>
+                        <div><strong>Retenção:</strong> {cat.retention}</div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Inventário Técnico */}
+              <div className="bg-white border-2 border-stone-800 p-4 overflow-x-auto">
+                <h4 className="font-mono font-bold text-xs uppercase text-stone-900 mb-3">
+                  Inventário Transparente de Cookies &amp; Chaves Locais
+                </h4>
+                <table className="w-full text-left border-collapse font-mono text-[11px]">
+                  <thead>
+                    <tr className="border-b border-stone-300 text-stone-600">
+                      <th className="py-2 pr-3 font-bold">Identificador</th>
+                      <th className="py-2 pr-3 font-bold">Mecanismo</th>
+                      <th className="py-2 pr-3 font-bold">Finalidade</th>
+                      <th className="py-2 font-bold">Retenção</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-stone-200 text-stone-800">
+                    {COOKIE_INVENTORY.map((item) => (
+                      <tr key={item.name}>
+                        <td className="py-2 pr-3 font-bold align-top">{item.name}</td>
+                        <td className="py-2 pr-3 align-top text-stone-600">{item.storageType}</td>
+                        <td className="py-2 pr-3 align-top font-sans">{item.purpose}</td>
+                        <td className="py-2 align-top whitespace-nowrap">{item.retention}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </div>
           )}

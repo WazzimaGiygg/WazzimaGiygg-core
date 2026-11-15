@@ -4,6 +4,8 @@
  * Permite gerenciar a variável de ambiente GEMINI_API_KEY para uso do Gemini no Wiki-Site.
  */
 
+import { getFirebaseIdTokenSafe } from '../../services/firebase';
+
 export interface GeminiApiKeySettings {
   /** Indica se o uso do Gemini está ativado no Wiki-Site */
   enableGemini: boolean;
@@ -147,8 +149,6 @@ export async function fetchGeminiKeyStatus(): Promise<GeminiKeyStatusResponse> {
     };
   }
 }
-
-import { getFirebaseIdTokenSafe } from '../../services/firebase';
 
 /**
  * Executa teste de conectividade e ping via GEMINI_API_KEY no servidor

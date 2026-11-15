@@ -1014,8 +1014,11 @@ export default function App() {
   const handleAcceptAllCookies = () => {
     const saved = StorageService.saveCookieConsent({
       essential: true,
+      functional: true,
       analytics: true,
       advertising: true,
+      thirdParty: true,
+      decisionMethod: 'accept_all',
     });
     setCookieConsent(saved);
   };
@@ -1023,8 +1026,11 @@ export default function App() {
   const handleRejectCookies = () => {
     const saved = StorageService.saveCookieConsent({
       essential: true,
+      functional: false,
       analytics: false,
       advertising: false,
+      thirdParty: false,
+      decisionMethod: 'reject_non_essential',
     });
     setCookieConsent(saved);
   };

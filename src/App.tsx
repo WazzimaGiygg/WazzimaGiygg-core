@@ -102,6 +102,16 @@ import {
 import { useTheme } from "./hooks/useTheme";
 import AiEthicsShowcase from "./components/AiEthicsShowcase";
 import { FooterBadges } from "./wiki/components/FooterBadges";
+import LgpdCookieBanner from "./components/LgpdCookieBanner";
+import {
+  LgpdCookieConsent,
+  ConsentDecisionMethod,
+  getStoredCookieConsent,
+  saveLgpdCookieConsent,
+  revokeAllNonEssentialCookies,
+  enforceCookiePreferences,
+  subscribeCookieConsent,
+} from "./utils/cookieConsent";
 
 export default function App() {
   // Persistent Theme State (Light / Dark)
@@ -172,15 +182,16 @@ export default function App() {
   // Sanctions List (cidades_sancionadas.json)
   const [sanctionsList, setSanctionsList] = useState<any[]>([]);
 
-  // Cookie Consent State
-  const [cookieConsent, setCookieConsent] = useState<any>(() => {
-    try {
-      const stored = localStorage.getItem("wzzm_cookie_consent");
-      return stored ? JSON.parse(stored) : null;
-    } catch {
-      return null;
-    }
-  });
+  // Cookie Consent State (LGPD / ANPD)
+  const [cookieConsent, setCookieConsent] = useState<LgpdCookieConsent | null>(() => getStoredCookieConsent());
+  const [isCookiePreferencesOpen, setIsCookiePreferencesOpen] = useState(false);
+
+  useEffect(() => {
+    enforceCookiePreferences(getStoredCookieConsent());
+    return subscribeCookieConsent((updated) => {
+      setCookieConsent(updated);
+    });
+  }, []);
 
   // Diagnostics Data
   const [apiHealth, setApiHealth] = useState<any>(null);
@@ -920,17 +931,40 @@ export default function App() {
     }
   };
 
-  // Save Cookie Consent
-  const handleAcceptCookies = (type: "all" | "essential") => {
-    const consent = {
-      essential: true,
-      analytics: type === "all",
-      advertising: type === "all",
-      date: new Date().toISOString()
-    };
-    localStorage.setItem("wzzm_cookie_consent", JSON.stringify(consent));
-    setCookieConsent(consent);
-    showToast("Preferências de privacidade e cookies salvas.");
+  // Save & Revoke Cookie Consent (LGPD Art. 7º, I & Art. 8º, § 5º)
+  const handleSaveCookiePreferences = (
+    prefs: { functional: boolean; analytics: boolean; thirdParty: boolean },
+    method: ConsentDecisionMethod
+  ) => {
+    const saved = saveLgpdCookieConsent(prefs, method);
+    setCookieConsent(saved);
+    if (user?.uid) {
+      registerAuditLog(user.uid, "lgpd_cookie_consent_updated", {
+        protocolId: saved.protocolId,
+        decisionMethod: saved.decisionMethod,
+        functional: saved.functional,
+        analytics: saved.analytics,
+        thirdParty: saved.thirdParty,
+        version: saved.version,
+      }).catch(() => {});
+    }
+    showToast(
+      method === "reject_non_essential"
+        ? "Cookies não essenciais recusados. Somente os essenciais permanecem ativos."
+        : "Preferências de cookies (LGPD) registradas com sucesso."
+    );
+  };
+
+  const handleRevokeCookiePreferences = () => {
+    const revoked = revokeAllNonEssentialCookies();
+    setCookieConsent(revoked);
+    if (user?.uid) {
+      registerAuditLog(user.uid, "lgpd_cookie_consent_revoked", {
+        protocolId: revoked.protocolId,
+        version: revoked.version,
+      }).catch(() => {});
+    }
+    showToast("Consentimento de cookies não essenciais revogado conforme Art. 18, IX da LGPD.");
   };
 
   // 3.05.3.e: Modo de Manutenção (Bloqueio completo para visitantes e usuários comuns)
@@ -1914,6 +1948,7 @@ export default function App() {
             isModal={false}
             currentUser={user}
             showToast={showToast}
+            onOpenCookiePreferences={() => setIsCookiePreferencesOpen(true)}
             onOpenTicketForm={(tipo) => {
               switchTab("tickets");
               if (tipo) {
@@ -2503,47 +2538,21 @@ export default function App() {
       )}
 
       {/* ============================================ */}
-      {/* 10. LGPD & COOKIE CONSENT BANNER */}
+      {/* 10. LGPD & ANPD COOKIE CONSENT BANNER/MODAL  */}
       {/* ============================================ */}
-      {!cookieConsent && (
-        <div className="fixed bottom-4 left-4 right-4 md:left-auto md:right-4 max-w-lg bg-white dark:bg-[#1A1A18] border-2 border-[#141414] dark:border-[#3E3D38] shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] p-5 z-40 text-left font-sans">
-          <div className="flex items-start gap-3">
-            <Scale className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
-            <div>
-              <h4 className="font-mono font-bold text-xs uppercase tracking-wider text-stone-900 dark:text-stone-100">
-                Aviso de Privacidade & Conformidade LGPD
-              </h4>
-              <p className="text-xs font-serif text-stone-700 dark:text-stone-300 mt-1 leading-relaxed">
-                Utilizamos cookies estritamente necessários e armazenamento local para assegurar a autenticação e conformidade com o Marco Civil da Internet (Lei nº 12.965/2014).
-              </p>
-              <div className="flex flex-wrap items-center justify-between gap-2 mt-4 font-mono text-xs">
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => handleAcceptCookies("all")}
-                    className="paper-button px-4 py-1.5 text-[11px] font-bold uppercase cursor-pointer"
-                  >
-                    Aceitar Todos
-                  </button>
-                  <button
-                    onClick={() => handleAcceptCookies("essential")}
-                    className="paper-button-secondary px-3 py-1.5 text-[11px] font-bold uppercase cursor-pointer"
-                  >
-                    Apenas Essenciais
-                  </button>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setIsLgpdModalOpen(true)}
-                  className="text-[10px] text-emerald-800 dark:text-emerald-400 hover:text-emerald-950 dark:hover:text-emerald-300 font-bold uppercase underline cursor-pointer flex items-center gap-1"
-                >
-                  <Scale className="w-3 h-3 text-emerald-700 dark:text-emerald-400" />
-                  <span>Ver Regras da LGPD à Amostra →</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <LgpdCookieBanner
+        currentConsent={cookieConsent}
+        isPreferencesOpen={isCookiePreferencesOpen}
+        onOpenPreferences={() => setIsCookiePreferencesOpen(true)}
+        onClosePreferences={() => setIsCookiePreferencesOpen(false)}
+        onSaveConsent={handleSaveCookiePreferences}
+        onRevokeConsent={handleRevokeCookiePreferences}
+        onOpenLgpdRules={() => {
+          setIsCookiePreferencesOpen(false);
+          setIsLgpdModalOpen(true);
+        }}
+        currentUserLabel={user?.email || user?.uid}
+      />
 
       {/* Toast Notification */}
       {toast && (
@@ -2595,6 +2604,14 @@ export default function App() {
             >
               <Scale className="w-3 h-3 text-emerald-400" />
               <span>Regras da LGPD (Ciência Absoluta)</span>
+            </button>
+            <span className="text-stone-700">•</span>
+            <button
+              onClick={() => setIsCookiePreferencesOpen(true)}
+              className="text-amber-300 hover:text-amber-200 font-bold flex items-center gap-1 cursor-pointer"
+            >
+              <Sliders className="w-3 h-3 text-amber-300" />
+              <span>Gerenciar Cookies (LGPD)</span>
             </button>
             <span className="text-stone-700">•</span>
             <button
@@ -2704,6 +2721,10 @@ export default function App() {
           currentUser={user}
           showToast={showToast}
           onClose={() => setIsLgpdModalOpen(false)}
+          onOpenCookiePreferences={() => {
+            setIsLgpdModalOpen(false);
+            setIsCookiePreferencesOpen(true);
+          }}
           onOpenTicketForm={(tipo) => {
             switchTab("tickets");
             setIsLgpdModalOpen(false);

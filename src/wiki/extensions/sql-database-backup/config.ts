@@ -11,7 +11,7 @@
 
 import { UserProfile } from '../../types';
 import { StorageService } from '../../services/storageService';
-import { isUserBureaucrat } from '../../core/ExtensionManager';
+import { isUserBureaucrat } from '../../utils/bureaucratAuth';
 
 export interface SqlDatabaseBackupConfig {
   /** Identificador do perfil de backup local */
