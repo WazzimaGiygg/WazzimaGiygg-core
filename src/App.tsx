@@ -1115,14 +1115,17 @@ export default function App() {
 
             <span className="text-stone-700 hidden sm:inline">|</span>
 
-            {/* REGRAS LGPD À AMOSTRA (CIÊNCIA ABSOLUTA) */}
+            {/* REGRAS LGPD & MARCO CIVIL À AMOSTRA */}
             <button
-              onClick={() => setIsLgpdModalOpen(true)}
+              onClick={() => {
+                setLgpdModalInitialTab("principios");
+                setIsLgpdModalOpen(true);
+              }}
               className="flex items-center gap-1.5 bg-emerald-950/90 hover:bg-emerald-900 text-emerald-300 border border-emerald-500 px-2.5 py-0.5 text-[10px] font-bold font-mono uppercase tracking-wider transition-all cursor-pointer shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] whitespace-nowrap shrink-0"
-              title="Regras da LGPD (Lei 13.709/18) à mostra para ciência absoluta de cumprimento"
+              title="Este site segue as normas da LGPD (Lei 13.709/18) e do Marco Civil da Internet brasileiro (Lei 12.965/14)"
             >
               <Scale className="w-3 h-3 text-emerald-400 shrink-0" />
-              <span>REGRAS LGPD</span>
+              <span>LGPD &amp; MARCO CIVIL</span>
               <span className="bg-emerald-500 text-black text-[8px] font-black px-1 py-0.2 uppercase">
                 À AMOSTRA
               </span>
@@ -1312,7 +1315,7 @@ export default function App() {
           {/* Subheader bar with quick metrics */}
           <div className="flex flex-wrap items-center justify-between text-[11px] font-mono text-stone-700 dark:text-stone-300 pt-2 border-t border-stone-300 dark:border-[#2E2D28]">
             <div className="flex items-center gap-4">
-              <span>FUNDADO SOB LEI Nº 12.965/2014 (MARCO CIVIL)</span>
+              <span>CONFORME A LGPD (LEI Nº 13.709/18) E MARCO CIVIL DA INTERNET BRASILEIRO (LEI Nº 12.965/14)</span>
               <span className="hidden sm:inline">•</span>
               <span className="hidden sm:inline">BASE FIRESTORE ORIGINAL MANTIDA</span>
             </div>
@@ -1405,6 +1408,57 @@ export default function App() {
           </div>
         </div>
       </nav>
+
+      {/* ============================================ */}
+      {/* 3.1. AVISO INSTITUCIONAL: LGPD & MARCO CIVIL DA INTERNET BRASILEIRO */}
+      {/* ============================================ */}
+      <aside
+        role="note"
+        aria-label="Aviso de conformidade com a LGPD e o Marco Civil da Internet brasileiro"
+        className="bg-emerald-50/90 dark:bg-emerald-950/35 border-b border-emerald-700/40 dark:border-emerald-800/70 px-4 py-2 text-xs transition-colors"
+      >
+        <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-start md:items-center justify-between gap-2">
+          <div className="flex items-start sm:items-center gap-2 text-emerald-950 dark:text-emerald-100">
+            <ShieldCheck className="w-4 h-4 text-emerald-700 dark:text-emerald-400 shrink-0 mt-0.5 sm:mt-0" />
+            <p className="font-serif text-[12px] leading-snug">
+              <strong className="font-mono text-[10px] uppercase tracking-wider bg-emerald-700 text-white px-1.5 py-0.5 mr-2">
+                Aviso Legal (BR)
+              </strong>
+              Este site segue rigorosamente as normas da <strong>LGPD (Lei Geral de Proteção de Dados — Lei nº 13.709/2018)</strong> e do{' '}
+              <strong>Marco Civil da Internet brasileiro (Lei nº 12.965/2014 e Decreto nº 8.771/2016)</strong>.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 font-mono text-[10px] shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                setLgpdModalInitialTab("principios");
+                setIsLgpdModalOpen(true);
+              }}
+              className="px-2 py-1 bg-white dark:bg-[#1A1A18] hover:bg-emerald-100 dark:hover:bg-emerald-900/50 text-emerald-900 dark:text-emerald-200 border border-emerald-700/50 font-bold uppercase cursor-pointer"
+            >
+              Regras LGPD
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setLgpdModalInitialTab("marcoCivil");
+                setIsLgpdModalOpen(true);
+              }}
+              className="px-2 py-1 bg-white dark:bg-[#1A1A18] hover:bg-sky-100 dark:hover:bg-sky-900/50 text-sky-900 dark:text-sky-200 border border-sky-700/50 font-bold uppercase cursor-pointer"
+            >
+              Marco Civil (BR)
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsCookiePreferencesOpen(true)}
+              className="px-2 py-1 bg-white dark:bg-[#1A1A18] hover:bg-amber-100 dark:hover:bg-amber-900/40 text-stone-900 dark:text-amber-200 border border-stone-400 dark:border-amber-700/60 font-bold uppercase cursor-pointer"
+            >
+              Cookies
+            </button>
+          </div>
+        </div>
+      </aside>
 
       {/* ============================================ */}
       {/* 4. SEARCH & SECTOR FILTER BAR */}
