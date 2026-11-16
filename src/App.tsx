@@ -1845,9 +1845,40 @@ export default function App() {
                   Central de Ouvidoria & Tickets de Privacidade
                 </h3>
               </div>
-              <p className="text-xs font-serif text-stone-700 dark:text-stone-300 mb-5 leading-relaxed">
+              <p className="text-xs font-serif text-stone-700 dark:text-stone-300 mb-4 leading-relaxed">
                 Abra uma solicitação formal referente a direitos da LGPD (exclusão de dados, retificação de nome), comunicação de erro editorial ou denúncia de abusos.
               </p>
+
+              {/* Identificação do DPO e Portal de Suporte para Remoção de Dados */}
+              <div className="mb-5 p-3.5 bg-[#F8F7F4] dark:bg-[#141413] border border-stone-400 dark:border-[#3E3D38] text-xs space-y-1.5">
+                <div className="font-mono font-bold uppercase text-[11px] text-stone-900 dark:text-stone-100 flex items-center gap-1.5">
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-700 dark:text-emerald-400" />
+                  <span>Encarregado pelo Tratamento de Dados (DPO) &amp; Portal de Suporte</span>
+                </div>
+                <div className="font-mono text-[11px] text-stone-700 dark:text-stone-300 space-y-1">
+                  <div>
+                    <strong>DPO do Site:</strong> Pedro Henrique Cardona Peres
+                  </div>
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                    <a
+                      href="mailto:pedrohenriquecardonaperes@gmail.com?subject=Solicita%C3%A7%C3%A3o%20de%20Remo%C3%A7%C3%A3o%20de%20Dados%20(LGPD)"
+                      className="underline font-bold text-amber-900 dark:text-amber-400"
+                    >
+                      pedrohenriquecardonaperes@gmail.com
+                    </a>
+                    <span>•</span>
+                    <a
+                      href="https://support.wazzimagiygg.com/"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 underline font-bold text-sky-800 dark:text-sky-400"
+                    >
+                      <span>Registrar solicitação no suporte (https://support.wazzimagiygg.com/)</span>
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                  </div>
+                </div>
+              </div>
 
               <form onSubmit={handleSubmitTicket} className="space-y-4 font-mono text-xs">
                 <div>
@@ -2856,7 +2887,7 @@ export default function App() {
 
           <div className="border-t border-stone-800 pt-6 flex flex-col sm:flex-row items-center justify-between text-[10px] text-stone-500 gap-3">
             <span>© 2026 WazzimaGiygg. Licença CC-BY-SA 4.0 • LGPD (Lei 13.709/18) • Marco Civil (Lei 12.965/14) • Decreto 8.771/16.</span>
-            <span>DPO: pedrohenriquecardonaperes@gmail.com • Guarda de Logs Art. 15 MCI: 180 dias</span>
+            <span>DPO: Pedro Henrique Cardona Peres (pedrohenriquecardonaperes@gmail.com) • Guarda de Logs Art. 15 MCI: 180 dias</span>
           </div>
         </div>
       </footer>

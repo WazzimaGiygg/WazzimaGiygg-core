@@ -18,6 +18,8 @@ import {
   AlertTriangle,
   FileText,
   UserX,
+  Mail,
+  ExternalLink,
 } from 'lucide-react';
 import { UserProfile, CookieConsent, LgpdNotificationPreferences, LgpdAccountDeletionRequest } from '../types';
 import { StorageService } from '../services/storageService';
@@ -134,8 +136,9 @@ export const MyDataModal: React.FC<MyDataModalProps> = ({
       'Art. 18, IX - Revogação do consentimento',
     ],
     dpoResponsavel: {
-      nome: 'Encarregado WikiWorldWeb',
+      nome: 'Pedro Henrique Cardona Peres',
       email: 'pedrohenriquecardonaperes@gmail.com',
+      suporteOficial: 'https://support.wazzimagiygg.com/',
       marcoLegal: 'Marco Civil (Lei 12.965/2014) & LGPD (Lei 13.709/2018)',
     },
     dataExportacao: new Date().toISOString(),
@@ -432,6 +435,43 @@ export const MyDataModal: React.FC<MyDataModalProps> = ({
                     </span>
                   </label>
 
+                  {/* Canal Direto do DPO & Portal de Suporte */}
+                  <div className="p-2.5 rounded border border-red-200 dark:border-red-900 bg-white/80 dark:bg-slate-900/80 space-y-1.5 text-[11px]">
+                    <div className="font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
+                      <UserCheck size={13} className="text-emerald-600 dark:text-emerald-400" />
+                      <span>Encarregado pelo Tratamento de Dados (DPO) &amp; Suporte Oficial</span>
+                    </div>
+                    <p className="text-slate-600 dark:text-slate-300 leading-relaxed">
+                      Além do envio direto abaixo, você pode formalizar e registrar sua solicitação de remoção de dados junto ao DPO ou no Portal de Suporte:
+                    </p>
+                    <div className="flex flex-col gap-1 font-mono text-[10px] pt-0.5">
+                      <div>
+                        <span className="text-slate-500 dark:text-slate-400">DPO:</span>{' '}
+                        <strong className="text-slate-900 dark:text-white font-sans">Pedro Henrique Cardona Peres</strong>
+                      </div>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <Mail size={11} className="text-amber-600 dark:text-amber-400 shrink-0" />
+                        <a
+                          href="mailto:pedrohenriquecardonaperes@gmail.com?subject=Solicita%C3%A7%C3%A3o%20de%20Remo%C3%A7%C3%A3o%20de%20Dados%20(LGPD)"
+                          className="text-blue-700 dark:text-blue-300 underline font-bold"
+                        >
+                          pedrohenriquecardonaperes@gmail.com
+                        </a>
+                      </div>
+                      <div className="pt-1">
+                        <a
+                          href="https://support.wazzimagiygg.com/"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded bg-indigo-600 hover:bg-indigo-700 text-white font-sans font-bold text-[11px] shadow-xs transition"
+                        >
+                          <ExternalLink size={12} />
+                          <span>Registrar Solicitação no Suporte (support.wazzimagiygg.com)</span>
+                        </a>
+                      </div>
+                    </div>
+                  </div>
+
                   <div className="flex items-center justify-end gap-2 pt-1">
                     <button
                       type="button"
@@ -483,10 +523,37 @@ export const MyDataModal: React.FC<MyDataModalProps> = ({
                       <span>Solicitar Exclusão da Conta (Art. 18, VI)</span>
                     </button>
                   ) : (
-                    <div className="p-2 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 text-center text-[10px]">
-                      A exclusão de conta está disponível para usuários registrados e autenticados via Google.
+                    <div className="p-2.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-center text-[11px]">
+                      A exclusão direta pelo aplicativo está disponível para usuários autenticados via Google, ou você pode registrar sua solicitação pelos canais oficiais abaixo.
                     </div>
                   )}
+
+                  {/* Identificação do DPO e Link do Suporte para Solicitação de Remoção de Dados */}
+                  <div className="mt-1 p-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/70 space-y-1 text-[11px]">
+                    <div className="font-bold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
+                      <UserCheck size={13} className="text-emerald-600 dark:text-emerald-400" />
+                      <span>Encarregado (DPO): Pedro Henrique Cardona Peres</span>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] font-mono text-slate-600 dark:text-slate-300">
+                      <a
+                        href="mailto:pedrohenriquecardonaperes@gmail.com?subject=Solicita%C3%A7%C3%A3o%20de%20Remo%C3%A7%C3%A3o%20de%20Dados%20(LGPD)"
+                        className="inline-flex items-center gap-1 text-blue-700 dark:text-blue-400 hover:underline font-bold"
+                      >
+                        <Mail size={11} />
+                        <span>pedrohenriquecardonaperes@gmail.com</span>
+                      </a>
+                      <span>•</span>
+                      <a
+                        href="https://support.wazzimagiygg.com/"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 text-indigo-700 dark:text-indigo-400 hover:underline font-bold"
+                      >
+                        <ExternalLink size={11} />
+                        <span>Registrar no Suporte (support.wazzimagiygg.com)</span>
+                      </a>
+                    </div>
+                  </div>
                 </div>
               )}
             </>
@@ -657,7 +724,7 @@ export const MyDataModal: React.FC<MyDataModalProps> = ({
         {/* Modal Footer */}
         <div className="p-3 bg-slate-50 dark:bg-slate-800/80 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between">
           <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono">
-            Lei nº 13.709/2018 (LGPD) • Encarregado DPO
+            LGPD (Lei nº 13.709/2018) • DPO: Pedro Henrique Cardona Peres
           </span>
           <button
             onClick={onClose}

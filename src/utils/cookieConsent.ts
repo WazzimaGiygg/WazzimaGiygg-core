@@ -527,7 +527,9 @@ export function exportCookieConsentProof(titularEmailOrUid?: string): void {
   const payload = {
     documento: 'Comprovante de Consentimento e Preferências de Cookies — LGPD',
     controlador: 'Portal WazzimaGiygg',
+    dpoNome: 'Pedro Henrique Cardona Peres',
     dpoContato: 'pedrohenriquecardonaperes@gmail.com',
+    suporteOficial: 'https://support.wazzimagiygg.com/',
     baseLegal: 'Lei nº 13.709/2018 (Art. 5º, XII; Art. 6º, VI; Art. 7º, I e V; Art. 8º, §§ 2º e 5º; Art. 18, IX)',
     orientacaoRegulatoria: 'Guia Orientativo ANPD — Cookies e Proteção de Dados Pessoais',
     titular: titularEmailOrUid || 'Visitante Anônimo (Sessão Local)',

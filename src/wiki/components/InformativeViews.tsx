@@ -286,7 +286,8 @@ export const PrivacyPolicyView: React.FC<InformativeViewsProps> = ({ onNavigate 
               1. Identificação do Controlador
             </h3>
             <p>
-              O projeto <strong>WikiWorldWeb</strong> opera sob a governança comunitária de <em>WazzimaGiygg</em>. O encarregado oficial pelo tratamento de dados pessoais (Data Protection Officer - DPO) pode ser acionado diretamente no e-mail: <code>pedrohenriquecardonaperes@gmail.com</code>.
+              O projeto <strong>WikiWorldWeb</strong> opera sob a governança comunitária de <em>WazzimaGiygg</em>. O encarregado oficial pelo tratamento de dados pessoais (Data Protection Officer - DPO) é <strong>Pedro Henrique Cardona Peres</strong>, que pode ser acionado diretamente no e-mail: <code>pedrohenriquecardonaperes@gmail.com</code> ou pelo portal de suporte{' '}
+              <a href={formatExternalUrl("https://support.wazzimagiygg.com/")} target="_blank" rel="noopener noreferrer" className="text-indigo-600 dark:text-indigo-400 font-bold underline">https://support.wazzimagiygg.com/</a>.
             </p>
           </div>
 
@@ -517,7 +518,7 @@ export const PrivacyPolicyView: React.FC<InformativeViewsProps> = ({ onNavigate 
                     <strong>Na Wikipédia:</strong> A Wikimedia Foundation não possui Encarregado pelo Tratamento de Dados Pessoais (DPO) nos termos do Art. 41 da LGPD para interlocução com titulares brasileiros e a ANPD. Pedidos de cidadãos para retificar informações inverídicas, anonimizar biografias ou excluir dados pessoais costumam ser jogados em fóruns públicos de votação da comunidade de voluntários ("páginas para eliminar"), provocando o chamado <em>Efeito Streisand</em> (amplificação do dano e humilhação pública) ou são indeferidos sob o dogma de "registro histórico perpétuo".
                   </p>
                   <p>
-                    <strong>Na WikiWorldWeb:</strong> Mantemos um DPO oficial formalmente identificado (<code>pedrohenriquecardonaperes@gmail.com</code>) e uma central de tickets estruturada. O titular brasileiro dispõe de um canal seguro e confidencial para requerer retificação, anonimização, bloqueio ou eliminação de seus dados, sem exposição vexatória e com prazos compatíveis com a regulamentação da ANPD.
+                    <strong>Na WikiWorldWeb:</strong> Mantemos um DPO oficial formalmente identificado, <strong>Pedro Henrique Cardona Peres</strong> (<code>pedrohenriquecardonaperes@gmail.com</code>), além da central de tickets (<a href={formatExternalUrl("https://support.wazzimagiygg.com/")} target="_blank" rel="noopener noreferrer" className="text-indigo-600 dark:text-indigo-400 underline font-semibold">https://support.wazzimagiygg.com/</a>). O titular brasileiro dispõe de um canal seguro e confidencial para requerer retificação, anonimização, bloqueio ou eliminação de seus dados, sem exposição vexatória e com prazos compatíveis com a regulamentação da ANPD.
                   </p>
                 </div>
               </div>
@@ -587,7 +588,7 @@ export const PrivacyPolicyView: React.FC<InformativeViewsProps> = ({ onNavigate 
                         Encarregado de Dados (DPO) Oficial
                       </td>
                       <td className="p-2.5 text-emerald-700 dark:text-emerald-300 font-medium bg-emerald-50/40 dark:bg-emerald-950/20">
-                        Sim. Canal direto: <code>pedrohenriquecardonaperes@gmail.com</code>.
+                        Sim. DPO oficial: <strong>Pedro Henrique Cardona Peres</strong> (<code>pedrohenriquecardonaperes@gmail.com</code>) e suporte em <a href={formatExternalUrl("https://support.wazzimagiygg.com/")} target="_blank" rel="noopener noreferrer" className="underline">support.wazzimagiygg.com</a>.
                       </td>
                       <td className="p-2.5 text-slate-600 dark:text-slate-400">
                         Não possui DPO designado para a LGPD brasileira.

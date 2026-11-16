@@ -34,7 +34,8 @@ import {
   Ban,
   Globe,
   EyeOff,
-  HardDrive
+  HardDrive,
+  Mail
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
@@ -512,7 +513,7 @@ export default function LgpdRulesShowcase({
       doc.setFont("helvetica", "normal");
       doc.setFontSize(7.5);
       doc.setTextColor(230, 230, 230);
-      doc.text("WazzimaGiygg • Ouvidoria e DPO: pedrohenriquecardonaperes@gmail.com • Documento emitido com assinatura digital do sistema.", 105, 289, { align: "center" });
+      doc.text("WazzimaGiygg • DPO: Pedro Henrique Cardona Peres (pedrohenriquecardonaperes@gmail.com) • Suporte: https://support.wazzimagiygg.com/", 105, 289, { align: "center" });
 
       doc.save(`Certidao_Conformidade_LGPD_${protocolo}.pdf`);
       if (showToast) showToast("Certidão de Conformidade LGPD gerada com sucesso!");
@@ -995,6 +996,37 @@ export default function LgpdRulesShowcase({
                   </span>
                 </label>
 
+                <div className="bg-white border border-red-300 p-3 space-y-1.5 text-xs">
+                  <div className="font-mono font-bold text-[11px] uppercase text-stone-900 flex items-center gap-1.5">
+                    <UserCheck className="w-3.5 h-3.5 text-emerald-700" />
+                    <span>Encarregado pelo Tratamento de Dados (DPO) &amp; Canal de Suporte</span>
+                  </div>
+                  <p className="font-serif text-stone-700 leading-relaxed">
+                    Além do protocolo direto abaixo, você também pode formalizar e acompanhar sua solicitação de remoção/eliminação de dados junto ao nosso DPO ou pelo Portal Oficial de Suporte:
+                  </p>
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 font-mono text-[11px] pt-0.5">
+                    <span>
+                      <strong>DPO:</strong> Pedro Henrique Cardona Peres
+                    </span>
+                    <a
+                      href="mailto:pedrohenriquecardonaperes@gmail.com?subject=Solicita%C3%A7%C3%A3o%20de%20Remo%C3%A7%C3%A3o%20de%20Dados%20(LGPD)"
+                      className="inline-flex items-center gap-1 text-amber-900 underline font-bold"
+                    >
+                      <Mail className="w-3 h-3" />
+                      <span>pedrohenriquecardonaperes@gmail.com</span>
+                    </a>
+                    <a
+                      href="https://support.wazzimagiygg.com/"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 bg-stone-900 hover:bg-stone-800 text-white px-2.5 py-1 font-bold uppercase text-[10px]"
+                    >
+                      <ExternalLink className="w-3 h-3 text-amber-400" />
+                      <span>Registrar no Suporte (support.wazzimagiygg.com)</span>
+                    </a>
+                  </div>
+                </div>
+
                 <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="submit"
@@ -1004,6 +1036,15 @@ export default function LgpdRulesShowcase({
                     <Trash2 className="w-3.5 h-3.5" />
                     <span>{isSubmittingDeletion ? 'Protocolando...' : 'Protocolar Eliminação & Limpar Dados Locais'}</span>
                   </button>
+                  <a
+                    href="https://support.wazzimagiygg.com/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="bg-white hover:bg-stone-100 text-stone-900 border border-stone-800 font-mono text-xs font-bold uppercase px-3.5 py-2 flex items-center gap-1.5"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5 text-amber-700" />
+                    <span>Registrar Solicitação no Suporte</span>
+                  </a>
                 </div>
               </form>
             </div>
@@ -1286,13 +1327,31 @@ export default function LgpdRulesShowcase({
                   <ul className="text-xs font-mono space-y-2.5 text-stone-800">
                     <li>
                       <span className="text-stone-500 block text-[10px] uppercase">Encarregado (DPO):</span>
-                      <strong>Ouvidoria de Privacidade & Defesa de Direitos WZZM</strong>
+                      <strong>Pedro Henrique Cardona Peres</strong>{' '}
+                      <span className="text-stone-500 text-[11px] block">
+                        (Ouvidoria de Privacidade &amp; Defesa de Direitos WZZM)
+                      </span>
                     </li>
                     <li>
                       <span className="text-stone-500 block text-[10px] uppercase">E-mail Oficial do DPO:</span>
-                      <strong className="text-amber-800 bg-amber-50 px-1 py-0.5 border border-amber-300">
+                      <a
+                        href="mailto:pedrohenriquecardonaperes@gmail.com"
+                        className="inline-block font-bold text-amber-800 bg-amber-50 px-1.5 py-0.5 border border-amber-300 hover:bg-amber-100"
+                      >
                         pedrohenriquecardonaperes@gmail.com
-                      </strong>
+                      </a>
+                    </li>
+                    <li>
+                      <span className="text-stone-500 block text-[10px] uppercase">Portal de Suporte para Solicitações:</span>
+                      <a
+                        href="https://support.wazzimagiygg.com/"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 font-bold text-sky-900 bg-sky-50 px-1.5 py-0.5 border border-sky-300 hover:bg-sky-100"
+                      >
+                        <span>https://support.wazzimagiygg.com/</span>
+                        <ExternalLink className="w-3 h-3" />
+                      </a>
                     </li>
                     <li>
                       <span className="text-stone-500 block text-[10px] uppercase">Prazo Legal de Resposta:</span>
@@ -1305,31 +1364,43 @@ export default function LgpdRulesShowcase({
                   </ul>
                 </div>
 
-                <div className="bg-white border-2 border-stone-800 p-5 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] flex flex-col justify-between">
+                <div className="bg-white border-2 border-stone-800 p-5 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] flex flex-col justify-between gap-4">
                   <div>
                     <h4 className="font-mono font-bold text-xs uppercase tracking-wider text-stone-900 mb-2 border-b pb-2 flex items-center gap-2">
                       <FileCheck className="w-4 h-4 text-amber-600" />
                       <span>Atendimento Digital de Solicitações</span>
                     </h4>
                     <p className="text-xs font-serif text-stone-700 leading-relaxed mb-4">
-                      Você pode protocolar chamados de retificação, oposição, confirmação de dados ou exclusão imediata pelo módulo de tickets da Ouvidoria interna. Cada chamado gera um protocolo único criptográfico com recibo digital imediato.
+                      Você pode protocolar chamados de retificação, oposição, confirmação de dados ou exclusão imediata pelo módulo de tickets da Ouvidoria interna ou diretamente pelo Portal de Suporte oficial (<strong>support.wazzimagiygg.com</strong>). Cada chamado gera recibo digital de protocolo.
                     </p>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (onOpenTicketForm) {
-                        onOpenTicketForm("Direito de Esquecimento (LGPD)");
-                        if (isModal && onClose) onClose();
-                      }
-                      if (showToast) showToast("Abertura de ticket na Ouvidoria LGPD");
-                    }}
-                    className="w-full bg-amber-500 hover:bg-amber-400 text-black font-mono font-bold text-xs uppercase py-2.5 px-4 border border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] cursor-pointer flex items-center justify-center gap-2 transition-colors"
-                  >
-                    <span>Abrir Chamado na Ouvidoria LGPD</span>
-                    <ChevronRight className="w-4 h-4" />
-                  </button>
+                  <div className="space-y-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (onOpenTicketForm) {
+                          onOpenTicketForm("Direito de Esquecimento (LGPD)");
+                          if (isModal && onClose) onClose();
+                        }
+                        if (showToast) showToast("Abertura de ticket na Ouvidoria LGPD");
+                      }}
+                      className="w-full bg-amber-500 hover:bg-amber-400 text-black font-mono font-bold text-xs uppercase py-2.5 px-4 border border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] cursor-pointer flex items-center justify-center gap-2 transition-colors"
+                    >
+                      <span>Abrir Chamado na Ouvidoria LGPD</span>
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+
+                    <a
+                      href="https://support.wazzimagiygg.com/"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="w-full bg-[#141414] hover:bg-stone-800 text-white font-mono font-bold text-xs uppercase py-2.5 px-4 border border-black flex items-center justify-center gap-2 transition-colors"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Registrar Solicitação no Suporte Oficial</span>
+                    </a>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1443,7 +1514,16 @@ export default function LgpdRulesShowcase({
               LEI Nº 13.709/2018 (LGPD) • MARCO CIVIL Nº 12.965/2014 • DECRETO Nº 8.771/2016
             </span>
             <span>•</span>
-            <span>DPO: pedrohenriquecardonaperes@gmail.com</span>
+            <span>DPO: Pedro Henrique Cardona Peres (pedrohenriquecardonaperes@gmail.com)</span>
+            <span>•</span>
+            <a
+              href="https://support.wazzimagiygg.com/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline hover:text-black font-bold"
+            >
+              Suporte: support.wazzimagiygg.com
+            </a>
           </div>
 
           <div className="flex items-center gap-3">

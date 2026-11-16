@@ -301,7 +301,9 @@ export function exportTitularPersonalDataPackage(params: {
   const payload = {
     documento: 'Pacote de Portabilidade e Acesso aos Dados Pessoais — LGPD & Marco Civil',
     controlador: 'Portal WazzimaGiygg',
+    dpoNome: 'Pedro Henrique Cardona Peres',
     encarregadoDpo: 'pedrohenriquecardonaperes@gmail.com',
+    suporteOficial: 'https://support.wazzimagiygg.com/',
     legislacaoAplicavel: [
       'Lei Federal nº 13.709/2018 (LGPD - Art. 6º, IV; Art. 18, II e V)',
       'Lei Federal nº 12.965/2014 (Marco Civil da Internet - Art. 7º, Art. 10 e Art. 15)',

@@ -775,22 +775,47 @@ export default function AiEthicsShowcase({
                     <span>Solicitar Revisão, Retificação ou Remoção LGPD</span>
                   </div>
                   <p className="text-sm font-serif text-stone-700 dark:text-stone-300 leading-relaxed">
-                    Se você identificar qualquer artigo com indícios de fabricação automatizada, uso indevido de registros do Firebase ou desejar enviar evidências documentais adicionais sobre abusos editoriais, protocole um ticket na Ouvidoria.
+                    Se você identificar qualquer artigo com indícios de fabricação automatizada, uso indevido de registros do Firebase ou desejar solicitar revisão ou remoção LGPD, protocole um ticket na Ouvidoria, contate o DPO ou registre diretamente no Portal de Suporte.
                   </p>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (onOpenTicketForm) {
-                        onOpenTicketForm('Retificação de Conteúdo / Ética Digital');
-                        if (isModal && onClose) onClose();
-                      }
-                    }}
-                    className="paper-button px-4 py-2.5 text-xs font-mono font-semibold inline-flex items-center gap-2 cursor-pointer"
-                  >
-                    <FileText className="w-4 h-4" />
-                    <span>Abrir Ticket de Retificação na Ouvidoria</span>
-                    <ChevronRight className="w-3.5 h-3.5" />
-                  </button>
+                  <div className="p-3 rounded border border-stone-200 dark:border-[#34332F] bg-[#F8F7F4] dark:bg-[#141413] font-mono text-[11px] space-y-1 text-stone-700 dark:text-stone-300">
+                    <div>
+                      <strong>DPO:</strong> Pedro Henrique Cardona Peres
+                    </div>
+                    <div>
+                      <strong>E-mail:</strong>{' '}
+                      <a
+                        href="mailto:pedrohenriquecardonaperes@gmail.com?subject=Solicita%C3%A7%C3%A3o%20de%20Remo%C3%A7%C3%A3o%20LGPD"
+                        className="underline font-bold text-amber-800 dark:text-amber-400"
+                      >
+                        pedrohenriquecardonaperes@gmail.com
+                      </a>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (onOpenTicketForm) {
+                          onOpenTicketForm('Retificação de Conteúdo / Ética Digital');
+                          if (isModal && onClose) onClose();
+                        }
+                      }}
+                      className="paper-button px-4 py-2.5 text-xs font-mono font-semibold inline-flex items-center gap-2 cursor-pointer"
+                    >
+                      <FileText className="w-4 h-4" />
+                      <span>Abrir Ticket na Ouvidoria</span>
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
+                    <a
+                      href="https://support.wazzimagiygg.com/"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-4 py-2.5 text-xs font-mono font-semibold inline-flex items-center gap-2 border border-stone-800 dark:border-stone-500 text-stone-900 dark:text-stone-100 hover:bg-stone-100 dark:hover:bg-[#2A2925]"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                      <span>Suporte (support.wazzimagiygg.com)</span>
+                    </a>
+                  </div>
                 </div>
 
                 <div className="bg-white dark:bg-[#1E1E1B] border border-stone-200 dark:border-[#34332F] rounded-lg p-6 space-y-4">

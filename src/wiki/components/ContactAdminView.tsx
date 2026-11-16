@@ -535,11 +535,22 @@ export const ContactAdminView: React.FC<ContactAdminViewProps> = ({
           <div className="flex flex-wrap gap-4 text-xs text-slate-300 pt-2 border-t border-white/10">
             <div className="flex items-center gap-1.5">
               <UserCheck size={14} className="text-blue-300" />
-              <span>DPO Oficial: <strong className="text-white">WazzimaGiygg</strong></span>
+              <span>DPO Oficial: <strong className="text-white">Pedro Henrique Cardona Peres</strong></span>
             </div>
             <div className="flex items-center gap-1.5">
               <Mail size={14} className="text-blue-300" />
               <span>E-mail: <strong className="text-white font-mono">pedrohenriquecardonaperes@gmail.com</strong></span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <ExternalLink size={14} className="text-sky-300" />
+              <a
+                href="https://support.wazzimagiygg.com/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sky-300 hover:text-white underline font-bold"
+              >
+                Suporte: https://support.wazzimagiygg.com/
+              </a>
             </div>
             <div className="flex items-center gap-1.5">
               <Scale size={14} className="text-emerald-300" />

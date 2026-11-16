@@ -584,7 +584,7 @@ export const EditingEthicsView: React.FC<EditingEthicsViewProps> = ({
                   Qualquer indivíduo retratado na enciclopédia tem o direito de requerer correção de dados incompletos ou inexatos, anonimização, bloqueio ou eliminação de dados desnecessários ou tratados em desconformidade com a LGPD.
                 </p>
                 <div className="text-xs text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900 p-2.5 rounded border border-emerald-200 dark:border-emerald-800/80">
-                  <strong>Canal Direto do Encarregado pelo Tratamento de Dados (DPO):</strong>
+                  <strong>Canal Direto do Encarregado pelo Tratamento de Dados (DPO): Pedro Henrique Cardona Peres</strong>
                   <div className="mt-1 flex flex-wrap items-center gap-2">
                     <code>pedrohenriquecardonaperes@gmail.com</code>
                     <span>•</span>
@@ -1406,7 +1406,8 @@ export const EditingEthicsView: React.FC<EditingEthicsViewProps> = ({
         <div className="flex items-center gap-2.5">
           <LifeBuoy size={18} className="text-indigo-600 dark:text-indigo-400 shrink-0" />
           <div className="text-slate-700 dark:text-slate-300">
-            Dúvidas sobre conformidade ou solicitações de titulares de dados? Entre em contato com o DPO:{' '}
+            Dúvidas sobre conformidade ou solicitações de titulares de dados? Entre em contato com o DPO{' '}
+            <strong>Pedro Henrique Cardona Peres</strong>:{' '}
             <code className="text-slate-900 dark:text-white font-bold">pedrohenriquecardonaperes@gmail.com</code>
           </div>
         </div>

@@ -603,7 +603,7 @@ export const Footer: React.FC<FooterProps> = ({
               >
                 support.wazzimagiygg.com
               </a>
-              {' '}• Em conformidade com a <strong>LGPD (Lei nº 13.709/2018)</strong> e o <strong>Marco Civil (Lei nº 12.965/2014)</strong>. DPO: pedrohenriquecardonaperes@gmail.com
+              {' '}• Em conformidade com a <strong>LGPD (Lei nº 13.709/2018)</strong> e o <strong>Marco Civil (Lei nº 12.965/2014)</strong>. DPO: Pedro Henrique Cardona Peres (pedrohenriquecardonaperes@gmail.com)
             </p>
           </div>
 

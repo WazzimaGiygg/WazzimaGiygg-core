@@ -539,7 +539,8 @@ Administrador Responsável: ${r.assignedAdminName || 'Equipe Geral'}
 Resolução / Ações: ${r.resolutionSummary || 'Em apuração técnica'}
 
 WikiWorldWeb Enciclopédia Aberta © 2026
-Encarregado DPO / Admin: pedrohenriquecardonaperes@gmail.com
+Encarregado DPO / Admin: Pedro Henrique Cardona Peres (pedrohenriquecardonaperes@gmail.com)
+Portal de Suporte: https://support.wazzimagiygg.com/
 =====================================================`;
 
     navigator.clipboard.writeText(text);
@@ -746,7 +747,7 @@ Encarregado DPO / Admin: pedrohenriquecardonaperes@gmail.com
         </div>
 
         <div className="pb-2 text-[11px] text-slate-500 font-mono">
-          Encarregado DPO: <strong>pedrohenriquecardonaperes@gmail.com</strong>
+          Encarregado DPO: <strong>Pedro Henrique Cardona Peres</strong> (pedrohenriquecardonaperes@gmail.com)
         </div>
       </div>
 
