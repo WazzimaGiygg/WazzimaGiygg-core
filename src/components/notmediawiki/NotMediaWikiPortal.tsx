@@ -61,6 +61,7 @@ import ExtensionConfigModal from '../ExtensionConfigModal';
 import AddExtensionCatalogModal from '../AddExtensionCatalogModal';
 import { exportWikiArticleFormattedPdf } from '../../utils/pdfExport';
 import AbntCitationGenerator from '../AbntCitationGenerator';
+import { updateSEO } from '../../wiki/utils/seoManager';
 import {
   WikiArticle,
   WikiRevision,
@@ -678,6 +679,36 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
     }
     return parseWikitextToHtml(currentArticle.wikitext, currentArticle.title);
   }, [currentArticle]);
+
+  // Synchronize dynamic canonical & meta tags for NotMediaWiki articles
+  useEffect(() => {
+    if (activeTab === 'reader' && currentArticle) {
+      updateSEO({
+        view: 'article',
+        article: {
+          id: currentArticle.id || currentArticle.slug,
+          pageUid: currentArticle.slug || currentArticle.id,
+          titulo: currentArticle.title,
+          descricao: currentArticle.summary || currentArticle.wikitext,
+          resumo: currentArticle.summary,
+          categoria: currentArticle.categories?.[0] || 'NotMediaWiki',
+          idioma: 'pt-BR',
+          dataCriacao: currentArticle.createdAt,
+          dataEdicao: currentArticle.updatedAt,
+          autor: 'Comunidade NotMediaWiki (core.wazzimagiygg.com)',
+        },
+      });
+    } else if (activeTab === 'editor') {
+      updateSEO({ view: 'editor' });
+    } else if (activeTab === 'history' || activeTab === 'events') {
+      updateSEO({ view: 'recent-changes' });
+    } else {
+      updateSEO({
+        view: 'hub',
+        canonicalPath: '/?uid=notmediawiki',
+      });
+    }
+  }, [activeTab, currentArticle]);
 
   // Active article revisions
   const articleRevisions = useMemo(() => {

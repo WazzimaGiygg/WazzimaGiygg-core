@@ -6,6 +6,12 @@ import { GoogleGenAI } from '@google/genai';
 import { checkIfWikimediaIp, cleanIpAddress } from './src/wiki/utils/wikimediaIpChecker';
 import { evaluateIpLocally } from './src/wiki/utils/vpnChecker';
 import {
+  resolveCanonicalUrl,
+  resolveDynamicSeoMetadata,
+  injectSeoIntoHtml,
+  SeoArticleInput,
+} from './src/seo/canonicalEngine';
+import {
   SEED_WIKI_ARTICLES,
   SEED_WIKI_REVISIONS,
   SEED_WIKI_EVENTS,
@@ -56,10 +62,28 @@ app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Master-Key, X-Access-Key');
 
-  if (req.method === 'GET' && !req.path.startsWith('/api/') && !req.path.match(/\.(js|css|png|jpg|jpeg|svg|ico|webp|woff2?|json)$/i)) {
-    const uidParam = typeof req.query?.uid === 'string' && req.query.uid.trim() ? `?uid=${encodeURIComponent(req.query.uid.trim())}` : '';
-    res.setHeader('Link', `<https://core.wazzimagiygg.com/${uidParam}>; rel="canonical"`);
-    res.setHeader('X-Robots-Tag', 'index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1');
+  if (
+    req.method === 'GET' &&
+    !req.path.startsWith('/api/') &&
+    !req.path.startsWith('/@') &&
+    !req.path.startsWith('/src/') &&
+    !req.path.startsWith('/node_modules/') &&
+    !req.path.match(/\.(js|mjs|ts|tsx|css|png|jpg|jpeg|svg|ico|webp|woff2?|json|xml|txt)$/i)
+  ) {
+    const rawQuery = req.originalUrl.includes('?') ? req.originalUrl.split('?')[1] : '';
+    const canonicalUrl = resolveCanonicalUrl({
+      uid: typeof req.query?.uid === 'string' ? req.query.uid : undefined,
+      searchQuery: typeof req.query?.q === 'string' ? req.query.q : undefined,
+      rawSearchParams: rawQuery,
+      pathname: req.path,
+    });
+    const hasSearchSpam = typeof req.query?.q === 'string' && req.query.q.trim().length > 0;
+    const robotsValue = hasSearchSpam
+      ? 'noindex, follow'
+      : 'index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1';
+
+    res.setHeader('Link', `<${canonicalUrl}>; rel="canonical"`);
+    res.setHeader('X-Robots-Tag', robotsValue);
   }
   next();
 });
@@ -2400,14 +2424,108 @@ app.get('/sitemap.xml', (_req: Request, res: Response) => {
   }
 
   const allUrls = [...staticEntries, ...dynamicEntries];
-  const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${allUrls
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"\n        xmlns:xhtml="http://www.w3.org/1999/xhtml">\n${allUrls
     .map(
       (entry) =>
-        `  <url>\n    <loc>${escapeXml(entry.loc)}</loc>\n    <lastmod>${today}</lastmod>\n    <changefreq>${entry.changefreq}</changefreq>\n    <priority>${entry.priority}</priority>\n  </url>`
+        `  <url>\n    <loc>${escapeXml(entry.loc)}</loc>\n    <xhtml:link rel="alternate" hreflang="pt-BR" href="${escapeXml(entry.loc)}" />\n    <xhtml:link rel="alternate" hreflang="x-default" href="${escapeXml(entry.loc)}" />\n    <lastmod>${today}</lastmod>\n    <changefreq>${entry.changefreq}</changefreq>\n    <priority>${entry.priority}</priority>\n  </url>`
     )
     .join('\n')}\n</urlset>`;
 
   res.type('application/xml; charset=utf-8').send(xml);
+});
+
+// Resolve dynamic SEO & Canonical Metadata for any ?uid= or ?q= request
+function resolveServerSeoForRequest(req: Request) {
+  const uid = typeof req.query?.uid === 'string' ? req.query.uid.trim() : '';
+  const searchQuery = typeof req.query?.q === 'string' ? req.query.q.trim() : '';
+
+  let matchedArticle: SeoArticleInput | null = null;
+
+  if (uid) {
+    const lowerUid = uid.toLowerCase();
+
+    // 1. NotMediaWiki / WikiZero articles
+    const wikiArt = (WIKI_STORE.articles || []).find(
+      (a) => a.id?.toLowerCase() === lowerUid || a.slug?.toLowerCase() === lowerUid
+    );
+    if (wikiArt) {
+      matchedArticle = {
+        id: wikiArt.slug || wikiArt.id,
+        titulo: wikiArt.title,
+        resumo: wikiArt.summary,
+        descricao: wikiArt.wikitext?.slice(0, 240),
+        setor: wikiArt.categories?.[0] || 'NotMediaWiki',
+        idioma: 'pt-BR',
+        dataCriacao: wikiArt.createdAt,
+        dataEdicao: wikiArt.updatedAt,
+      };
+    }
+
+    // 2. Custom user/seed articles
+    if (!matchedArticle) {
+      const custom = (DATA_CACHE.customArticles || []).find(
+        (a: any) => String(a?.id || a?.uid || '').toLowerCase() === lowerUid
+      );
+      if (custom) {
+        matchedArticle = {
+          id: String(custom.id || custom.uid),
+          titulo: custom.titulo || custom.title,
+          descricao: custom.descricao || custom.conteudo,
+          setor: custom.setor || custom.colecao,
+          dataEdicao: custom.ultimaEdicao,
+        };
+      }
+    }
+
+    // 3. Noticias JSON fallback
+    if (!matchedArticle && Array.isArray(DATA_CACHE.noticias)) {
+      const newsItem = DATA_CACHE.noticias.find(
+        (n: any) => String(n?.id || '').toLowerCase() === lowerUid
+      );
+      if (newsItem) {
+        matchedArticle = {
+          id: String(newsItem.id),
+          titulo: newsItem.titulo,
+          descricao: newsItem.descricao || newsItem.conteudo,
+          setor: newsItem.setor || 'Notícias',
+          dataEdicao: newsItem.ultimaEdicao,
+        };
+      }
+    }
+
+    // 4. Academico / Artigos JSON fallback
+    if (!matchedArticle && DATA_CACHE.artigos?.materias) {
+      const materias = DATA_CACHE.artigos.materias as Record<string, any>;
+      if (materias[uid]) {
+        matchedArticle = {
+          id: uid,
+          titulo: materias[uid].titulo,
+          descricao: materias[uid].descricao,
+          setor: materias[uid].categoria || 'Acadêmico',
+        };
+      }
+    }
+  }
+
+  return resolveDynamicSeoMetadata({
+    uid: uid || undefined,
+    tab: uid || 'wikiworldweb',
+    searchQuery: searchQuery || undefined,
+    article: matchedArticle,
+  });
+}
+
+// Endpoint de diagnóstico/auditoria de canonicalização & meta-tags
+app.get('/api/seo/resolve', (req: Request, res: Response) => {
+  const meta = resolveServerSeoForRequest(req);
+  res.json({
+    canonicalOrigin: 'https://core.wazzimagiygg.com',
+    resolved: meta,
+    httpHeaders: {
+      Link: `<${meta.canonicalUrl}>; rel="canonical"`,
+      'X-Robots-Tag': meta.robots,
+    },
+  });
 });
 
 // Explicit JSON 404 handler for any unknown /api/* route (prevents SPA HTML fallthrough)
@@ -2431,17 +2549,59 @@ async function startServer() {
     const vite = await createServer({
       server: { middlewareMode: true }
     });
+
+    // Dynamic SSR meta-tag & canonical injection before Vite static HTML fallthrough
+    app.get('*', async (req: Request, res: Response, next) => {
+      const acceptsHtml = req.headers.accept?.includes('text/html');
+      const isInternalAsset =
+        req.path.startsWith('/api/') ||
+        req.path.startsWith('/@') ||
+        req.path.startsWith('/src/') ||
+        req.path.startsWith('/node_modules/') ||
+        /\.[a-z0-9]+$/i.test(req.path);
+
+      if (!acceptsHtml || isInternalAsset) {
+        return next();
+      }
+
+      try {
+        const indexPath = path.resolve(__dirname, 'index.html');
+        let template = fs.readFileSync(indexPath, 'utf-8');
+        template = await vite.transformIndexHtml(req.originalUrl, template);
+        const seoMeta = resolveServerSeoForRequest(req);
+        const canonicalizedHtml = injectSeoIntoHtml(template, seoMeta);
+
+        res.setHeader('Link', `<${seoMeta.canonicalUrl}>; rel="canonical"`);
+        res.setHeader('X-Robots-Tag', seoMeta.robots);
+        res.status(200).set({ 'Content-Type': 'text/html; charset=utf-8' }).end(canonicalizedHtml);
+      } catch (err) {
+        vite.ssrFixStacktrace(err as Error);
+        next(err);
+      }
+    });
+
     app.use(vite.middlewares);
-    console.log('[Backend] Vite middleware attached in dev mode.');
+    console.log('[Backend] Vite middleware + SSR SEO canonicalization attached in dev mode.');
   } else {
-    // Serve static files in production
+    // Serve static files in production with dynamic SSR SEO canonicalization
     const distPath = path.resolve(__dirname, 'dist');
+    const distIndexPath = path.resolve(distPath, 'index.html');
     if (fs.existsSync(distPath)) {
-      app.use(express.static(distPath));
-      app.get('*', (_req: Request, res: Response) => {
-        res.sendFile(path.resolve(distPath, 'index.html'));
+      app.use(express.static(distPath, { index: false }));
+      app.get('*', (req: Request, res: Response) => {
+        if (fs.existsSync(distIndexPath)) {
+          const template = fs.readFileSync(distIndexPath, 'utf-8');
+          const seoMeta = resolveServerSeoForRequest(req);
+          const canonicalizedHtml = injectSeoIntoHtml(template, seoMeta);
+
+          res.setHeader('Link', `<${seoMeta.canonicalUrl}>; rel="canonical"`);
+          res.setHeader('X-Robots-Tag', seoMeta.robots);
+          res.status(200).set({ 'Content-Type': 'text/html; charset=utf-8' }).send(canonicalizedHtml);
+        } else {
+          res.status(404).end();
+        }
       });
-      console.log('[Backend] Serving production dist static files.');
+      console.log('[Backend] Serving production dist static files with SSR SEO canonicalization.');
     }
   }
 
