@@ -12,6 +12,12 @@ import {
   SeoArticleInput,
 } from './src/seo/canonicalEngine';
 import {
+  WIKI_SITE_VERSION,
+  WIKI_SITE_DISPLAY_ID,
+  WIKI_SITE_GENERATOR,
+  getWikiSiteVersionManifest,
+} from './src/config/wikiVersion';
+import {
   SEED_WIKI_ARTICLES,
   SEED_WIKI_REVISIONS,
   SEED_WIKI_EVENTS,
@@ -53,11 +59,13 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true, limit: '2mb' }));
 
-// Security, SEO Canonical & CORS Headers
+// Security, SEO Canonical, Wiki-Site Version & CORS Headers
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('X-WikiSite-Version', WIKI_SITE_VERSION);
+  res.setHeader('X-Powered-By-WikiSite', WIKI_SITE_DISPLAY_ID);
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Master-Key, X-Access-Key');
@@ -358,6 +366,9 @@ app.get('/api/health', (_req: Request, res: Response) => {
     status: 'ok',
     app: 'WazzimaGiygg',
     version: '2.0.0-ts',
+    wikiSiteVersion: WIKI_SITE_VERSION,
+    wikiSiteId: WIKI_SITE_DISPLAY_ID,
+    generator: WIKI_SITE_GENERATOR,
     uptime: process.uptime(),
     timestamp: new Date().toISOString(),
     database: {
@@ -1185,6 +1196,19 @@ const WIKI_STORE = {
   events: [...SEED_WIKI_EVENTS] as WikiEvent[],
   extensions: [...SEED_WIKI_EXTENSIONS]
 };
+
+// 0. Wiki-Site Version Manifest (Special:Version API)
+app.get(['/api/version', '/api/v1/version'], (_req: Request, res: Response) => {
+  res.json(
+    getWikiSiteVersionManifest({
+      extensionsCount: WIKI_STORE.extensions.length,
+      articlesCount: buildArticlesList('all').length + WIKI_STORE.articles.length,
+      revisionsCount: WIKI_STORE.revisions.length,
+      nodeVersion: process.version,
+      uptimeSeconds: Math.floor(process.uptime()),
+    })
+  );
+});
 
 // 1. Content Service
 app.get('/api/v1/content/articles', (req: Request, res: Response) => {

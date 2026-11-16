@@ -48,6 +48,7 @@ import { WikiArticle, WikiPage, WatchlistItem, UserProfile } from '../types';
 import { StorageService } from '../services/storageService';
 import { buildUidPermalink } from '../utils/urlRouter';
 import { PdfExportModal } from './PdfExportModal';
+import { WIKI_SITE_VERSION, WIKI_SITE_DISPLAY_ID } from '../../config/wikiVersion';
 
 interface SpecialPagesViewProps {
   articles: WikiArticle[];
@@ -212,6 +213,7 @@ export const SpecialPagesView: React.FC<SpecialPagesViewProps> = ({
   const handleExportFullDump = () => {
     const dump = {
       project: 'WikiWorldWeb Enciclopédia Aberta',
+      wikiSiteVersion: WIKI_SITE_VERSION,
       version: '3.0',
       timestamp: new Date().toISOString(),
       articles,
@@ -232,12 +234,15 @@ export const SpecialPagesView: React.FC<SpecialPagesViewProps> = ({
       {/* Header Banner */}
       <div className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-800 rounded-lg p-4 sm:p-5 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2 font-bold text-slate-900 dark:text-white font-serif-heading text-lg">
+          <div className="flex items-center gap-2 font-bold text-slate-900 dark:text-white font-serif-heading text-lg flex-wrap">
             <Sparkles size={20} className="text-blue-600 dark:text-blue-400" />
             <span>Páginas Especiais (Special:SpecialPages)</span>
+            <span className="text-[11px] font-mono font-bold px-2 py-0.5 rounded bg-amber-100 dark:bg-amber-950/60 text-amber-900 dark:text-amber-300 border border-amber-300 dark:border-amber-700">
+              {WIKI_SITE_DISPLAY_ID}
+            </span>
           </div>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-            Painel central de relatórios de conteúdo, ontologia, páginas órfãs, lista de vigilância e estatísticas.
+            Painel central de relatórios de conteúdo, ontologia, páginas órfãs, lista de vigilância e estatísticas ({WIKI_SITE_DISPLAY_ID}).
           </p>
         </div>
 

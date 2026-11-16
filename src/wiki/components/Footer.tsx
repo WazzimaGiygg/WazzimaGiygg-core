@@ -32,6 +32,7 @@ import { playHalfLifeHEVBeep, playHalfLifeGeiger } from '../utils/halfLifeAudio'
 import { FooterBadges } from './FooterBadges';
 import { formatExternalUrl } from '../utils/linkUtils';
 import { GoogleReaderRevenueDonation } from './GoogleReaderRevenueDonation';
+import { WIKI_SITE_DISPLAY_ID } from '../../config/wikiVersion';
 
 interface FooterProps {
   onNavigate: (view: ViewMode) => void;
@@ -603,6 +604,15 @@ export const Footer: React.FC<FooterProps> = ({
               >
                 support.wazzimagiygg.com
               </a>
+              {' '}•{' '}
+              <button
+                type="button"
+                onClick={() => onNavigate('site-updates')}
+                className="text-amber-600 dark:text-amber-400 hover:underline font-bold cursor-pointer"
+                title="Abrir atualizações e identificação de versão (Special:Version)"
+              >
+                {WIKI_SITE_DISPLAY_ID}
+              </button>
               {' '}• Em conformidade com a <strong>LGPD (Lei nº 13.709/2018)</strong> e o <strong>Marco Civil (Lei nº 12.965/2014)</strong>. DPO: Pedro Henrique Cardona Peres (pedrohenriquecardonaperes@gmail.com)
             </p>
           </div>

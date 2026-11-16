@@ -146,6 +146,8 @@ function applyResolvedMetadataToHead(meta: ResolvedSeoMetadata) {
   document.title = meta.title;
   setMetaTag('description', meta.description);
   setMetaTag('keywords', meta.keywords.join(', '));
+  setMetaTag('generator', meta.generator);
+  setMetaTag('wikisite-version', meta.wikiSiteVersion);
   setMetaTag('robots', meta.robots);
   setMetaTag('googlebot', meta.googlebot);
   setMetaTag('bingbot', meta.bingbot);

@@ -47,7 +47,8 @@ import {
   Sun,
   Moon,
   ShieldCheck,
-  Sparkles
+  Sparkles,
+  Tag
 } from "lucide-react";
 import jsPDF from "jspdf";
 
@@ -124,6 +125,8 @@ import {
 } from "./utils/privacySettings";
 import { updatePortalSEO } from "./wiki/utils/seoManager";
 import AbntCitationGenerator from "./components/AbntCitationGenerator";
+import WikiSiteVersionModal from "./components/WikiSiteVersionModal";
+import { WIKI_SITE_VERSION, WIKI_SITE_DISPLAY_ID } from "./config/wikiVersion";
 
 export default function App() {
   // Persistent Theme State (Light / Dark)
@@ -185,6 +188,7 @@ export default function App() {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [articleFormErrors, setArticleFormErrors] = useState<Record<string, string>>({});
   const [isDiagnosticsOpen, setIsDiagnosticsOpen] = useState(false);
+  const [isVersionModalOpen, setIsVersionModalOpen] = useState(false);
   const [toast, setToast] = useState<{ message: string; isError: boolean } | null>(null);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
 
@@ -1178,6 +1182,17 @@ export default function App() {
             <span className="text-stone-700">|</span>
 
             <button
+              onClick={() => setIsVersionModalOpen(true)}
+              className="flex items-center gap-1.5 bg-amber-950/80 hover:bg-amber-900 text-amber-200 border border-amber-500/70 px-2 py-0.5 text-[10px] font-mono font-bold uppercase tracking-wider transition-colors cursor-pointer whitespace-nowrap shrink-0"
+              title={`Identificação de versão do sistema: ${WIKI_SITE_DISPLAY_ID} (Special:Version)`}
+            >
+              <Tag className="w-3 h-3 text-amber-400 shrink-0" />
+              <span>{WIKI_SITE_DISPLAY_ID}</span>
+            </button>
+
+            <span className="text-stone-700">|</span>
+
+            <button
               onClick={() => setIsDiagnosticsOpen(!isDiagnosticsOpen)}
               className="flex items-center gap-1.5 hover:text-white text-stone-400 transition-colors cursor-pointer text-[10px] whitespace-nowrap shrink-0"
               title="Ver status da API e banco de dados"
@@ -1361,6 +1376,15 @@ export default function App() {
               <span className="font-bold text-[#141414] dark:text-amber-300">
                 CANÔNICO OFICIAL: core.wazzimagiygg.com
               </span>
+              <span className="hidden sm:inline">•</span>
+              <button
+                type="button"
+                onClick={() => setIsVersionModalOpen(true)}
+                className="font-bold text-[#B91C1C] dark:text-amber-400 hover:underline cursor-pointer uppercase"
+                title="Abrir ficha de versão oficial (Special:Version)"
+              >
+                {WIKI_SITE_DISPLAY_ID}
+              </button>
               <span className="hidden sm:inline">•</span>
               <span>LGPD (LEI Nº 13.709/18) &amp; MARCO CIVIL (LEI Nº 12.965/14)</span>
               <span className="hidden sm:inline">•</span>
@@ -2818,6 +2842,12 @@ export default function App() {
 
           <div className="space-y-2 text-[11px] text-stone-300">
             <div className="flex justify-between py-1 border-b border-stone-800">
+              <span className="text-stone-400">Versão Wiki-Site:</span>
+              <span className="text-amber-400 font-bold">
+                {apiHealth?.wikiSiteVersion || WIKI_SITE_VERSION}
+              </span>
+            </div>
+            <div className="flex justify-between py-1 border-b border-stone-800">
               <span className="text-stone-400">Banco de Dados:</span>
               <span className="text-emerald-400 font-bold">Firestore (wzzm-ce3fc)</span>
             </div>
@@ -2827,13 +2857,25 @@ export default function App() {
             </div>
             <div className="flex justify-between py-1 border-b border-stone-800">
               <span className="text-stone-400">Rotas Compatíveis:</span>
-              <span className="text-stone-200">/api/articles, /api/news, /api/jsonbin, /api/tickets</span>
+              <span className="text-stone-200">/api/articles, /api/news, /api/version, /api/tickets</span>
             </div>
             <div className="flex justify-between py-1 border-b border-stone-800">
               <span className="text-stone-400">Status Servidor:</span>
               <span className="text-stone-200">{apiHealth?.status || "OK"} (Uptime: {Math.floor(apiHealth?.uptime || 0)}s)</span>
             </div>
           </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              setIsDiagnosticsOpen(false);
+              setIsVersionModalOpen(true);
+            }}
+            className="mt-3 w-full bg-amber-500 hover:bg-amber-400 text-[#141414] font-bold uppercase py-1.5 text-[10px] tracking-wider flex items-center justify-center gap-1.5 cursor-pointer"
+          >
+            <Tag className="w-3.5 h-3.5" />
+            <span>Ver Manifesto Completo ({WIKI_SITE_DISPLAY_ID})</span>
+          </button>
         </div>
       )}
 
@@ -2973,6 +3015,7 @@ export default function App() {
             <FooterBadges
               className="justify-center"
               supportUrl={supportConfig.externalUrl || "https://support.wazzimagiygg.com/"}
+              onOpenVersion={() => setIsVersionModalOpen(true)}
               onNavigate={(view) => {
                 if (view === "hub") {
                   switchTab("wikiwazzimagiygg");
@@ -2987,7 +3030,15 @@ export default function App() {
 
           <div className="border-t border-stone-800 pt-6 flex flex-col sm:flex-row items-center justify-between text-[10px] text-stone-500 gap-3">
             <span>
-              © 2026 WazzimaGiygg Core (<strong>core.wazzimagiygg.com</strong>) • Licença CC-BY-SA 4.0 • LGPD (Lei 13.709/18) • Marco Civil (Lei 12.965/14).
+              © 2026 WazzimaGiygg Core (<strong>core.wazzimagiygg.com</strong>) •{" "}
+              <button
+                type="button"
+                onClick={() => setIsVersionModalOpen(true)}
+                className="text-amber-400 hover:underline font-bold cursor-pointer"
+              >
+                {WIKI_SITE_DISPLAY_ID}
+              </button>{" "}
+              • Licença CC-BY-SA 4.0 • LGPD (Lei 13.709/18) • Marco Civil (Lei 12.965/14).
             </span>
             <span>DPO: Pedro Henrique Cardona Peres (pedrohenriquecardonaperes@gmail.com) • Guarda de Logs Art. 15 MCI: 180 dias</span>
           </div>
@@ -3137,6 +3188,16 @@ export default function App() {
         }}
         isBureaucrat={isBurocrataUser}
         currentUserEmail={user?.email}
+      />
+
+      {/* 18. MODAL OFICIAL DE IDENTIFICAÇÃO DE VERSÃO (Wiki-Site C1.16.C7.1 / Special:Version) */}
+      <WikiSiteVersionModal
+        isOpen={isVersionModalOpen}
+        onClose={() => setIsVersionModalOpen(false)}
+        articlesCount={Object.values(articles).reduce((acc, curr) => acc + curr.length, 0)}
+        extensionsCount={extensionsList.length}
+        extensionNames={extensionsList.map((ext) => ext.name)}
+        showToast={showToast}
       />
     </div>
   );

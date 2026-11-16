@@ -1,5 +1,6 @@
 import React from 'react';
 import { formatExternalUrl } from '../utils/linkUtils';
+import { WIKI_SITE_VERSION, WIKI_SITE_DISPLAY_ID } from '../../config/wikiVersion';
 
 export const GoogleAIStudioBadge: React.FC = () => (
   <a
@@ -288,17 +289,40 @@ export const WikiZeroBadge: React.FC<{ onClick?: () => void }> = ({ onClick }) =
   </button>
 );
 
+export const WikiSiteVersionBadge: React.FC<{ onClick?: () => void }> = ({ onClick }) => (
+  <button
+    type="button"
+    onClick={onClick}
+    title={`Identificação oficial de versão: ${WIKI_SITE_DISPLAY_ID} (Special:Version)`}
+    className="inline-flex items-center justify-between w-[88px] h-[31px] bg-gradient-to-br from-[#1f130d] via-[#141414] to-black border border-amber-500/70 hover:border-amber-400 rounded transition p-1 shadow-xs group cursor-pointer text-left"
+  >
+    <div className="w-5 h-5 rounded flex items-center justify-center bg-amber-500/20 text-amber-400 border border-amber-500/40 flex-shrink-0 font-mono text-[9px] font-black">
+      vC
+    </div>
+    <div className="flex flex-col text-right leading-none pr-0.5">
+      <span className="text-[5.2px] font-mono tracking-tighter text-amber-400 font-bold uppercase">
+        WIKI-SITE
+      </span>
+      <span className="text-[7px] font-mono font-bold text-amber-100 group-hover:text-white tracking-tight">
+        {WIKI_SITE_VERSION}
+      </span>
+    </div>
+  </button>
+);
+
 export const FooterBadges: React.FC<{
   onNavigate?: (view: any) => void;
+  onOpenVersion?: () => void;
   className?: string;
   supportUrl?: string;
-}> = ({ onNavigate, className, supportUrl }) => {
+}> = ({ onNavigate, onOpenVersion, className, supportUrl }) => {
   return (
     <div
       className={`flex flex-wrap items-center gap-2 pt-1 ${
         className ?? "justify-center sm:justify-end"
       }`}
     >
+      <WikiSiteVersionBadge onClick={() => (onOpenVersion ? onOpenVersion() : onNavigate?.('site-updates'))} />
       <WikiZeroBadge onClick={() => onNavigate && onNavigate('hub')} />
       <WazzimaSupportBadge supportUrl={supportUrl} />
       <LgpdMarcoCivilBadge onClick={() => onNavigate && onNavigate('privacy')} />

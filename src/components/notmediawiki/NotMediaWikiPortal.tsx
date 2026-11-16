@@ -9,6 +9,14 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import {
+  WIKI_SITE_VERSION,
+  WIKI_SITE_SERIES,
+  WIKI_SITE_REVISION,
+  WIKI_SITE_DISPLAY_ID,
+  WIKI_SITE_ENGINE,
+  WIKI_SITE_LICENSE,
+} from '../../config/wikiVersion';
+import {
   BookOpen,
   Edit3,
   Clock,
@@ -1023,10 +1031,10 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
                 W
               </div>
               <div>
-                <h2 className="font-editorial text-2xl sm:text-3xl font-bold tracking-tight text-white flex items-center gap-2">
+                <h2 className="font-editorial text-2xl sm:text-3xl font-bold tracking-tight text-white flex flex-wrap items-center gap-2">
                   <span>NotMediaWiki</span>
-                  <span className="text-xs font-mono font-normal text-amber-400 bg-amber-950/80 px-2 py-0.5 border border-amber-600">
-                    Beta Engine
+                  <span className="text-xs font-mono font-bold text-amber-300 bg-amber-950/90 px-2 py-0.5 border border-amber-500">
+                    {WIKI_SITE_DISPLAY_ID}
                   </span>
                 </h2>
                 <p className="text-xs font-mono text-stone-300 mt-0.5">
@@ -1855,11 +1863,26 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
                   <span>Visualizações Totais:</span>
                   <span className="font-bold">{articles.reduce((a, b) => a + b.views, 0)}</span>
                 </div>
-                <div className="flex justify-between">
+                <div className="flex justify-between border-b pb-1">
+                  <span>Versão Wiki-Site:</span>
+                  <span className="font-bold text-amber-800">{WIKI_SITE_VERSION}</span>
+                </div>
+                <div className="flex justify-between border-b pb-1">
+                  <span>Série / Revisão:</span>
+                  <span className="font-bold">{WIKI_SITE_SERIES} • {WIKI_SITE_REVISION}</span>
+                </div>
+                <div className="flex justify-between border-b pb-1">
                   <span>Extensões Ativas:</span>
                   <span className="font-bold text-emerald-700">{extensions.length} ativas</span>
                 </div>
+                <div className="flex justify-between">
+                  <span>Licença &amp; Motor:</span>
+                  <span className="font-bold text-right">{WIKI_SITE_LICENSE}</span>
+                </div>
               </div>
+              <p className="text-[10px] text-stone-500 mt-2 pt-2 border-t border-stone-200">
+                Special:Version • {WIKI_SITE_ENGINE}
+              </p>
             </div>
 
             <div className="p-4 bg-[#FAF9F5] border-2 border-[#141414]">

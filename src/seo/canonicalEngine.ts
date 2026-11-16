@@ -11,6 +11,8 @@
 export const CANONICAL_ORIGIN = 'https://core.wazzimagiygg.com';
 export const DEFAULT_SOCIAL_IMAGE = `${CANONICAL_ORIGIN}/logo.png`;
 
+import { WIKI_SITE_VERSION, WIKI_SITE_GENERATOR } from '../config/wikiVersion';
+
 export const RECOGNIZED_ECOSYSTEM_ORIGINS = [
   'https://core.wazzimagiygg.com',
   'https://wazzimagiygg.com',
@@ -102,6 +104,8 @@ export interface ResolvedSeoMetadata {
   breadcrumbs: Array<{ name: string; url: string }>;
   jsonLdGraph: Record<string, unknown>;
   isIndexable: boolean;
+  generator: string;
+  wikiSiteVersion: string;
 }
 
 const DEFAULT_KEYWORDS = [
@@ -452,6 +456,7 @@ export function resolveDynamicSeoMetadata(params: {
       url: `${CANONICAL_ORIGIN}/`,
       name: 'WazzimaGiygg Core (core.wazzimagiygg.com)',
       alternateName: ['core.wazzimagiygg.com', 'WikiWorldWeb', 'WazzimaGiygg', 'WikiZero', 'NotMediaWiki'],
+      softwareVersion: WIKI_SITE_VERSION,
       inLanguage: 'pt-BR',
       publisher: { '@id': `${CANONICAL_ORIGIN}/#organization` },
       potentialAction: {
@@ -601,6 +606,8 @@ export function resolveDynamicSeoMetadata(params: {
       '@graph': graphNodes,
     },
     isIndexable: !isNoindexState,
+    generator: WIKI_SITE_GENERATOR,
+    wikiSiteVersion: WIKI_SITE_VERSION,
   };
 }
 
@@ -662,6 +669,8 @@ export function injectSeoIntoHtml(html: string, meta: ResolvedSeoMetadata): stri
   // Standard Meta Tags
   out = upsertHeadMeta(out, 'name', 'description', meta.description);
   out = upsertHeadMeta(out, 'name', 'keywords', meta.keywords.join(', '));
+  out = upsertHeadMeta(out, 'name', 'generator', meta.generator);
+  out = upsertHeadMeta(out, 'name', 'wikisite-version', meta.wikiSiteVersion);
   out = upsertHeadMeta(out, 'name', 'robots', meta.robots);
   out = upsertHeadMeta(out, 'name', 'googlebot', meta.googlebot);
   out = upsertHeadMeta(out, 'name', 'bingbot', meta.bingbot);
