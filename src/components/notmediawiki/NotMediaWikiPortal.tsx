@@ -60,6 +60,7 @@ import jsPDF from 'jspdf';
 import ExtensionConfigModal from '../ExtensionConfigModal';
 import AddExtensionCatalogModal from '../AddExtensionCatalogModal';
 import { exportWikiArticleFormattedPdf } from '../../utils/pdfExport';
+import AbntCitationGenerator from '../AbntCitationGenerator';
 import {
   WikiArticle,
   WikiRevision,
@@ -1348,78 +1349,21 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
                 ))}
               </div>
             )}
-            {/* ABNT Citation Box with Article UID Link */}
-            <div className="mt-8 p-4 bg-white border-2 border-[#141414] font-mono text-xs shadow-[3px_3px_0px_0px_rgba(20,20,20,1)]">
-              <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-                <span className="font-bold text-stone-900 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
-                  <FileText className="w-3.5 h-3.5 text-stone-700" />
-                  <span>Como Citar Este Verbete (Normas ABNT):</span>
-                </span>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const uidUrl = `${window.location.origin}/?uid=${encodeURIComponent(currentArticle.id || currentArticle.slug)}`;
-                      const citation = `NOTMEDIAWIKI. ${currentArticle.title.toUpperCase()}. Enciclopédia NotMediaWiki WazzimaGiygg, ${new Date().getFullYear()}. Disponível em: <${uidUrl}>. Acesso em: ${new Date().toLocaleDateString('pt-BR')}.`;
-                      navigator.clipboard.writeText(citation);
-                      showToast('Citação ABNT com link direto do UID copiada!');
-                    }}
-                    className="paper-button px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 cursor-pointer"
-                    title="Copiar citação ABNT com link permanente do UID"
-                  >
-                    <Copy className="w-3 h-3 text-amber-400" />
-                    <span>Copiar Citação</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const uidUrl = `${window.location.origin}/?uid=${encodeURIComponent(currentArticle.id || currentArticle.slug)}`;
-                      navigator.clipboard.writeText(uidUrl);
-                      showToast(`Link do UID copiado: ?uid=${currentArticle.id || currentArticle.slug}`);
-                    }}
-                    className="paper-button-secondary px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 cursor-pointer"
-                    title="Copiar link direto do UID"
-                  >
-                    <Share2 className="w-3 h-3 text-stone-700" />
-                    <span>Copiar Link do UID</span>
-                  </button>
-                </div>
-              </div>
-
-              <div className="text-stone-700 select-all bg-stone-50 p-2.5 border border-stone-300 text-[11px] leading-relaxed break-all">
-                <span>
-                  NOTMEDIAWIKI. {currentArticle.title.toUpperCase()}. Enciclopédia NotMediaWiki WazzimaGiygg, {new Date().getFullYear()}. Disponível em: &lt;
-                </span>
-                <a
-                  href={`${window.location.origin}/?uid=${encodeURIComponent(currentArticle.id || currentArticle.slug)}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-blue-700 hover:text-red-700 underline font-bold"
-                  title={`Abrir UID do artigo: ${currentArticle.id || currentArticle.slug}`}
-                >
-                  {`${window.location.origin}/?uid=${encodeURIComponent(currentArticle.id || currentArticle.slug)}`}
-                </a>
-                <span>&gt;. Acesso em: {new Date().toLocaleDateString('pt-BR')}.</span>
-              </div>
-
-              <div className="mt-2 pt-2 border-t border-stone-200 flex flex-wrap items-center justify-between gap-2 text-[10px] text-stone-500">
-                <div className="flex items-center gap-1.5">
-                  <span className="font-bold text-stone-800 uppercase">Referência UID:</span>
-                  <code className="bg-amber-100 text-stone-900 font-bold px-1.5 py-0.5 border border-amber-300">
-                    {currentArticle.id || currentArticle.slug}
-                  </code>
-                </div>
-                <a
-                  href={`${window.location.origin}/?uid=${encodeURIComponent(currentArticle.id || currentArticle.slug)}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-blue-700 hover:text-blue-900 underline font-mono flex items-center gap-1 font-semibold"
-                >
-                  <span>Vincular por UID (?uid={currentArticle.id || currentArticle.slug})</span>
-                  <ExternalLink className="w-3 h-3" />
-                </a>
-              </div>
-            </div>
+            {/* Gerador de Citação ABNT Customizável para Verbetes Wiki */}
+            <AbntCitationGenerator
+              articleId={currentArticle.id || currentArticle.slug}
+              articleTitle={currentArticle.title}
+              articleRawContent={parseResult.html || currentArticle.summary || currentArticle.wikitext || ''}
+              defaultAuthor="NotMediaWiki"
+              defaultPortalName="Enciclopédia NotMediaWiki — core.wazzimagiygg.com"
+              defaultYear={(() => {
+                const match = String(currentArticle.updatedAt || currentArticle.createdAt || '').match(/\b(19|20)\d{2}\b/);
+                return match ? match[0] : String(new Date().getFullYear());
+              })()}
+              articleUrl={`${window.location.origin}/?uid=${encodeURIComponent(currentArticle.id || currentArticle.slug)}`}
+              canonicalCoreUrl={`https://core.wazzimagiygg.com/?uid=${encodeURIComponent(currentArticle.id || currentArticle.slug)}`}
+              showToast={showToast}
+            />
           </div>
         </div>
       )}

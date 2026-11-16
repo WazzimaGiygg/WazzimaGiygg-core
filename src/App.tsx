@@ -123,6 +123,7 @@ import {
   purgeOptionalLocalSessionData,
 } from "./utils/privacySettings";
 import { updatePortalSEO } from "./wiki/utils/seoManager";
+import AbntCitationGenerator from "./components/AbntCitationGenerator";
 
 export default function App() {
   // Persistent Theme State (Light / Dark)
@@ -185,7 +186,6 @@ export default function App() {
   const [articleFormErrors, setArticleFormErrors] = useState<Record<string, string>>({});
   const [isDiagnosticsOpen, setIsDiagnosticsOpen] = useState(false);
   const [toast, setToast] = useState<{ message: string; isError: boolean } | null>(null);
-  const [citationCopied, setCitationCopied] = useState(false);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
 
   // Chat / Messages State (Compatible with jsonbin-api.js)
@@ -903,24 +903,8 @@ export default function App() {
   const getArticleUidUrl = (article: Article | { id: string }) => {
     const origin = typeof window !== "undefined" && window.location?.origin
       ? window.location.origin
-      : "https://wazzimagiygg.com";
+      : "https://core.wazzimagiygg.com";
     return `${origin}/?uid=${encodeURIComponent(article.id)}`;
-  };
-
-  // Generate ABNT Citation linked to specific Article UID (Substituindo o link genérico do site pelo link do UID)
-  const getAbntCitation = (article: Article) => {
-    const author = (article.criadorEmail || "WAZZIMAGIYGG").split("@")[0].toUpperCase();
-    const title = article.titulo.toUpperCase();
-    const year = new Date().getFullYear();
-    const uidUrl = getArticleUidUrl(article);
-    return `${author}. ${title}. WazzimaGiygg Gazette & Knowledge Portal, ${year}. Disponível em: <${uidUrl}>. Acesso em: ${new Date().toLocaleDateString("pt-BR")}.`;
-  };
-
-  const handleCopyCitation = (article: Article) => {
-    navigator.clipboard.writeText(getAbntCitation(article));
-    setCitationCopied(true);
-    showToast("Citação ABNT com link direto do UID copiada para a área de transferência!");
-    setTimeout(() => setCitationCopied(false), 3000);
   };
 
   // Save Article as Formatted PDF (Preserving Original Document Styles & Structure)
@@ -2391,88 +2375,32 @@ export default function App() {
                 }}
               />
 
-              {/* ABNT Citation Box with Article UID Link */}
-              <div className="mt-10 p-4 bg-white dark:bg-[#1E1E1B] border-2 border-[#141414] dark:border-[#3E3D38] font-mono text-xs shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]">
-                <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-                  <div className="flex items-center gap-2">
-                    <FileText className="w-4 h-4 text-stone-700 dark:text-stone-300" />
-                    <span className="font-bold text-stone-800 dark:text-stone-200 uppercase tracking-wider text-[11px]">
-                      Como Citar Este Documento (Normas ABNT):
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => handleCopyCitation(selectedArticle)}
-                      className="paper-button px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 cursor-pointer"
-                      title="Copiar citação formatada para a área de transferência"
-                    >
-                      {citationCopied ? <CheckCircle className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3 text-amber-400 dark:text-amber-600" />}
-                      <span>{citationCopied ? "Copiado!" : "Copiar Citação"}</span>
-                    </button>
-                    <button
-                      onClick={() => {
-                        const url = getArticleUidUrl(selectedArticle);
-                        navigator.clipboard.writeText(url);
-                        showToast(`Link do UID copiado: ?uid=${selectedArticle.id}`);
-                      }}
-                      className="paper-button-secondary px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 cursor-pointer"
-                      title="Copiar apenas o link do UID"
-                    >
-                      <Share2 className="w-3 h-3 text-stone-700 dark:text-stone-300" />
-                      <span>Copiar Link do UID</span>
-                    </button>
-                    <button
-                      onClick={() => {
-                        const target = selectedArticle;
-                        handleCloseArticle();
-                        setSharedArticleForBemtevi(target);
-                        switchTab("bemtevi");
-                        showToast(`Carregando "${target.titulo}" no Bemtevi para debate social! 🐦`);
-                      }}
-                      className="paper-button bg-[#667eea] hover:bg-[#5a6fd6] text-white px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 cursor-pointer shadow-none"
-                      title="Compartilhar e debater este documento na rede social Bemtevi"
-                    >
-                      <MessageCircle className="w-3 h-3 text-white" />
-                      <span>Debater no Bemtevi</span>
-                    </button>
-                  </div>
-                </div>
-
-                <div className="text-stone-700 dark:text-stone-300 select-all bg-stone-50 dark:bg-[#141413] p-3 border border-stone-300 dark:border-[#34332F] text-[11px] leading-relaxed break-all">
-                  <span>
-                    {(selectedArticle.criadorEmail || "WAZZIMAGIYGG").split("@")[0].toUpperCase()}. {selectedArticle.titulo.toUpperCase()}. WazzimaGiygg Gazette & Knowledge Portal, {new Date().getFullYear()}. Disponível em: &lt;
-                  </span>
-                  <a
-                    href={getArticleUidUrl(selectedArticle)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-blue-700 dark:text-sky-400 hover:text-red-700 dark:hover:text-red-400 underline font-bold"
-                    title={`Abrir UID do artigo: ${selectedArticle.id}`}
-                  >
-                    {getArticleUidUrl(selectedArticle)}
-                  </a>
-                  <span>&gt;. Acesso em: {new Date().toLocaleDateString("pt-BR")}.</span>
-                </div>
-
-                {/* Permanent UID Reference Link Badge */}
-                <div className="mt-2.5 pt-2 border-t border-stone-200 dark:border-[#2E2D28] flex flex-wrap items-center justify-between gap-2 text-[10px] text-stone-600 dark:text-stone-400">
-                  <div className="flex items-center gap-1.5">
-                    <span className="font-bold text-stone-800 dark:text-stone-200 uppercase">Referência UID:</span>
-                    <span className="bg-amber-100 dark:bg-amber-950/60 text-stone-900 dark:text-amber-200 font-bold px-1.5 py-0.5 border border-amber-300 dark:border-amber-700">
-                      {selectedArticle.id}
-                    </span>
-                  </div>
-                  <a
-                    href={getArticleUidUrl(selectedArticle)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-blue-700 dark:text-sky-400 hover:text-blue-900 dark:hover:text-sky-300 underline font-mono flex items-center gap-1 font-semibold"
-                  >
-                    <span>Vincular por UID (?uid={selectedArticle.id})</span>
-                    <ExternalLink className="w-3 h-3" />
-                  </a>
-                </div>
-              </div>
+              {/* Gerador de Citação ABNT Customizável (Direta Curta/Longa, Indireta, Apud & Exportação Acadêmica) */}
+              <AbntCitationGenerator
+                articleId={selectedArticle.id}
+                articleTitle={selectedArticle.titulo}
+                articleRawContent={selectedArticle.conteudo || selectedArticle.descricao || ""}
+                defaultAuthor={formatPublicAuthorIdentifier(
+                  selectedArticle.criadorEmail,
+                  privacySettings.maskEmailInPublicViews,
+                  "WazzimaGiygg"
+                )}
+                defaultPortalName="WazzimaGiygg Core (core.wazzimagiygg.com)"
+                defaultYear={(() => {
+                  const match = String(selectedArticle.ultimaEdicao || "").match(/\b(19|20)\d{2}\b/);
+                  return match ? match[0] : String(new Date().getFullYear());
+                })()}
+                articleUrl={getArticleUidUrl(selectedArticle)}
+                canonicalCoreUrl={`https://core.wazzimagiygg.com/?uid=${encodeURIComponent(selectedArticle.id)}`}
+                showToast={showToast}
+                onShareBemtevi={() => {
+                  const target = selectedArticle;
+                  handleCloseArticle();
+                  setSharedArticleForBemtevi(target);
+                  switchTab("bemtevi");
+                  showToast(`Carregando "${target.titulo}" no Bemtevi para debate social! 🐦`);
+                }}
+              />
             </div>
 
             {/* Modal Bottom Controls */}
