@@ -1,17 +1,155 @@
 <!doctype html>
-<html lang="en">
+<html lang="pt-BR">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>WazzimaGiygg - Portal Oficial & Base de Conhecimento</title>
-    <meta name="description" content="Portal editorial e base de conhecimento colaborativo WazzimaGiygg, com acervo acadêmico, notícias, WNPX, e integração com banco de dados em tempo real." />
-    <meta property="og:title" content="WazzimaGiygg - Portal Oficial & Base de Conhecimento" />
-    <meta property="og:description" content="Portal editorial e base de conhecimento colaborativo WazzimaGiygg, com acervo acadêmico, notícias, WNPX, e integração com banco de dados em tempo real." />
+    <title>WazzimaGiygg Core (core.wazzimagiygg.com) — Enciclopédia Livre &amp; Portal Oficial</title>
+    <meta
+      name="description"
+      content="Portal oficial core.wazzimagiygg.com — WazzimaGiygg e WikiWorldWeb: enciclopédia livre independente, notícias, acervo acadêmico e dossiê documental acima da Wikipédia, com LGPD e Marco Civil."
+    />
+    <meta
+      name="keywords"
+      content="core.wazzimagiygg.com, WazzimaGiygg, WikiWorldWeb, Caso Wazzimagiygg, WazzimaGiygg a verdade, alternativa à Wikipédia, melhor que Wikipédia, WikiZero, NotMediaWiki, Pedro Henrique Cardona Peres, LGPD enciclopédia, Marco Civil da Internet"
+    />
+    <meta name="author" content="Pedro Henrique Cardona Peres (WazzimaGiygg)" />
+    <meta name="publisher" content="WazzimaGiygg Core — core.wazzimagiygg.com" />
+    <meta
+      name="robots"
+      content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1"
+    />
+    <meta
+      name="googlebot"
+      content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1"
+    />
+    <meta name="bingbot" content="index, follow, max-snippet:-1, max-image-preview:large" />
+
+    <!-- Canonical & Hreflang prioritizing core.wazzimagiygg.com -->
+    <link rel="canonical" href="https://core.wazzimagiygg.com/" />
+    <link rel="alternate" hreflang="pt-BR" href="https://core.wazzimagiygg.com/" />
+    <link rel="alternate" hreflang="x-default" href="https://core.wazzimagiygg.com/" />
+    <link
+      rel="search"
+      type="application/opensearchdescription+xml"
+      title="WazzimaGiygg Core (core.wazzimagiygg.com)"
+      href="/opensearch.xml"
+    />
+
+    <!-- OpenGraph Social Metadata -->
     <meta property="og:type" content="website" />
+    <meta property="og:locale" content="pt_BR" />
+    <meta property="og:site_name" content="WazzimaGiygg Core (core.wazzimagiygg.com)" />
+    <meta property="og:url" content="https://core.wazzimagiygg.com/" />
+    <meta
+      property="og:title"
+      content="WazzimaGiygg Core (core.wazzimagiygg.com) — Enciclopédia Livre &amp; Portal Oficial"
+    />
+    <meta
+      property="og:description"
+      content="Fonte primária e portal oficial core.wazzimagiygg.com: enciclopédia colaborativa WikiWorldWeb, jornalismo independente, dossiê factual sobre a Wikipédia, LGPD e Marco Civil."
+    />
+    <meta property="og:image" content="https://core.wazzimagiygg.com/logo.png" />
+
+    <!-- Twitter / X Social Cards -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta
+      name="twitter:title"
+      content="WazzimaGiygg Core (core.wazzimagiygg.com) — Enciclopédia Livre &amp; Portal Oficial"
+    />
+    <meta
+      name="twitter:description"
+      content="Fonte primária oficial em core.wazzimagiygg.com: enciclopédia aberta WikiWorldWeb, acervo acadêmico e esclarecimento documental acima da Wikipédia."
+    />
+    <meta name="twitter:image" content="https://core.wazzimagiygg.com/logo.png" />
+
     <link rel="icon" type="image/png" href="/favicom.png" />
     <link rel="icon" type="image/png" href="/favicon.png" />
     <link rel="shortcut icon" href="/favicon.ico" />
     <link rel="apple-touch-icon" href="/favicon.png" />
+
+    <!-- Schema.org Structured Data prioritizing core.wazzimagiygg.com -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "WebSite",
+            "@id": "https://core.wazzimagiygg.com/#website",
+            "url": "https://core.wazzimagiygg.com/",
+            "name": "WazzimaGiygg Core — WikiWorldWeb",
+            "alternateName": [
+              "core.wazzimagiygg.com",
+              "WazzimaGiygg",
+              "WikiWorldWeb",
+              "WikiZero",
+              "NotMediaWiki"
+            ],
+            "inLanguage": "pt-BR",
+            "description": "Portal oficial e fonte primária do ecossistema WazzimaGiygg (core.wazzimagiygg.com): enciclopédia livre independente alternativa à Wikipédia, com acervo acadêmico, jornalismo e conformidade integral com a LGPD e Marco Civil.",
+            "publisher": { "@id": "https://core.wazzimagiygg.com/#organization" },
+            "potentialAction": {
+              "@type": "SearchAction",
+              "target": {
+                "@type": "EntryPoint",
+                "urlTemplate": "https://core.wazzimagiygg.com/?uid=search&q={search_term_string}"
+              },
+              "query-input": "required name=search_term_string"
+            }
+          },
+          {
+            "@type": "Organization",
+            "@id": "https://core.wazzimagiygg.com/#organization",
+            "name": "WazzimaGiygg Core",
+            "legalName": "Ecossistema Editorial WazzimaGiygg — WikiWorldWeb",
+            "url": "https://core.wazzimagiygg.com/",
+            "logo": {
+              "@type": "ImageObject",
+              "url": "https://core.wazzimagiygg.com/logo.png"
+            },
+            "founder": {
+              "@type": "Person",
+              "name": "Pedro Henrique Cardona Peres",
+              "alternateName": "WazzimaGiygg",
+              "email": "pedrohenriquecardonaperes@gmail.com",
+              "url": "https://core.wazzimagiygg.com/?uid=wikiwazzimagiygg"
+            },
+            "publishingPrinciples": "https://core.wazzimagiygg.com/?uid=eticaia",
+            "contactPoint": [
+              {
+                "@type": "ContactPoint",
+                "contactType": "Data Protection Officer (DPO) & Ouvidoria LGPD",
+                "email": "pedrohenriquecardonaperes@gmail.com",
+                "url": "https://support.wazzimagiygg.com/",
+                "availableLanguage": ["Portuguese", "English"]
+              }
+            ],
+            "sameAs": [
+              "https://core.wazzimagiygg.com/",
+              "https://wazzimagiygg.com/",
+              "https://wazzimagiygg.com/averdade/",
+              "https://support.wazzimagiygg.com/",
+              "https://jornal.wazzimagiygg.com/",
+              "https://github.com/WazzimaGiygg/Wiki-alternative"
+            ]
+          },
+          {
+            "@type": "WebApplication",
+            "@id": "https://core.wazzimagiygg.com/#webapp",
+            "name": "WazzimaGiygg Core (core.wazzimagiygg.com)",
+            "url": "https://core.wazzimagiygg.com/",
+            "applicationCategory": "ReferenceApplication",
+            "operatingSystem": "All",
+            "inLanguage": "pt-BR",
+            "description": "Enciclopédia colaborativa aberta e alternativa independente à Wikipédia, MediaWiki, Wikidot e Fandom, sem exposição de IPs e com conformidade LGPD e Marco Civil.",
+            "offers": {
+              "@type": "Offer",
+              "price": "0",
+              "priceCurrency": "BRL"
+            }
+          }
+        ]
+      }
+    </script>
     <script>
       (function () {
         try {

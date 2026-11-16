@@ -1034,6 +1034,8 @@ export interface GeminiChatMessage {
   quotaExceeded?: boolean;
   quotaType?: 'chats' | 'images' | 'notebook';
   feedback?: 'like' | 'dislike';
+  groundingChunks?: Array<{ web?: { uri?: string; title?: string } }>;
+  webSearchQueries?: string[];
   metadata?: {
     actionType?: 'article' | 'collection' | 'wtext_snippet';
     suggestedData?: any;

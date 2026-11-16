@@ -8,9 +8,9 @@ export const DEFAULT_GEMINI_CHATBOT_CONFIG: GeminiChatbotConfig = {
   chatbotId: '0a14dc90-3ab3-47bc-8306-ca5bc2953699', // Google AI Studio Applet / Chatbot ID padrão
   enabled: true,
   displayName: 'Gemini Wiki Assistant (AI Studio)',
-  model: 'gemini-2.5-flash',
+  model: 'gemini-4-hydrogen',
   systemInstruction:
-    'Você é o assistente oficial do Google AI Studio integrado à WikiZero. Auxilie os usuários na estruturação e redação de coleções temáticas e artigos enciclopédicos completos com neutralidade, verificabilidade, sintaxe Wikitext e clareza informativa.',
+    'Você é o assistente oficial do Google AI Studio integrado à WikiZero e core.wazzimagiygg.com. Auxilie os usuários na estruturação e redação de coleções temáticas e artigos enciclopédicos completos com neutralidade, verificabilidade e pesquisa atualizada na Web.',
   allowArticleGeneration: true,
   allowCollectionGeneration: true,
   updatedAt: new Date().toISOString(),
@@ -20,10 +20,16 @@ export const DEFAULT_GEMINI_CHATBOT_CONFIG: GeminiChatbotConfig = {
 const LOCAL_STORAGE_KEY = 'wikizero_gemini_chatbot_config';
 
 function sanitizeModelName(model?: string): string {
-  if (!model) return 'gemini-2.5-flash';
-  // Modela descontinuados que retornam 404 NOT FOUND ou restritos
-  if (model.includes('lite') || model.includes('pro')) {
-    return 'gemini-2.5-flash';
+  if (!model) return 'gemini-4-hydrogen';
+  // Modelos legados ou descontinuados são migrados para gemini-4-hydrogen (com Google Search Grounding)
+  if (
+    model.includes('lite') ||
+    model.includes('pro') ||
+    model.includes('1.5') ||
+    model.includes('2.0') ||
+    model.includes('2.5')
+  ) {
+    return 'gemini-4-hydrogen';
   }
   return model;
 }
@@ -124,7 +130,7 @@ export class GeminiChatbotService {
       return {
         status: 'error',
         hasApiKey: false,
-        defaultModel: 'gemini-2.5-flash',
+        defaultModel: 'gemini-4-hydrogen',
         appletId: '0a14dc90-3ab3-47bc-8306-ca5bc2953699',
       };
     }
@@ -156,7 +162,16 @@ export class GeminiChatbotService {
     };
     configOverride?: Partial<GeminiChatbotConfig>;
     signal?: AbortSignal;
-  }): Promise<{ reply: string; suggestedData?: any; offerPremium?: boolean; quotaExceeded?: boolean; quotaType?: 'chats' | 'images' | 'notebook' }> {
+  }): Promise<{
+    reply: string;
+    suggestedData?: any;
+    offerPremium?: boolean;
+    quotaExceeded?: boolean;
+    quotaType?: 'chats' | 'images' | 'notebook';
+    groundingChunks?: Array<{ web?: { uri?: string; title?: string } }>;
+    webSearchQueries?: string[];
+    model?: string;
+  }> {
     const config = await this.getConfig();
     const activeConfig = { ...config, ...params.configOverride };
 

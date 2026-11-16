@@ -46,7 +46,8 @@ import {
   Award,
   Sun,
   Moon,
-  ShieldCheck
+  ShieldCheck,
+  Sparkles
 } from "lucide-react";
 import jsPDF from "jspdf";
 
@@ -121,6 +122,7 @@ import {
   formatPublicAuthorIdentifier,
   purgeOptionalLocalSessionData,
 } from "./utils/privacySettings";
+import { updatePortalSEO } from "./wiki/utils/seoManager";
 
 export default function App() {
   // Persistent Theme State (Light / Dark)
@@ -160,6 +162,17 @@ export default function App() {
   const [sharedArticleForBemtevi, setSharedArticleForBemtevi] = useState<Article | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedSector, setSelectedSector] = useState<string>("todos");
+
+  // Google Search Grounding (gemini-4-hydrogen) State
+  const [webGroundingResult, setWebGroundingResult] = useState<{
+    query: string;
+    answer: string;
+    groundingChunks: Array<{ web?: { uri?: string; title?: string } }>;
+    webSearchQueries: string[];
+    model?: string;
+  } | null>(null);
+  const [isWebGroundingLoading, setIsWebGroundingLoading] = useState(false);
+  const [webGroundingError, setWebGroundingError] = useState<string | null>(null);
 
   // Notifications State
   const [notifications, setNotifications] = useState<UserNotification[]>([]);
@@ -455,6 +468,52 @@ export default function App() {
       setIsUserProfileModalOpen(true);
     }
   }, [uidNav.currentUid, articles, currentTab]);
+
+  // Dynamic Canonical, Meta Tags, OpenGraph & Schema.org SEO Sync for core.wazzimagiygg.com
+  useEffect(() => {
+    updatePortalSEO({
+      tab: currentTab,
+      article: selectedArticle,
+      searchQuery: searchTerm
+    });
+  }, [currentTab, selectedArticle, searchTerm]);
+
+  const handleRunWebGrounding = async (overrideQuery?: string) => {
+    const q = (overrideQuery ?? searchTerm).trim();
+    if (!q) {
+      setWebGroundingError("Digite um termo para pesquisar na Web via Google Search.");
+      return;
+    }
+    setIsWebGroundingLoading(true);
+    setWebGroundingError(null);
+    try {
+      const res = await safeApiFetch("/api/gemini/search-grounding", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: q, contextTab: currentTab })
+      });
+      if (!res) {
+        setWebGroundingError("Pesquisa Web via servidor Express indisponível em modo offline/estático.");
+        return;
+      }
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setWebGroundingError(data?.error || `Erro ao consultar Google Search Grounding (HTTP ${res.status}).`);
+        return;
+      }
+      setWebGroundingResult({
+        query: data.query || q,
+        answer: data.answer || "",
+        groundingChunks: Array.isArray(data.groundingChunks) ? data.groundingChunks : [],
+        webSearchQueries: Array.isArray(data.webSearchQueries) ? data.webSearchQueries : [],
+        model: data.model || "gemini-4-hydrogen"
+      });
+    } catch (err: any) {
+      setWebGroundingError(err?.message || "Falha ao executar busca com Google Search.");
+    } finally {
+      setIsWebGroundingLoading(false);
+    }
+  };
 
   // Load all registered users from database for UID navigation switcher
   useEffect(() => {
@@ -1314,8 +1373,12 @@ export default function App() {
 
           {/* Subheader bar with quick metrics */}
           <div className="flex flex-wrap items-center justify-between text-[11px] font-mono text-stone-700 dark:text-stone-300 pt-2 border-t border-stone-300 dark:border-[#2E2D28]">
-            <div className="flex items-center gap-4">
-              <span>CONFORME A LGPD (LEI Nº 13.709/18) E MARCO CIVIL DA INTERNET BRASILEIRO (LEI Nº 12.965/14)</span>
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="font-bold text-[#141414] dark:text-amber-300">
+                CANÔNICO OFICIAL: core.wazzimagiygg.com
+              </span>
+              <span className="hidden sm:inline">•</span>
+              <span>LGPD (LEI Nº 13.709/18) &amp; MARCO CIVIL (LEI Nº 12.965/14)</span>
               <span className="hidden sm:inline">•</span>
               <span className="hidden sm:inline">BASE FIRESTORE ORIGINAL MANTIDA</span>
             </div>
@@ -1466,24 +1529,50 @@ export default function App() {
       {["wikiworldweb", "materiadeensaio", "academico", "materia", "uwgbooks"].includes(currentTab) && (
         <div className="bg-white dark:bg-[#1A1A18] border-b border-stone-300 dark:border-[#2E2D28] py-3 px-4 transition-colors">
           <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-3">
-            {/* Search Input */}
-            <div className="relative w-full md:w-96">
-              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
-              <input
-                type="text"
-                placeholder="Pesquisar artigos, tópicos, autores ou palavras-chave..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-9 pr-4 py-2 text-xs font-mono bg-[#F8F7F4] dark:bg-[#121210] text-[#141414] dark:text-stone-100 placeholder:text-stone-500 dark:placeholder:text-stone-400 border border-[#141414] dark:border-[#3E3D38] focus:outline-none focus:ring-2 focus:ring-[#141414] dark:focus:ring-stone-300"
-              />
-              {searchTerm && (
-                <button
-                  onClick={() => setSearchTerm("")}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400 hover:text-black dark:hover:text-white"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
+            {/* Search Input + Google Search Grounding Action */}
+            <div className="flex items-center gap-2 w-full md:w-auto">
+              <div className="relative flex-1 md:w-80">
+                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
+                <input
+                  type="text"
+                  placeholder="Pesquisar artigos, tópicos ou na Web..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && searchTerm.trim() && currentTabArticles.length === 0) {
+                      handleRunWebGrounding();
+                    }
+                  }}
+                  className="w-full pl-9 pr-7 py-2 text-xs font-mono bg-[#F8F7F4] dark:bg-[#121210] text-[#141414] dark:text-stone-100 placeholder:text-stone-500 dark:placeholder:text-stone-400 border border-[#141414] dark:border-[#3E3D38] focus:outline-none focus:ring-2 focus:ring-[#141414] dark:focus:ring-stone-300"
+                />
+                {searchTerm && (
+                  <button
+                    onClick={() => {
+                      setSearchTerm("");
+                      setWebGroundingResult(null);
+                      setWebGroundingError(null);
+                    }}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400 hover:text-black dark:hover:text-white cursor-pointer"
+                    title="Limpar pesquisa"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => handleRunWebGrounding()}
+                disabled={isWebGroundingLoading || !searchTerm.trim()}
+                className="px-3 py-2 text-[11px] font-mono font-bold uppercase tracking-wider bg-emerald-800 hover:bg-emerald-900 disabled:opacity-45 text-white border border-[#141414] dark:border-emerald-700 flex items-center gap-1.5 whitespace-nowrap cursor-pointer transition-colors"
+                title="Consultar Google Search em tempo real com fontes verificadas (Gemini 4 Hydrogen)"
+              >
+                {isWebGroundingLoading ? (
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                )}
+                <span>Buscar na Web</span>
+              </button>
             </div>
 
             {/* Sector Tags */}
@@ -1568,6 +1657,89 @@ export default function App() {
                 <span>Atualizar</span>
               </button>
             </div>
+
+            {/* Google Search Grounding Result Panel (gemini-4-hydrogen) */}
+            {(webGroundingResult || webGroundingError) && (
+              <div className="mb-6 p-5 bg-emerald-50/90 dark:bg-emerald-950/30 border-2 border-emerald-800 dark:border-emerald-700 shadow-[4px_4px_0px_0px_rgba(6,78,59,0.9)]">
+                <div className="flex items-start justify-between gap-3 border-b border-emerald-700/30 pb-2 mb-3">
+                  <div className="flex items-center gap-2">
+                    <Globe className="w-4 h-4 text-emerald-700 dark:text-emerald-400 shrink-0" />
+                    <div>
+                      <h3 className="text-xs font-mono font-bold uppercase tracking-wider text-emerald-950 dark:text-emerald-200">
+                        Síntese Web Verificada • Google Search Grounding
+                      </h3>
+                      {webGroundingResult?.query && (
+                        <p className="text-[11px] font-mono text-emerald-800 dark:text-emerald-400">
+                          Consulta: "{webGroundingResult.query}" • Domínio prioritário: core.wazzimagiygg.com
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setWebGroundingResult(null);
+                      setWebGroundingError(null);
+                    }}
+                    className="p-1 text-emerald-900 dark:text-emerald-300 hover:bg-emerald-200/60 dark:hover:bg-emerald-900/50 cursor-pointer"
+                    title="Fechar painel de busca web"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                {webGroundingError ? (
+                  <p className="text-xs font-mono text-red-700 dark:text-red-300">{webGroundingError}</p>
+                ) : webGroundingResult ? (
+                  <div className="space-y-3">
+                    <div className="text-xs sm:text-sm font-serif text-stone-900 dark:text-stone-100 whitespace-pre-line leading-relaxed">
+                      {webGroundingResult.answer}
+                    </div>
+
+                    {webGroundingResult.groundingChunks.length > 0 && (
+                      <div className="pt-2 border-t border-emerald-700/20">
+                        <p className="text-[10px] font-mono font-bold uppercase tracking-wider text-emerald-900 dark:text-emerald-300 mb-2">
+                          Fontes indexadas via Google Search:
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          {Array.from(
+                            new Map(
+                              webGroundingResult.groundingChunks
+                                .filter((c) => c?.web?.uri)
+                                .map((c) => [c.web!.uri!, c.web!])
+                            ).values()
+                          )
+                            .slice(0, 8)
+                            .map((webItem, idx) => {
+                              let hostname = webItem.uri || "";
+                              try {
+                                hostname = new URL(webItem.uri!).hostname;
+                              } catch {
+                                // ignore
+                              }
+                              return (
+                                <a
+                                  key={`portal-ground-${idx}`}
+                                  href={webItem.uri}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white dark:bg-[#1A1A18] border border-emerald-700/50 text-[11px] font-mono text-emerald-950 dark:text-emerald-200 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 transition-colors"
+                                  title={webItem.title || webItem.uri}
+                                >
+                                  <span className="truncate max-w-[240px] font-bold">
+                                    {webItem.title || hostname}
+                                  </span>
+                                  <ExternalLink className="w-3 h-3 shrink-0" />
+                                </a>
+                              );
+                            })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : null}
+              </div>
+            )}
 
             {/* Articles List */}
             {isLoading ? (
@@ -2886,7 +3058,9 @@ export default function App() {
           </div>
 
           <div className="border-t border-stone-800 pt-6 flex flex-col sm:flex-row items-center justify-between text-[10px] text-stone-500 gap-3">
-            <span>© 2026 WazzimaGiygg. Licença CC-BY-SA 4.0 • LGPD (Lei 13.709/18) • Marco Civil (Lei 12.965/14) • Decreto 8.771/16.</span>
+            <span>
+              © 2026 WazzimaGiygg Core (<strong>core.wazzimagiygg.com</strong>) • Licença CC-BY-SA 4.0 • LGPD (Lei 13.709/18) • Marco Civil (Lei 12.965/14).
+            </span>
             <span>DPO: Pedro Henrique Cardona Peres (pedrohenriquecardonaperes@gmail.com) • Guarda de Logs Art. 15 MCI: 180 dias</span>
           </div>
         </div>

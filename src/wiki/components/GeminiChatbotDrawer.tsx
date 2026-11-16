@@ -32,6 +32,8 @@ import {
   StopCircle,
   Replace,
   Code,
+  Globe,
+  ExternalLink,
 } from 'lucide-react';
 import {
   GeminiChatbotConfig,
@@ -529,6 +531,8 @@ export const GeminiChatbotDrawer: React.FC<GeminiChatbotDrawerProps> = ({
         offerPremium: response.offerPremium,
         quotaExceeded: response.quotaExceeded,
         quotaType: response.quotaType,
+        groundingChunks: Array.isArray(response.groundingChunks) ? response.groundingChunks : undefined,
+        webSearchQueries: Array.isArray(response.webSearchQueries) ? response.webSearchQueries : undefined,
         metadata: {
           actionType:
             contextMode === 'article'
@@ -946,6 +950,49 @@ export const GeminiChatbotDrawer: React.FC<GeminiChatbotDrawerProps> = ({
                       copiedId={copiedId}
                       onCopyText={handleCopyText}
                     />
+
+                    {/* Fontes verificadas via Google Search Grounding */}
+                    {!isUser && Array.isArray(msg.groundingChunks) && msg.groundingChunks.some((c) => c?.web?.uri) && (
+                      <div className="mt-2.5 p-2.5 rounded-lg bg-emerald-50/80 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/70 space-y-1.5">
+                        <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-emerald-800 dark:text-emerald-300">
+                          <Globe size={11} />
+                          <span>Fontes Verificadas (Google Search Grounding)</span>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {Array.from(
+                            new Map(
+                              msg.groundingChunks
+                                .filter((c) => c?.web?.uri)
+                                .map((c) => [c.web!.uri!, c.web!])
+                            ).values()
+                          )
+                            .slice(0, 6)
+                            .map((webItem, idx) => {
+                              let hostname = webItem.uri || '';
+                              try {
+                                hostname = new URL(webItem.uri!).hostname;
+                              } catch {
+                                // ignore
+                              }
+                              return (
+                                <a
+                                  key={`${msg.id}-src-${idx}`}
+                                  href={webItem.uri}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-white dark:bg-slate-800 border border-emerald-300/70 dark:border-emerald-700 text-[10px] text-emerald-900 dark:text-emerald-200 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition-colors max-w-full"
+                                  title={webItem.title || webItem.uri}
+                                >
+                                  <span className="truncate max-w-[180px] font-medium">
+                                    {webItem.title || hostname}
+                                  </span>
+                                  <ExternalLink size={9} className="shrink-0 opacity-75" />
+                                </a>
+                              );
+                            })}
+                        </div>
+                      </div>
+                    )}
 
                     {/* Card de Oferta ou Upgrade para Gemini Premium */}
                     {!isUser && (msg.offerPremium || msg.quotaExceeded) && (

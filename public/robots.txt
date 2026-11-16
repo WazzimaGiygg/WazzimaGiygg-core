@@ -1,0 +1,27 @@
+# Robots.txt — WazzimaGiygg Core (https://core.wazzimagiygg.com/)
+# Diretrizes de indexação prioritária para mecanismos de busca
+
+User-agent: Googlebot
+Allow: /
+Disallow: /admin/
+
+User-agent: Googlebot-News
+Allow: /
+
+User-agent: Bingbot
+Allow: /
+Disallow: /admin/
+
+User-agent: DuckDuckBot
+Allow: /
+
+User-agent: Applebot
+Allow: /
+
+User-agent: *
+Allow: /
+Disallow: /admin/
+Disallow: /api/admin/
+
+Host: core.wazzimagiygg.com
+Sitemap: https://core.wazzimagiygg.com/sitemap.xml

@@ -30,7 +30,7 @@ export interface GeminiApiKeySettings {
 export const DEFAULT_GEMINI_API_KEY_SETTINGS: GeminiApiKeySettings = {
   enableGemini: true,
   envVariableName: 'GEMINI_API_KEY',
-  defaultModel: 'gemini-3.8-flash',
+  defaultModel: 'gemini-4-hydrogen',
   temperature: 0.7,
   enableChatbotAssistant: true,
   enableGeminiNotebook: true,
@@ -49,10 +49,10 @@ export interface GeminiModelOption {
 
 export const RECOMMENDED_GEMINI_MODELS: GeminiModelOption[] = [
   {
-    id: 'gemini-3.8-flash',
-    name: 'Gemini 3.8 Flash (Padrão Recomendado)',
+    id: 'gemini-4-hydrogen',
+    name: 'Gemini 4 Hydrogen (Padrão Recomendado + Google Search)',
     category: 'text',
-    description: 'Modelo de alta velocidade e excelente fidelidade factual para artigos, resumos e assistência.',
+    description: 'Modelo padrão de alta velocidade com Search Grounding nativo para fontes atualizadas em tempo real.',
     isRecommended: true,
   },
   {
@@ -129,19 +129,19 @@ export async function fetchGeminiKeyStatus(): Promise<GeminiKeyStatusResponse> {
       status: data.status || 'ok',
       hasApiKey: !!data.hasApiKey,
       variableName: data.variableName || 'GEMINI_API_KEY',
-      defaultModel: data.defaultModel || 'gemini-3.8-flash',
+      defaultModel: data.defaultModel || 'gemini-4-hydrogen',
       appletId: data.appletId || '0a14dc90-3ab3-47bc-8306-ca5bc2953699',
       provider: data.provider || 'Google AI Studio & Gemini API',
       maskedKey: data.maskedKey || null,
       serverSideProxy: true,
-      recommendedModels: data.recommendedModels || ['gemini-3.8-flash', 'gemini-flash-latest', 'gemini-4-argon'],
+      recommendedModels: data.recommendedModels || ['gemini-4-hydrogen', 'gemini-flash-latest', 'gemini-4-argon'],
     };
   } catch (err: any) {
     return {
       status: 'error',
       hasApiKey: false,
       variableName: 'GEMINI_API_KEY',
-      defaultModel: 'gemini-3.8-flash',
+      defaultModel: 'gemini-4-hydrogen',
       appletId: '0a14dc90-3ab3-47bc-8306-ca5bc2953699',
       provider: 'Google AI Studio & Gemini API',
       maskedKey: null,

@@ -47,14 +47,20 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true, limit: '2mb' }));
 
-// Security & CORS Headers
-app.use((_req, res, next) => {
+// Security, SEO Canonical & CORS Headers
+app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   res.setHeader('X-XSS-Protection', '1; mode=block');
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Master-Key, X-Access-Key');
+
+  if (req.method === 'GET' && !req.path.startsWith('/api/') && !req.path.match(/\.(js|css|png|jpg|jpeg|svg|ico|webp|woff2?|json)$/i)) {
+    const uidParam = typeof req.query?.uid === 'string' && req.query.uid.trim() ? `?uid=${encodeURIComponent(req.query.uid.trim())}` : '';
+    res.setHeader('Link', `<https://core.wazzimagiygg.com/${uidParam}>; rel="canonical"`);
+    res.setHeader('X-Robots-Tag', 'index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1');
+  }
   next();
 });
 
@@ -2047,15 +2053,51 @@ app.get('/api/security/check-vpn', (req: Request, res: Response) => {
 });
 
 // ============================================
-// GEMINI AI WIKI ENDPOINTS (/api/gemini/*)
+// GEMINI AI WIKI & GOOGLE SEARCH GROUNDING ENDPOINTS (/api/gemini/*)
 // ============================================
-const DEFAULT_GEMINI_MODEL = 'gemini-2.5-flash';
+const DEFAULT_GEMINI_MODEL = 'gemini-4-hydrogen';
 const DEFAULT_GEMINI_APPLET_ID = '0a14dc90-3ab3-47bc-8306-ca5bc2953699';
 
 function getServerGeminiClient(): GoogleGenAI | null {
   const apiKey = process.env.GEMINI_API_KEY?.trim();
   if (!apiKey || apiKey === 'MY_GEMINI_API_KEY') return null;
-  return new GoogleGenAI({ apiKey });
+  return new GoogleGenAI({
+    apiKey,
+    httpOptions: {
+      headers: {
+        'User-Agent': 'aistudio-build',
+      },
+    },
+  });
+}
+
+function normalizeGeminiModel(requestedModel?: unknown): string {
+  if (typeof requestedModel !== 'string' || !requestedModel.trim()) {
+    return DEFAULT_GEMINI_MODEL;
+  }
+  const m = requestedModel.trim();
+  if (m.includes('1.5') || m.includes('2.0') || m.includes('2.5')) {
+    return DEFAULT_GEMINI_MODEL;
+  }
+  return m;
+}
+
+function extractGroundingData(response: any) {
+  const groundingMetadata = response?.candidates?.[0]?.groundingMetadata;
+  const groundingChunks = Array.isArray(groundingMetadata?.groundingChunks)
+    ? groundingMetadata.groundingChunks
+        .filter((chunk: any) => chunk?.web?.uri)
+        .map((chunk: any) => ({
+          web: {
+            uri: String(chunk.web.uri),
+            title: chunk.web.title ? String(chunk.web.title) : String(chunk.web.uri),
+          },
+        }))
+    : [];
+  const webSearchQueries = Array.isArray(groundingMetadata?.webSearchQueries)
+    ? groundingMetadata.webSearchQueries.map((q: any) => String(q))
+    : [];
+  return { groundingChunks, webSearchQueries };
 }
 
 app.get('/api/gemini/status', (_req: Request, res: Response) => {
@@ -2064,8 +2106,50 @@ app.get('/api/gemini/status', (_req: Request, res: Response) => {
     status: client ? 'ready' : 'unconfigured',
     hasApiKey: !!client,
     defaultModel: DEFAULT_GEMINI_MODEL,
-    appletId: DEFAULT_GEMINI_APPLET_ID
+    appletId: DEFAULT_GEMINI_APPLET_ID,
+    searchGroundingEnabled: true,
+    recommendedModels: ['gemini-4-hydrogen', 'gemini-flash-latest', 'gemini-4-argon'],
   });
+});
+
+app.post('/api/gemini/search-grounding', async (req: Request, res: Response) => {
+  const { query, contextTab } = req.body || {};
+  if (!query || typeof query !== 'string' || !query.trim()) {
+    return res.status(400).json({ error: 'Termo de pesquisa é obrigatório.' });
+  }
+
+  const ai = getServerGeminiClient();
+  if (!ai) {
+    return res.status(503).json({
+      error: 'Chave GEMINI_API_KEY não configurada no servidor.',
+      fallbackAvailable: true,
+    });
+  }
+
+  try {
+    const cleanQuery = query.trim().slice(0, 400);
+    const response = await ai.models.generateContent({
+      model: DEFAULT_GEMINI_MODEL,
+      contents: `Pesquise na Web e responda em português (pt-BR), de forma clara, objetiva e verificável, sobre: "${cleanQuery}". Quando o assunto envolver o ecossistema WazzimaGiygg, WikiWorldWeb, Wiki-alternative ou Dossiê A Verdade, priorize a referência oficial em https://core.wazzimagiygg.com/ (e https://support.wazzimagiygg.com/). Contexto da aba atual: ${contextTab || 'wikiworldweb'}.`,
+      config: {
+        tools: [{ googleSearch: {} }],
+        systemInstruction:
+          'Você é o mecanismo de síntese e verificação factual integrado ao portal core.wazzimagiygg.com (WikiWorldWeb). Use o Google Search para trazer informações atuais e sempre cite fontes confiáveis sem depender de narrativas parciais.',
+      },
+    });
+
+    const { groundingChunks, webSearchQueries } = extractGroundingData(response);
+    res.json({
+      query: cleanQuery,
+      answer: response.text || 'Nenhum resumo encontrado para esta pesquisa.',
+      groundingChunks,
+      webSearchQueries,
+      model: DEFAULT_GEMINI_MODEL,
+      canonicalDomain: 'https://core.wazzimagiygg.com/',
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Erro ao executar Google Search Grounding.' });
+  }
 });
 
 app.post('/api/gemini/chat', async (req: Request, res: Response) => {
@@ -2078,7 +2162,7 @@ app.post('/api/gemini/chat', async (req: Request, res: Response) => {
   if (!ai) {
     return res.status(503).json({
       error: 'Chave GEMINI_API_KEY não configurada no servidor.',
-      fallbackAvailable: true
+      fallbackAvailable: true,
     });
   }
 
@@ -2092,28 +2176,34 @@ app.post('/api/gemini/chat', async (req: Request, res: Response) => {
     const contents: any[] = Array.isArray(history)
       ? history.slice(-10).map((h: any) => ({
           role: h.role === 'model' || h.role === 'assistant' ? 'model' : 'user',
-          parts: [{ text: String(h.text || h.content || '') }]
+          parts: [{ text: String(h.text || h.content || '') }],
         }))
       : [];
 
     const currentParts: any[] = [{ text: message }];
     if (image?.data && image?.mimeType) {
       currentParts.push({
-        inlineData: { data: image.data, mimeType: image.mimeType }
+        inlineData: { data: image.data, mimeType: image.mimeType },
       });
     }
     contents.push({ role: 'user', parts: currentParts });
 
+    const activeModel = normalizeGeminiModel(model);
     const response = await ai.models.generateContent({
-      model: typeof model === 'string' && model.trim() ? model.trim() : DEFAULT_GEMINI_MODEL,
+      model: activeModel,
       contents,
       config: {
-        systemInstruction: `${customSystemInstruction || 'Você é o assistente editorial da WikiZero / WazzimaGiygg.'}${contextText}`
-      }
+        tools: [{ googleSearch: {} }],
+        systemInstruction: `${customSystemInstruction || 'Você é o assistente editorial oficial de core.wazzimagiygg.com (WikiZero / WikiWorldWeb). Utilize o Google Search para verificar fatos atualizados e responda com precisão.'}${contextText}`,
+      },
     });
 
+    const { groundingChunks, webSearchQueries } = extractGroundingData(response);
     res.json({
-      reply: response.text || 'Não foi possível gerar resposta no momento.'
+      reply: response.text || 'Não foi possível gerar resposta no momento.',
+      groundingChunks,
+      webSearchQueries,
+      model: activeModel,
     });
   } catch (err: any) {
     res.status(500).json({ error: err?.message || 'Erro ao consultar o Gemini.' });
@@ -2132,17 +2222,24 @@ app.post('/api/gemini/generate-article', async (req: Request, res: Response) => 
   }
 
   try {
-    const prompt = `Escreva um artigo enciclopédico neutro, estruturado em Wikitext (usando == Seções == e listas quando apropriado), em ${language}, sobre "${topic}" na categoria "${category}". Palavras-chave: ${keywords}. Instruções adicionais: ${userInstructions}.`;
+    const prompt = `Escreva um artigo enciclopédico neutro, atualizado via pesquisa na Web e estruturado em Wikitext (usando == Seções == e listas quando apropriado), em ${language}, sobre "${topic}" na categoria "${category}". Palavras-chave: ${keywords}. Instruções adicionais: ${userInstructions}.`;
     const response = await ai.models.generateContent({
       model: DEFAULT_GEMINI_MODEL,
-      contents: prompt
+      contents: prompt,
+      config: {
+        tools: [{ googleSearch: {} }],
+      },
     });
 
+    const { groundingChunks, webSearchQueries } = extractGroundingData(response);
     res.json({
       title: topic.trim(),
       wikitext: response.text || '',
       category,
-      chatbotId: chatbotId || DEFAULT_GEMINI_APPLET_ID
+      chatbotId: chatbotId || DEFAULT_GEMINI_APPLET_ID,
+      groundingChunks,
+      webSearchQueries,
+      model: DEFAULT_GEMINI_MODEL,
     });
   } catch (err: any) {
     res.status(500).json({ error: err?.message || 'Erro ao gerar artigo com Gemini.' });
@@ -2171,7 +2268,7 @@ app.post('/api/gemini/generate-collection', async (req: Request, res: Response) 
     const response = await ai.models.generateContent({
       model: DEFAULT_GEMINI_MODEL,
       contents: `Gere um JSON puro (sem markdown) com as chaves titulo, descricao (máximo 180 caracteres), categoria, icon (um emoji), e tags (array de 3 a 5 strings) para uma coleção enciclopédica sobre "${theme}". ${userInstructions}`,
-      config: { responseMimeType: 'application/json' }
+      config: { responseMimeType: 'application/json' },
     });
     const parsed = JSON.parse(response.text || '{}');
     res.json({
@@ -2181,9 +2278,9 @@ app.post('/api/gemini/generate-collection', async (req: Request, res: Response) 
         descricao: parsed.descricao || `Coleção temática dedicada a ${theme.trim()}.`,
         categoria: parsed.categoria || 'Geral',
         icon: parsed.icon || '📚',
-        tags: Array.isArray(parsed.tags) ? parsed.tags : [theme.trim()]
+        tags: Array.isArray(parsed.tags) ? parsed.tags : [theme.trim()],
       },
-      chatbotId: chatbotId || DEFAULT_GEMINI_APPLET_ID
+      chatbotId: chatbotId || DEFAULT_GEMINI_APPLET_ID,
     });
   } catch (err: any) {
     res.status(500).json({ error: err?.message || 'Erro ao gerar coleção com Gemini.' });
@@ -2209,7 +2306,7 @@ app.post('/api/gemini/notebook-synthesize', async (req: Request, res: Response) 
     const response = await ai.models.generateContent({
       model: DEFAULT_GEMINI_MODEL,
       contents: `Ação: ${action}. Título alvo: ${targetArticleTitle || 'Artigo sintetizado'}. Instrução extra: ${customPrompt}.\n\nFontes:\n${sourcesText}\n\nRetorne JSON puro com: { "wikitext": "...", "summary": "...", "suggestedTitle": "...", "suggestedCategory": "..." }`,
-      config: { responseMimeType: 'application/json' }
+      config: { responseMimeType: 'application/json' },
     });
 
     const parsed = JSON.parse(response.text || '{}');
@@ -2217,11 +2314,100 @@ app.post('/api/gemini/notebook-synthesize', async (req: Request, res: Response) 
       wikitext: parsed.wikitext || '',
       summary: parsed.summary || 'Síntese gerada com sucesso.',
       suggestedTitle: parsed.suggestedTitle || targetArticleTitle || 'Artigo do Notebook',
-      suggestedCategory: parsed.suggestedCategory || 'Geral'
+      suggestedCategory: parsed.suggestedCategory || 'Geral',
     });
   } catch (err: any) {
     res.status(500).json({ error: err?.message || 'Erro ao sintetizar com Gemini Notebook.' });
   }
+});
+
+// ============================================
+// SEO ROUTES: DYNAMIC SITEMAP.XML, ROBOTS.TXT & OPENSEARCH.XML
+// ============================================
+function escapeXml(unsafe: string): string {
+  return String(unsafe)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+app.get('/robots.txt', (_req: Request, res: Response) => {
+  const publicRobots = path.resolve(__dirname, 'public', 'robots.txt');
+  if (fs.existsSync(publicRobots)) {
+    res.type('text/plain; charset=utf-8').sendFile(publicRobots);
+    return;
+  }
+  res
+    .type('text/plain; charset=utf-8')
+    .send('User-agent: *\nAllow: /\nDisallow: /admin/\nDisallow: /api/admin/\nHost: core.wazzimagiygg.com\nSitemap: https://core.wazzimagiygg.com/sitemap.xml\n');
+});
+
+app.get('/opensearch.xml', (_req: Request, res: Response) => {
+  const publicOpenSearch = path.resolve(__dirname, 'public', 'opensearch.xml');
+  if (fs.existsSync(publicOpenSearch)) {
+    res.type('application/opensearchdescription+xml; charset=utf-8').sendFile(publicOpenSearch);
+    return;
+  }
+  res.status(404).end();
+});
+
+app.get('/sitemap.xml', (_req: Request, res: Response) => {
+  const baseUrl = 'https://core.wazzimagiygg.com';
+  const today = new Date().toISOString().slice(0, 10);
+
+  const staticEntries = [
+    { loc: `${baseUrl}/`, changefreq: 'daily', priority: '1.0' },
+    { loc: `${baseUrl}/?uid=wikiworldweb`, changefreq: 'daily', priority: '0.95' },
+    { loc: `${baseUrl}/?uid=dossie`, changefreq: 'daily', priority: '0.95' },
+    { loc: `${baseUrl}/?uid=wikiwazzimagiygg`, changefreq: 'daily', priority: '0.95' },
+    { loc: `${baseUrl}/?uid=notmediawiki`, changefreq: 'daily', priority: '0.9' },
+    { loc: `${baseUrl}/?uid=wnpx`, changefreq: 'weekly', priority: '0.9' },
+    { loc: `${baseUrl}/?uid=academico`, changefreq: 'weekly', priority: '0.85' },
+    { loc: `${baseUrl}/?uid=materiadeensaio`, changefreq: 'weekly', priority: '0.85' },
+    { loc: `${baseUrl}/?uid=uwgbooks`, changefreq: 'weekly', priority: '0.85' },
+    { loc: `${baseUrl}/?uid=bemtevi`, changefreq: 'daily', priority: '0.85' },
+    { loc: `${baseUrl}/?uid=lgpd`, changefreq: 'monthly', priority: '0.8' },
+    { loc: `${baseUrl}/?uid=eticaia`, changefreq: 'monthly', priority: '0.8' },
+    { loc: `${baseUrl}/?uid=tickets`, changefreq: 'weekly', priority: '0.8' },
+  ];
+
+  const dynamicSlugs = new Set<string>();
+  const dynamicEntries: Array<{ loc: string; changefreq: string; priority: string }> = [];
+
+  for (const wikiArt of WIKI_STORE.articles || []) {
+    if (wikiArt?.slug && !dynamicSlugs.has(wikiArt.slug)) {
+      dynamicSlugs.add(wikiArt.slug);
+      dynamicEntries.push({
+        loc: `${baseUrl}/?uid=${encodeURIComponent(wikiArt.slug)}`,
+        changefreq: 'weekly',
+        priority: '0.85',
+      });
+    }
+  }
+
+  for (const customArt of DATA_CACHE.customArticles || []) {
+    const id = customArt?.id || customArt?.uid;
+    if (id && !dynamicSlugs.has(String(id))) {
+      dynamicSlugs.add(String(id));
+      dynamicEntries.push({
+        loc: `${baseUrl}/?uid=${encodeURIComponent(String(id))}`,
+        changefreq: 'weekly',
+        priority: '0.8',
+      });
+    }
+  }
+
+  const allUrls = [...staticEntries, ...dynamicEntries];
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${allUrls
+    .map(
+      (entry) =>
+        `  <url>\n    <loc>${escapeXml(entry.loc)}</loc>\n    <lastmod>${today}</lastmod>\n    <changefreq>${entry.changefreq}</changefreq>\n    <priority>${entry.priority}</priority>\n  </url>`
+    )
+    .join('\n')}\n</urlset>`;
+
+  res.type('application/xml; charset=utf-8').send(xml);
 });
 
 // Explicit JSON 404 handler for any unknown /api/* route (prevents SPA HTML fallthrough)
