@@ -185,7 +185,8 @@ export default function AdminPanel({
     userId: "all",
     title: "",
     message: "",
-    type: "info" as "info" | "warning" | "alert"
+    type: "info" as "info" | "warning" | "alert",
+    actionUid: ""
   });
 
   // Adicionar HTML Flutuante (htmlcreator/) State
@@ -744,17 +745,25 @@ export default function AdminPanel({
 
     setIsSendingNotif(true);
     try {
+      const mappedTipo = notifForm.type === "info" ? "sistema" : "alerta";
+      const cleanActionUid = notifForm.actionUid.trim();
       await addDoc(collection(db, "notifications"), {
         userId: notifForm.userId,
+        titulo: notifForm.title.trim(),
+        mensagem: notifForm.message.trim(),
+        tipo: mappedTipo,
+        lida: false,
+        timestamp: serverTimestamp(),
         title: notifForm.title.trim(),
         message: notifForm.message.trim(),
         type: notifForm.type,
         senderEmail: currentUser?.email || "burocrata@wazzimagiygg.com",
         read: false,
-        createdAt: serverTimestamp()
+        createdAt: serverTimestamp(),
+        ...(cleanActionUid ? { actionUid: cleanActionUid, actionLabel: "Abrir Destino" } : {})
       });
-      showToast("Notificação administrativa transmitida com sucesso!");
-      setNotifForm({ userId: "all", title: "", message: "", type: "info" });
+      showToast("✓ Notificação administrativa transmitida em tempo real!");
+      setNotifForm({ userId: "all", title: "", message: "", type: "info", actionUid: "" });
       setIsSendNotifModalOpen(false);
       registerAuditLog(currentUser?.uid || "admin", "burocrata_send_notification", {
         target: notifForm.userId,
@@ -2375,6 +2384,19 @@ export default function AdminPanel({
                   value={notifForm.message}
                   onChange={(e) => setNotifForm({ ...notifForm, message: e.target.value })}
                   className="w-full p-2 border border-[#141414] bg-[#F8F7F4] focus:outline-none font-sans text-xs"
+                />
+              </div>
+
+              <div>
+                <label className="block uppercase font-bold text-[10px] mb-1">
+                  Link / UID de Destino (Opcional):
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ex: notmediawiki, academico, ou slug/id de um verbete"
+                  value={notifForm.actionUid}
+                  onChange={(e) => setNotifForm({ ...notifForm, actionUid: e.target.value })}
+                  className="w-full p-2 border border-[#141414] bg-[#F8F7F4] focus:outline-none"
                 />
               </div>
 

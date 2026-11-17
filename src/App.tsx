@@ -18,7 +18,6 @@ import {
   LogOut,
   LogIn,
   Search,
-  Bell,
   Scale,
   FileText,
   Monitor,
@@ -63,11 +62,11 @@ import {
   createArticle,
   incrementArticleViews,
   setupNotificationsListener,
-  markNotificationAsRead,
-  markAllNotificationsAsRead,
+  pushLocalUserNotification,
   registerAuditLog,
   Article,
   UserNotification,
+  NotificationCategory,
   AUTHORIZED_BUROCRATA_EMAIL,
   isAuthorizedBurocrata,
   AUTHORIZED_PUBLISHER_EMAILS,
@@ -102,6 +101,8 @@ import { WikiExtension, WikiArticle, SEED_WIKI_EXTENSIONS } from "./data/notMedi
 import { buildPersonalUserPageSlug, resolveUserDisplayName } from "./config/userInfobox";
 import { exportArticleFormattedPdf } from "./utils/pdfExport";
 import HighlightedText from "./components/HighlightedText";
+import NotificationCenter from "./components/NotificationCenter";
+import NotificationToastStack, { ToastItem, ToastVariant } from "./components/NotificationToastStack";
 import {
   ALLOWED_ARTICLE_COLLECTIONS,
   validatePortalArticlePayload,
@@ -186,7 +187,6 @@ export default function App() {
 
   // Notifications State
   const [notifications, setNotifications] = useState<UserNotification[]>([]);
-  const [isNotifDropdownOpen, setIsNotifDropdownOpen] = useState(false);
 
   // Modals & Drawers
   const [isLoading, setIsLoading] = useState(true);
@@ -195,7 +195,7 @@ export default function App() {
   const [articleFormErrors, setArticleFormErrors] = useState<Record<string, string>>({});
   const [isDiagnosticsOpen, setIsDiagnosticsOpen] = useState(false);
   const [isVersionModalOpen, setIsVersionModalOpen] = useState(false);
-  const [toast, setToast] = useState<{ message: string; isError: boolean } | null>(null);
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
 
   // Catalog index for NotMediaWiki articles & async ?uid= reference resolution
@@ -697,12 +697,77 @@ export default function App() {
     });
   }, []);
 
-  const showToast = (message: string, isError = false) => {
-    setToast({ message, isError });
-    setTimeout(() => {
-      setToast(null);
-    }, 4000);
-  };
+  const dismissToast = useCallback((id: string) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  }, []);
+
+  const showToast = useCallback(
+    (
+      message: string,
+      isErrorOrOptions:
+        | boolean
+        | {
+            variant?: ToastVariant;
+            title?: string;
+            durationMs?: number;
+            actionLabel?: string;
+            onAction?: () => void;
+            persistToCenter?: boolean;
+            notifCategory?: NotificationCategory;
+            actionUid?: string;
+            actionTab?: string;
+          } = false
+    ) => {
+      const opts =
+        typeof isErrorOrOptions === "boolean"
+          ? { variant: isErrorOrOptions ? ("error" as ToastVariant) : undefined }
+          : isErrorOrOptions;
+
+      let resolvedVariant: ToastVariant = opts.variant || "info";
+      if (!opts.variant) {
+        const lower = message.toLowerCase();
+        if (
+          message.includes("✓") ||
+          lower.includes("sucesso") ||
+          lower.includes("protocolad") ||
+          lower.includes("criad") ||
+          lower.includes("copiad") ||
+          lower.includes("atualizad") ||
+          lower.includes("bem-vindo")
+        ) {
+          resolvedVariant = "success";
+        } else if (lower.includes("aviso") || lower.includes("alerta") || lower.includes("revogad")) {
+          resolvedVariant = "warning";
+        }
+      }
+
+      const id = `toast_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      const item: ToastItem = {
+        id,
+        message,
+        variant: resolvedVariant,
+        title: opts.title,
+        durationMs: opts.durationMs || (resolvedVariant === "error" ? 5500 : 4200),
+        actionLabel: opts.actionLabel,
+        onAction: opts.onAction
+      };
+
+      setToasts((prev) => [...prev.slice(-3), item]);
+
+      if (opts.persistToCenter) {
+        pushLocalUserNotification(user?.uid || "all", {
+          titulo: opts.title || (resolvedVariant === "error" ? "Aviso do Sistema" : "Atualização"),
+          mensagem: message,
+          tipo: opts.notifCategory || (resolvedVariant === "error" ? "alerta" : "sistema"),
+          prioridade: resolvedVariant === "error" ? "alert" : resolvedVariant === "warning" ? "warning" : "info",
+          actionUid: opts.actionUid,
+          actionTab: opts.actionTab,
+          actionLabel: opts.actionLabel
+        });
+      }
+    },
+    [user?.uid]
+  );
 
   // ============================================
   // GUEST & USER AUTHENTICATION
@@ -738,6 +803,15 @@ export default function App() {
         });
         if (ensured.isFirstLogin) {
           setIsFirstLoginWelcomeOpen(true);
+          pushLocalUserNotification(guestUID, {
+            id: `first_login_${guestUID}`,
+            titulo: "Página Pessoal & Infobox Criados",
+            mensagem: `Sua página "${ensured.userPage.title}" foi criada automaticamente no NotMediaWiki.`,
+            tipo: "comunidade",
+            actionTab: "notmediawiki",
+            actionUid: ensured.userPage.slug,
+            actionLabel: "Abrir Minha Página"
+          });
           showToast(
             `Primeiro acesso! Página pessoal "${ensured.userPage.title}" e Infobox de Usuário criados no NotMediaWiki.`
           );
@@ -838,6 +912,15 @@ export default function App() {
           });
           if (ensured.isFirstLogin) {
             setIsFirstLoginWelcomeOpen(true);
+            pushLocalUserNotification(currentUser.uid, {
+              id: `first_login_${currentUser.uid}`,
+              titulo: "Página Pessoal & Infobox Criados",
+              mensagem: `Bem-vindo(a)! Sua página "${ensured.userPage.title}" e Infobox estão prontas no NotMediaWiki.`,
+              tipo: "comunidade",
+              actionTab: "notmediawiki",
+              actionUid: ensured.userPage.slug,
+              actionLabel: "Abrir Minha Página"
+            });
             showToast(
               `Primeiro login concluído! Página pessoal "${ensured.userPage.title}" e Infobox de Usuário criados no NotMediaWiki.`
             );
@@ -1061,9 +1144,27 @@ export default function App() {
     return Array.from(sectors);
   }, [articles, currentTab]);
 
-  const unreadNotificationsCount = useMemo(() => {
-    return notifications.filter((n) => !n.lida).length;
-  }, [notifications]);
+  const handleNotificationNavigate = useCallback(
+    (notif: UserNotification) => {
+      if (notif.actionUid) {
+        if (notif.actionTab === "notmediawiki" || notif.actionUid.toLowerCase().startsWith("usuário:")) {
+          setWikiTargetSlug(notif.actionUid);
+          setWikiTargetInnerTab("reader");
+          switchTab("notmediawiki");
+          return;
+        }
+        uidNav.navigateToUid(notif.actionUid);
+        return;
+      }
+      if (notif.actionTab) {
+        const parsed = parseTabFromUid(notif.actionTab);
+        if (parsed) {
+          switchTab(parsed);
+        }
+      }
+    },
+    [switchTab, uidNav]
+  );
 
   // Open Article Reader and increment view counter
   const handleOpenArticle = (article: Article) => {
@@ -1174,7 +1275,13 @@ export default function App() {
           tipo: "Direito de Esquecimento (LGPD)",
           mensagem: ""
         });
-        showToast("Solicitação protocolada com sucesso!");
+        showToast("Solicitação protocolada com sucesso!", {
+          persistToCenter: true,
+          title: "Protocolo LGPD / Suporte",
+          notifCategory: "alerta",
+          actionTab: "suporte",
+          actionLabel: "Ver Chamados"
+        });
         return;
       }
 
@@ -1211,7 +1318,13 @@ export default function App() {
         tipo: "Direito de Esquecimento (LGPD)",
         mensagem: ""
       });
-      showToast("Solicitação protocolada com sucesso!");
+      showToast("Solicitação protocolada com sucesso!", {
+        persistToCenter: true,
+        title: "Protocolo LGPD / Suporte",
+        notifCategory: "alerta",
+        actionTab: "suporte",
+        actionLabel: "Ver Chamados"
+      });
     } catch {
       showToast("Erro ao registrar chamado.", true);
     } finally {
@@ -1252,7 +1365,12 @@ export default function App() {
         version: revoked.version,
       }).catch(() => {});
     }
-    showToast("Consentimento de cookies não essenciais revogado conforme Art. 18, IX da LGPD.");
+    showToast("Consentimento de cookies não essenciais revogado conforme Art. 18, IX da LGPD.", {
+      variant: "warning",
+      persistToCenter: true,
+      title: "Privacidade & LGPD",
+      notifCategory: "alerta"
+    });
   };
 
   // 3.05.3.e: Modo de Manutenção (Bloqueio completo para visitantes e usuários comuns)
@@ -1389,64 +1507,15 @@ export default function App() {
 
             <span className="text-stone-700">|</span>
 
-            {/* Notification Bell */}
-            <div className="relative">
-              <button
-                onClick={() => setIsNotifDropdownOpen(!isNotifDropdownOpen)}
-                className="relative p-1 hover:text-white text-stone-300 transition-colors flex items-center cursor-pointer"
-                title="Notificações"
-              >
-                <Bell className="w-3.5 h-3.5" />
-                {unreadNotificationsCount > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-red-600 text-white font-bold text-[9px] w-4 h-4 rounded-full flex items-center justify-center border border-black">
-                    {unreadNotificationsCount}
-                  </span>
-                )}
-              </button>
-
-              {/* Notification Popover */}
-              {isNotifDropdownOpen && (
-                <div className="absolute right-0 mt-2 w-80 bg-white dark:bg-[#1A1A18] text-[#141414] dark:text-[#F5F4F0] border-2 border-[#141414] dark:border-[#3E3D38] shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] z-50 p-4">
-                  <div className="flex items-center justify-between border-b dark:border-[#2E2D28] pb-2 mb-3">
-                    <span className="font-bold text-xs uppercase tracking-wider font-mono">
-                      Notificações ({notifications.length})
-                    </span>
-                    {unreadNotificationsCount > 0 && (
-                      <button
-                        onClick={() => markAllNotificationsAsRead(notifications)}
-                        className="text-[10px] text-amber-700 dark:text-amber-400 hover:underline font-mono"
-                      >
-                        Marcar lidas
-                      </button>
-                    )}
-                  </div>
-
-                  <div className="max-h-64 overflow-y-auto space-y-2">
-                    {notifications.length === 0 ? (
-                      <p className="text-xs text-stone-500 dark:text-stone-400 py-3 text-center">Nenhuma notificação.</p>
-                    ) : (
-                      notifications.map((n) => (
-                        <div
-                          key={n.id}
-                          onClick={() => markNotificationAsRead(n.id)}
-                          className={`p-2.5 border text-xs cursor-pointer transition-colors ${
-                            n.lida
-                              ? "bg-stone-50 dark:bg-[#242320] border-stone-200 dark:border-[#34332F]"
-                              : "bg-amber-50 dark:bg-amber-950/50 border-amber-300 dark:border-amber-700 font-medium"
-                          }`}
-                        >
-                          <div className="flex items-center justify-between text-[10px] text-stone-500 dark:text-stone-400 mb-1">
-                            <span className="font-bold uppercase tracking-wider">{n.titulo}</span>
-                            <span>{n.timestamp}</span>
-                          </div>
-                          <p className="text-[11px] text-stone-800 dark:text-stone-200 leading-snug">{n.mensagem}</p>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
+            {/* Enhanced Notification Center */}
+            <NotificationCenter
+              notifications={notifications}
+              userId={user?.uid || "all"}
+              isAdmin={isAdmin}
+              onNavigateAction={handleNotificationNavigate}
+              onOpenAdminComposer={() => setIsAdminPanelOpen(true)}
+              showToast={(msg, err) => showToast(msg, Boolean(err))}
+            />
 
             <span className="text-stone-700">|</span>
 
@@ -2817,7 +2886,12 @@ export default function App() {
 
                   setArticleFormErrors({});
                   setIsCreateModalOpen(false);
-                  showToast("Artigo publicado com sucesso no acervo!");
+                  showToast("✓ Artigo publicado com sucesso no acervo!", {
+                    persistToCenter: true,
+                    title: "Nova Publicação Editorial",
+                    notifCategory: "noticia",
+                    actionTab: validated.colecao
+                  });
                 } catch (publishErr: any) {
                   if (publishErr instanceof ArticleValidationError) {
                     setArticleFormErrors(publishErr.fieldErrors);
@@ -3095,16 +3169,8 @@ export default function App() {
         currentUserLabel={user?.email || user?.uid}
       />
 
-      {/* Toast Notification */}
-      {toast && (
-        <div
-          className={`fixed bottom-6 left-1/2 -translate-x-1/2 px-5 py-3 border-2 border-[#141414] shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] text-xs font-mono font-bold uppercase tracking-wider z-50 ${
-            toast.isError ? "bg-red-600 text-white" : "bg-[#141414] text-white"
-          }`}
-        >
-          {toast.message}
-        </div>
-      )}
+      {/* Multi-Toast Notification Stack */}
+      <NotificationToastStack toasts={toasts} onDismiss={dismissToast} />
 
       {/* ============================================ */}
       {/* 11. EDITORIAL FOOTER */}

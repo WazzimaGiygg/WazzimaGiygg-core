@@ -11,6 +11,7 @@ import {
   addDoc,
   deleteDoc,
   query, 
+  where,
   orderBy, 
   increment,
   writeBatch,
@@ -141,14 +142,24 @@ export interface Article {
   tags?: string[];
 }
 
+export type NotificationCategory = 'alerta' | 'noticia' | 'sistema' | 'comunidade';
+export type NotificationPriority = 'info' | 'warning' | 'alert';
+
 export interface UserNotification {
   id: string;
   userId: string;
   titulo: string;
   mensagem: string;
   timestamp: any;
+  createdAtMs?: number;
   lida: boolean;
-  tipo?: 'alerta' | 'noticia' | 'sistema';
+  tipo?: NotificationCategory;
+  prioridade?: NotificationPriority;
+  senderEmail?: string;
+  actionUid?: string;
+  actionTab?: string;
+  actionLabel?: string;
+  isLocal?: boolean;
 }
 
 export interface AppUser {
@@ -522,90 +533,393 @@ export async function incrementArticleViews(collectionName: string, id: string) 
 }
 
 // ============================================
-// NOTIFICATIONS
+// NOTIFICATIONS (REAL-TIME + LOCAL PERSISTENCE)
 // ============================================
+const NOTIF_EVENT_NAME = "wzzm:notifications-updated";
+
+function getNotifStorageKey(prefix: string, userId: string): string {
+  return `wzzm_${prefix}_${userId || "all"}`;
+}
+
+function readJsonArray<T = string>(key: string): T[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeJsonArray<T>(key: string, value: T[]) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // Ignore storage quota issues
+  }
+}
+
+function emitNotificationsUpdated() {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent(NOTIF_EVENT_NAME));
+  }
+}
+
+function getReadOverrides(userId: string): Record<string, boolean> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(getNotifStorageKey("notif_read_map", userId));
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+function setReadOverride(userId: string, notifId: string, read: boolean) {
+  if (typeof window === "undefined") return;
+  try {
+    const key = getNotifStorageKey("notif_read_map", userId);
+    const current = getReadOverrides(userId);
+    current[notifId] = read;
+    window.localStorage.setItem(key, JSON.stringify(current));
+  } catch {
+    // Ignore storage errors
+  }
+}
+
+function getDismissedNotifIds(userId: string): Set<string> {
+  return new Set(readJsonArray<string>(getNotifStorageKey("notif_dismissed", userId)));
+}
+
+function addDismissedNotifIds(userId: string, ids: string[]) {
+  const current = getDismissedNotifIds(userId);
+  ids.forEach((id) => current.add(id));
+  writeJsonArray(getNotifStorageKey("notif_dismissed", userId), Array.from(current));
+}
+
+export function getLocalUserNotifications(userId: string): UserNotification[] {
+  const key = getNotifStorageKey("local_notifs", userId);
+  const items = readJsonArray<UserNotification>(key);
+  return items.map((item) => ({
+    ...item,
+    isLocal: true,
+    timestamp: item.createdAtMs ? formatNotificationTimestamp(item.createdAtMs) : (item.timestamp || "Agora")
+  }));
+}
+
+export function pushLocalUserNotification(
+  userId: string,
+  input: {
+    id?: string;
+    titulo: string;
+    mensagem: string;
+    tipo?: NotificationCategory;
+    prioridade?: NotificationPriority;
+    actionUid?: string;
+    actionTab?: string;
+    actionLabel?: string;
+  }
+): UserNotification {
+  const targetUser = userId || "all";
+  const nowMs = Date.now();
+  const notif: UserNotification = {
+    id: input.id || `local_${nowMs}_${Math.random().toString(36).slice(2, 7)}`,
+    userId: targetUser,
+    titulo: input.titulo,
+    mensagem: input.mensagem,
+    timestamp: formatNotificationTimestamp(nowMs),
+    createdAtMs: nowMs,
+    lida: false,
+    tipo: input.tipo || "sistema",
+    prioridade: input.prioridade || "info",
+    actionUid: input.actionUid,
+    actionTab: input.actionTab,
+    actionLabel: input.actionLabel,
+    isLocal: true
+  };
+
+  const key = getNotifStorageKey("local_notifs", targetUser);
+  const existing = readJsonArray<UserNotification>(key).filter((n) => n.id !== notif.id);
+  const updated = [notif, ...existing].slice(0, 60);
+  writeJsonArray(key, updated);
+  emitNotificationsUpdated();
+  return notif;
+}
+
+export function formatNotificationTimestamp(ms: number): string {
+  if (!ms || Number.isNaN(ms)) return "Agora";
+  const diffSec = Math.max(0, Math.floor((Date.now() - ms) / 1000));
+  if (diffSec < 45) return "Agora";
+  if (diffSec < 3600) return `há ${Math.floor(diffSec / 60)} min`;
+  if (diffSec < 86400) {
+    const date = new Date(ms);
+    return `Hoje, ${date.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`;
+  }
+  return new Date(ms).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+}
+
+function extractTimestampMs(raw: any): number {
+  if (!raw) return 0;
+  if (typeof raw === "number") return raw;
+  if (typeof raw?.toMillis === "function") return raw.toMillis();
+  if (typeof raw?.toDate === "function") return raw.toDate().getTime();
+  if (typeof raw === "string") {
+    const parsed = Date.parse(raw);
+    return Number.isNaN(parsed) ? 0 : parsed;
+  }
+  return 0;
+}
+
+function mapRawNotificationCategory(rawType: any): {
+  tipo: NotificationCategory;
+  prioridade: NotificationPriority;
+} {
+  const val = String(rawType || "").toLowerCase();
+  if (val === "alert" || val === "alerta") {
+    return { tipo: "alerta", prioridade: "alert" };
+  }
+  if (val === "warning" || val === "aviso") {
+    return { tipo: "alerta", prioridade: "warning" };
+  }
+  if (val === "noticia" || val === "editorial" || val === "news") {
+    return { tipo: "noticia", prioridade: "info" };
+  }
+  if (val === "comunidade" || val === "wiki" || val === "bemtevi") {
+    return { tipo: "comunidade", prioridade: "info" };
+  }
+  return { tipo: "sistema", prioridade: "info" };
+}
+
 export function setupNotificationsListener(userId: string, callback: (notifications: UserNotification[]) => void) {
+  const resolvedUid = userId || "all";
+  const baseBootMs = Date.now() - 60_000;
+
   const defaultNotifications: UserNotification[] = [
     {
       id: "sys_1",
-      userId,
+      userId: resolvedUid,
       titulo: "Edição Digital Atualizada",
-      mensagem: "O acervo acadêmico, notícias e a rede Bem-Te-Vi estão sincronizados.",
+      mensagem: "O acervo acadêmico, notícias, NotMediaWiki e a rede Bem-Te-Vi estão sincronizados.",
       timestamp: "Agora",
+      createdAtMs: baseBootMs + 30_000,
       lida: false,
-      tipo: "sistema"
+      tipo: "sistema",
+      prioridade: "info",
+      actionTab: "notmediawiki",
+      actionLabel: "Explorar NotMediaWiki"
     },
     {
       id: "sys_2",
-      userId,
+      userId: resolvedUid,
       titulo: "Marco Civil & LGPD",
       mensagem: "Seus registros de navegação e direitos de privacidade estão protegidos sob a Lei 12.965/2014.",
       timestamp: "Hoje",
+      createdAtMs: baseBootMs,
       lida: true,
-      tipo: "alerta"
+      tipo: "alerta",
+      prioridade: "info"
     }
   ];
 
+  let remoteNotifs: UserNotification[] = [];
+
+  const emitMerged = () => {
+    const readMap = getReadOverrides(resolvedUid);
+    const dismissed = getDismissedNotifIds(resolvedUid);
+    const localNotifs = getLocalUserNotifications(resolvedUid);
+
+    const byId = new Map<string, UserNotification>();
+    const combinedSource =
+      remoteNotifs.length > 0 || localNotifs.length > 0
+        ? [...remoteNotifs, ...localNotifs, ...defaultNotifications]
+        : [...defaultNotifications];
+
+    for (const item of combinedSource) {
+      if (dismissed.has(item.id)) continue;
+      const overrideRead = Object.prototype.hasOwnProperty.call(readMap, item.id)
+        ? readMap[item.id]
+        : undefined;
+      byId.set(item.id, {
+        ...item,
+        lida: overrideRead !== undefined ? overrideRead : item.lida
+      });
+    }
+
+    const sorted = Array.from(byId.values()).sort(
+      (a, b) => (b.createdAtMs || 0) - (a.createdAtMs || 0)
+    );
+    callback(sorted);
+  };
+
+  const handleLocalEvent = () => emitMerged();
+  if (typeof window !== "undefined") {
+    window.addEventListener(NOTIF_EVENT_NAME, handleLocalEvent);
+  }
+
+  // Always emit immediate baseline
+  emitMerged();
+
   // Skip Firestore listener when unauthenticated (rules restrict notifications to signed-in users)
   if (!auth.currentUser) {
-    callback(defaultNotifications);
-    return () => {};
+    return () => {
+      if (typeof window !== "undefined") {
+        window.removeEventListener(NOTIF_EVENT_NAME, handleLocalEvent);
+      }
+    };
   }
 
+  let unsubscribeFirestore: (() => void) | null = null;
   try {
-    const q = query(
-      collection(db, "notifications"),
-      orderBy("timestamp", "desc")
+    const isBurocrataUser = isAuthorizedBurocrata(auth.currentUser.email);
+    const q = isBurocrataUser
+      ? collection(db, "notifications")
+      : query(collection(db, "notifications"), where("userId", "in", [auth.currentUser.uid, "all"]));
+
+    unsubscribeFirestore = onSnapshot(
+      q,
+      (snapshot) => {
+        const parsed: UserNotification[] = [];
+        snapshot.forEach((docSnapshot) => {
+          const data = docSnapshot.data();
+          const target = data.userId || "all";
+          if (target === resolvedUid || target === auth.currentUser?.uid || target === "all" || isBurocrataUser) {
+            const ms = extractTimestampMs(data.timestamp) || extractTimestampMs(data.createdAt) || Date.now();
+            const mappedType = mapRawNotificationCategory(data.tipo || data.type);
+            parsed.push({
+              id: docSnapshot.id,
+              userId: target,
+              titulo: data.titulo || data.title || "Notificação",
+              mensagem: data.mensagem || data.message || "",
+              timestamp: formatNotificationTimestamp(ms),
+              createdAtMs: ms,
+              lida: data.lida !== undefined ? !!data.lida : !!data.read,
+              tipo: mappedType.tipo,
+              prioridade: mappedType.prioridade,
+              senderEmail: data.senderEmail,
+              actionUid: data.actionUid,
+              actionTab: data.actionTab,
+              actionLabel: data.actionLabel
+            });
+          }
+        });
+        remoteNotifs = parsed;
+        emitMerged();
+      },
+      () => {
+        emitMerged();
+      }
     );
-    return onSnapshot(q, (snapshot) => {
-      const notifs: UserNotification[] = [];
-      snapshot.forEach((docSnapshot) => {
-        const data = docSnapshot.data();
-        if (data.userId === userId || data.userId === "all" || !data.userId) {
-          notifs.push({
-            id: docSnapshot.id,
-            userId: data.userId || "all",
-            titulo: data.titulo || "Notificação",
-            mensagem: data.mensagem || "",
-            timestamp: data.timestamp?.toDate ? data.timestamp.toDate().toLocaleTimeString("pt-BR") : "Agora",
-            lida: !!data.lida,
-            tipo: data.tipo || "sistema"
-          });
-        }
-      });
-      callback(notifs.length > 0 ? notifs : defaultNotifications);
-    }, () => {
-      callback(defaultNotifications);
-    });
   } catch {
-    callback(defaultNotifications);
-    return () => {};
+    emitMerged();
+  }
+
+  return () => {
+    if (typeof unsubscribeFirestore === "function") unsubscribeFirestore();
+    if (typeof window !== "undefined") {
+      window.removeEventListener(NOTIF_EVENT_NAME, handleLocalEvent);
+    }
+  };
+}
+
+export async function markNotificationAsRead(id: string, userId = "all", notif?: UserNotification) {
+  return setNotificationReadState(notif || { id, userId, titulo: "", mensagem: "", timestamp: "", lida: false }, userId, true);
+}
+
+export async function setNotificationReadState(notif: UserNotification, userId = "all", read = true) {
+  const resolvedUid = userId || auth.currentUser?.uid || "all";
+  setReadOverride(resolvedUid, notif.id, read);
+
+  // Sync local notifications store if applicable
+  if (notif.isLocal || notif.id.startsWith("local_")) {
+    const key = getNotifStorageKey("local_notifs", resolvedUid);
+    const localList = readJsonArray<UserNotification>(key).map((item) =>
+      item.id === notif.id ? { ...item, lida: read } : item
+    );
+    writeJsonArray(key, localList);
+  }
+
+  emitNotificationsUpdated();
+
+  // Only update Firestore doc when signed-in user has permission (owner or Burocrata) and doc is remote
+  const canWriteFirestore =
+    Boolean(auth.currentUser) &&
+    !notif.isLocal &&
+    !notif.id.startsWith("sys_") &&
+    !notif.id.startsWith("local_") &&
+    (notif.userId === auth.currentUser?.uid || isAuthorizedBurocrata(auth.currentUser?.email));
+
+  if (canWriteFirestore) {
+    try {
+      const docRef = doc(db, "notifications", notif.id);
+      await updateDoc(docRef, { lida: read });
+    } catch {
+      // Local override already persisted
+    }
   }
 }
 
-export async function markNotificationAsRead(id: string) {
-  if (!auth.currentUser) return;
-  try {
-    const docRef = doc(db, "notifications", id);
-    await updateDoc(docRef, { lida: true });
-  } catch {
-    // Fail silently
-  }
-}
+export async function markAllNotificationsAsRead(notifs: UserNotification[], userId = "all") {
+  const resolvedUid = userId || auth.currentUser?.uid || "all";
+  const unread = notifs.filter((n) => !n.lida);
+  if (unread.length === 0) return;
 
-export async function markAllNotificationsAsRead(notifs: UserNotification[]) {
+  unread.forEach((n) => setReadOverride(resolvedUid, n.id, true));
+
+  // Sync local notifications store
+  const localKey = getNotifStorageKey("local_notifs", resolvedUid);
+  const localList = readJsonArray<UserNotification>(localKey).map((item) => ({ ...item, lida: true }));
+  writeJsonArray(localKey, localList);
+
+  emitNotificationsUpdated();
+
   if (!auth.currentUser) return;
   try {
+    const isBurocrataUser = isAuthorizedBurocrata(auth.currentUser.email);
+    const writableRemote = unread.filter(
+      (n) =>
+        !n.isLocal &&
+        !n.id.startsWith("sys_") &&
+        !n.id.startsWith("local_") &&
+        (n.userId === auth.currentUser?.uid || isBurocrataUser)
+    );
+    if (writableRemote.length === 0) return;
     const batch = writeBatch(db);
-    const unread = notifs.filter((n) => !n.lida);
-    unread.forEach((n) => {
+    writableRemote.forEach((n) => {
       const docRef = doc(db, "notifications", n.id);
       batch.update(docRef, { lida: true });
     });
     await batch.commit();
   } catch {
-    // Fail silently
+    // Fail silently (local override already applied)
   }
+}
+
+export async function dismissNotification(notif: UserNotification, userId = "all") {
+  const resolvedUid = userId || auth.currentUser?.uid || "all";
+  addDismissedNotifIds(resolvedUid, [notif.id]);
+  if (notif.isLocal || notif.id.startsWith("local_")) {
+    const key = getNotifStorageKey("local_notifs", resolvedUid);
+    const remaining = readJsonArray<UserNotification>(key).filter((item) => item.id !== notif.id);
+    writeJsonArray(key, remaining);
+  }
+  emitNotificationsUpdated();
+}
+
+export async function clearReadNotifications(notifs: UserNotification[], userId = "all") {
+  const resolvedUid = userId || auth.currentUser?.uid || "all";
+  const readIds = notifs.filter((n) => n.lida).map((n) => n.id);
+  if (readIds.length === 0) return;
+  addDismissedNotifIds(resolvedUid, readIds);
+
+  const key = getNotifStorageKey("local_notifs", resolvedUid);
+  const readSet = new Set(readIds);
+  const remaining = readJsonArray<UserNotification>(key).filter((item) => !readSet.has(item.id));
+  writeJsonArray(key, remaining);
+
+  emitNotificationsUpdated();
 }
 
 // ============================================

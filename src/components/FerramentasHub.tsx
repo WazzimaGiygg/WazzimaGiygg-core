@@ -368,8 +368,14 @@ export default function FerramentasHub({
 
     setIsSendingNotif(true);
     try {
+      const mappedTipo = notifType === "info" ? "sistema" : "alerta";
       await addDoc(collection(db, "notifications"), {
         userId: notifTarget,
+        titulo: notifTitle.trim(),
+        mensagem: notifMessage.trim(),
+        tipo: mappedTipo,
+        lida: false,
+        timestamp: serverTimestamp(),
         title: notifTitle.trim(),
         message: notifMessage.trim(),
         type: notifType,
@@ -377,7 +383,7 @@ export default function FerramentasHub({
         read: false,
         createdAt: serverTimestamp()
       });
-      showToast("Notificação administrativa transmitida com sucesso!");
+      showToast("✓ Notificação administrativa transmitida em tempo real!");
       setNotifTitle("");
       setNotifMessage("");
       registerAuditLog(currentUser?.uid || "admin", "send_notification", {
