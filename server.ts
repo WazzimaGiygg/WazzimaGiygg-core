@@ -18,6 +18,12 @@ import {
   getWikiSiteVersionManifest,
 } from './src/config/wikiVersion';
 import {
+  buildPersonalUserPageSlug,
+  buildPersonalUserPageTitle,
+  buildPersonalUserPageWikitext,
+  resolveUserDisplayName,
+} from './src/config/userInfobox';
+import {
   SEED_WIKI_ARTICLES,
   SEED_WIKI_REVISIONS,
   SEED_WIKI_EVENTS,
@@ -1192,6 +1198,7 @@ app.get([
 // ============================================
 const WIKI_STORE = {
   articles: [...SEED_WIKI_ARTICLES] as WikiArticle[],
+  userPages: [] as WikiArticle[],
   revisions: [...SEED_WIKI_REVISIONS] as WikiRevision[],
   events: [...SEED_WIKI_EVENTS] as WikiEvent[],
   extensions: [...SEED_WIKI_EXTENSIONS]
@@ -1202,7 +1209,7 @@ app.get(['/api/version', '/api/v1/version'], (_req: Request, res: Response) => {
   res.json(
     getWikiSiteVersionManifest({
       extensionsCount: WIKI_STORE.extensions.length,
-      articlesCount: buildArticlesList('all').length + WIKI_STORE.articles.length,
+      articlesCount: buildArticlesList('all').length + WIKI_STORE.articles.length + WIKI_STORE.userPages.length,
       revisionsCount: WIKI_STORE.revisions.length,
       nodeVersion: process.version,
       uptimeSeconds: Math.floor(process.uptime()),
@@ -1213,8 +1220,224 @@ app.get(['/api/version', '/api/v1/version'], (_req: Request, res: Response) => {
 // 1. Content Service
 app.get('/api/v1/content/articles', (req: Request, res: Response) => {
   const ns = req.query.namespace !== undefined ? parseInt(req.query.namespace as string, 10) : undefined;
-  const filtered = ns !== undefined ? WIKI_STORE.articles.filter((a) => a.namespace === ns) : WIKI_STORE.articles;
+  const includeUserPages = req.query.includeUserPages === 'true';
+  if (ns === 2) {
+    res.json({ articles: WIKI_STORE.userPages });
+    return;
+  }
+  const pool = includeUserPages ? [...WIKI_STORE.articles, ...WIKI_STORE.userPages] : WIKI_STORE.articles;
+  const filtered = ns !== undefined ? pool.filter((a) => a.namespace === ns) : pool;
   res.json({ articles: filtered });
+});
+
+// 1.1 NotMediaWiki Personal User Pages (Namespace 2) & First-Login Provisioning
+app.get('/api/v1/userpages', (_req: Request, res: Response) => {
+  res.json({ userPages: WIKI_STORE.userPages });
+});
+
+app.get('/api/v1/userpages/:uid', (req: Request, res: Response) => {
+  const { uid } = req.params;
+  const found = WIKI_STORE.userPages.find((p) => p.ownerUid === uid);
+  if (!found) {
+    res.status(404).json({ error: 'Página pessoal de usuário não encontrada' });
+    return;
+  }
+  res.json({ userPage: found });
+});
+
+app.post('/api/v1/userpages/ensure', (req: Request, res: Response) => {
+  const { uid, name, displayName, email, profilePictureUrl, photoURL, isAdmin, isTeacher, isGuest } = req.body || {};
+  if (!uid || typeof uid !== 'string') {
+    res.status(400).json({ error: 'UID do usuário é obrigatório' });
+    return;
+  }
+
+  const existingIdx = WIKI_STORE.userPages.findIndex((p) => p.ownerUid === uid);
+  const resolvedName = resolveUserDisplayName({ uid, name, displayName, email });
+  const nowIso = new Date().toISOString();
+
+  if (existingIdx >= 0) {
+    const existing = WIKI_STORE.userPages[existingIdx];
+    const updated: WikiArticle = {
+      ...existing,
+      updatedAt: nowIso,
+    };
+    WIKI_STORE.userPages[existingIdx] = updated;
+    res.json({ userPage: updated, isFirstLogin: false });
+    return;
+  }
+
+  const slug = buildPersonalUserPageSlug(resolvedName, uid);
+  const title = buildPersonalUserPageTitle(resolvedName, uid);
+  const wikitext = buildPersonalUserPageWikitext(
+    {
+      uid,
+      name: resolvedName,
+      displayName: resolvedName,
+      email: email || '',
+      profilePictureUrl: profilePictureUrl || photoURL || '',
+      isAdmin: Boolean(isAdmin),
+      isTeacher: Boolean(isTeacher),
+      isGuest: Boolean(isGuest),
+      firstLoginAt: nowIso,
+      lastLoginAt: nowIso,
+    },
+    { contributionsCount: 1, pagesCreated: 1, lastEditAt: nowIso }
+  );
+
+  const revId = `rev-user-init-${Date.now().toString(36)}`;
+  const newPage: WikiArticle = {
+    id: `userpage-${uid}`,
+    slug,
+    title,
+    namespace: 2,
+    wikitext,
+    summary: `Página pessoal de ${resolvedName} no NotMediaWiki (provisionada no primeiro login).`,
+    latestRevisionId: revId,
+    createdAt: nowIso,
+    updatedAt: nowIso,
+    categories: ['Usuários', 'NotMediaWiki'],
+    views: 1,
+    ownerUid: uid,
+    ownerEmail: email || undefined,
+    isPersonalUserPage: true,
+  };
+
+  WIKI_STORE.userPages.unshift(newPage);
+
+  const initRev: WikiRevision = {
+    id: revId,
+    articleSlug: slug,
+    parentRevisionId: null,
+    wikitext,
+    comment: `Criação automática da página pessoal ${title} e Infobox Usuário no primeiro login`,
+    author: {
+      id: uid,
+      name: resolvedName,
+      isBot: false,
+    },
+    timestamp: nowIso,
+    sha256: computeSha256Hex(wikitext),
+    byteSize: wikitext.length,
+    isMinor: false,
+  };
+  WIKI_STORE.revisions.unshift(initRev);
+
+  WIKI_STORE.events.unshift({
+    id: `evt-user-${Date.now()}`,
+    meta: {
+      uri: `https://notmediawiki.wazzimagiygg.com/wiki/${encodeURIComponent(slug)}`,
+      request_id: `req-usr-${Date.now()}`,
+      id: `uuid-usr-${Date.now()}`,
+      dt: nowIso,
+      domain: 'notmediawiki.wazzimagiygg.com',
+      stream: 'mediawiki.recentchange',
+    },
+    database: 'wzzmwiki',
+    page_title: title,
+    page_namespace: 2,
+    rev_id: revId,
+    rev_timestamp: nowIso,
+    rev_sha1: initRev.sha256,
+    rev_minor_edit: false,
+    rev_len: wikitext.length,
+    user_text: resolvedName,
+    comment: initRev.comment,
+    type: 'new',
+    timestamp: nowIso,
+  });
+
+  res.status(201).json({ userPage: newPage, revision: initRev, isFirstLogin: true });
+});
+
+app.put('/api/v1/userpages/:uid', (req: Request, res: Response) => {
+  const { uid } = req.params;
+  const { title, wikitext, summary, isMinor, authorName, authorId, userEmail } = req.body || {};
+
+  if (!wikitext || typeof wikitext !== 'string') {
+    res.status(400).json({ error: 'Wikitexto é obrigatório para atualizar a página pessoal.' });
+    return;
+  }
+
+  const isBurocrata = (userEmail || '').toLowerCase().trim() === 'pedrohenriquecardonaperes@gmail.com';
+  if (authorId && authorId !== uid && !isBurocrata) {
+    res.status(403).json({ error: 'Apenas o titular da conta ou o Burocrata podem editar esta página pessoal.' });
+    return;
+  }
+
+  const nowIso = new Date().toISOString();
+  const idx = WIKI_STORE.userPages.findIndex((p) => p.ownerUid === uid);
+  const revId = `rev-usr-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`;
+  const existing = idx >= 0 ? WIKI_STORE.userPages[idx] : null;
+  const resolvedTitle = (title || existing?.title || buildPersonalUserPageTitle(authorName, uid)).trim();
+  const resolvedSlug = existing?.slug || buildPersonalUserPageSlug(resolvedTitle.replace(/^Usuário:/i, ''), uid);
+
+  const savedPage: WikiArticle = {
+    id: existing?.id || `userpage-${uid}`,
+    slug: resolvedSlug,
+    title: resolvedTitle,
+    namespace: 2,
+    wikitext,
+    summary: summary || existing?.summary || `Página pessoal de ${authorName || uid}`,
+    latestRevisionId: revId,
+    createdAt: existing?.createdAt || nowIso,
+    updatedAt: nowIso,
+    categories: existing?.categories || ['Usuários', 'NotMediaWiki'],
+    views: (existing?.views || 0) + 1,
+    ownerUid: uid,
+    ownerEmail: existing?.ownerEmail || userEmail,
+    isPersonalUserPage: true,
+  };
+
+  if (idx >= 0) {
+    WIKI_STORE.userPages[idx] = savedPage;
+  } else {
+    WIKI_STORE.userPages.unshift(savedPage);
+  }
+
+  const newRev: WikiRevision = {
+    id: revId,
+    articleSlug: resolvedSlug,
+    parentRevisionId: existing?.latestRevisionId || null,
+    wikitext,
+    comment: summary || 'Atualização da página pessoal e Infobox Usuário',
+    author: {
+      id: authorId || uid,
+      name: authorName || resolvedTitle.replace(/^Usuário:/i, ''),
+      isBot: false,
+    },
+    timestamp: nowIso,
+    sha256: computeSha256Hex(wikitext),
+    byteSize: wikitext.length,
+    isMinor: Boolean(isMinor),
+  };
+  WIKI_STORE.revisions.unshift(newRev);
+
+  WIKI_STORE.events.unshift({
+    id: `evt-usr-${Date.now()}`,
+    meta: {
+      uri: `https://notmediawiki.wazzimagiygg.com/wiki/${encodeURIComponent(resolvedSlug)}`,
+      request_id: `req-usr-${Date.now()}`,
+      id: `uuid-usr-${Date.now()}`,
+      dt: nowIso,
+      domain: 'notmediawiki.wazzimagiygg.com',
+      stream: 'mediawiki.recentchange',
+    },
+    database: 'wzzmwiki',
+    page_title: resolvedTitle,
+    page_namespace: 2,
+    rev_id: revId,
+    rev_timestamp: nowIso,
+    rev_sha1: newRev.sha256,
+    rev_minor_edit: Boolean(isMinor),
+    rev_len: wikitext.length,
+    user_text: newRev.author.name,
+    comment: newRev.comment,
+    type: existing ? 'edit' : 'new',
+    timestamp: nowIso,
+  });
+
+  res.json({ success: true, userPage: savedPage, revision: newRev });
 });
 
 app.get(['/api/v1/content/random', '/api/v1/content/articles/special/random'], (req: Request, res: Response) => {

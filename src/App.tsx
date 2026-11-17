@@ -48,7 +48,8 @@ import {
   Moon,
   ShieldCheck,
   Sparkles,
-  Tag
+  Tag,
+  UserCheck
 } from "lucide-react";
 import jsPDF from "jspdf";
 
@@ -77,7 +78,8 @@ import {
   isBackendApiAvailable,
   getStaticSanctionsFallback,
   db,
-  sanitizeFirestoreData
+  sanitizeFirestoreData,
+  ensureUserNotMediaWikiPersonalPage
 } from "./firebase";
 import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 import { stripHtmlToPlainText } from "./utils/text";
@@ -93,7 +95,8 @@ import DossieAbusosView from "./components/DossieAbusosView";
 import MaintenanceScreen from "./components/MaintenanceScreen";
 import ExternalRedirectModal from "./components/ExternalRedirectModal";
 import ExtensionConfigModal from "./components/ExtensionConfigModal";
-import { WikiExtension, SEED_WIKI_EXTENSIONS } from "./data/notMediaWikiData";
+import { WikiExtension, WikiArticle, SEED_WIKI_EXTENSIONS } from "./data/notMediaWikiData";
+import { buildPersonalUserPageSlug, resolveUserDisplayName } from "./config/userInfobox";
 import { exportArticleFormattedPdf } from "./utils/pdfExport";
 import HighlightedText from "./components/HighlightedText";
 import {
@@ -191,6 +194,23 @@ export default function App() {
   const [isVersionModalOpen, setIsVersionModalOpen] = useState(false);
   const [toast, setToast] = useState<{ message: string; isError: boolean } | null>(null);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+
+  // First-login NotMediaWiki Personal Page & Infobox Tutorial Navigation
+  const [personalWikiPage, setPersonalWikiPage] = useState<WikiArticle | null>(null);
+  const [isFirstLoginWelcomeOpen, setIsFirstLoginWelcomeOpen] = useState(false);
+  const [wikiTargetSlug, setWikiTargetSlug] = useState<string | null>(null);
+  const [wikiTargetInnerTab, setWikiTargetInnerTab] = useState<
+    | "portal"
+    | "reader"
+    | "editor"
+    | "history"
+    | "events"
+    | "special"
+    | "extensions"
+    | "governance"
+    | "tutorial"
+    | undefined
+  >(undefined);
 
   // Chat / Messages State (Compatible with jsonbin-api.js)
   const [chatMessages, setChatMessages] = useState<any[]>([]);
@@ -597,7 +617,24 @@ export default function App() {
     setIsLoginModalOpen(false);
     setLoginLgpdConsentAccepted(false);
     registerAuditLog(guestUID, "guest_login");
-    showToast("Acesso concedido como leitor convidado (válido por 24 horas).");
+    ensureUserNotMediaWikiPersonalPage(guestData, true)
+      .then((ensured) => {
+        setPersonalWikiPage(ensured.userPage);
+        listAllUsersFromFirestore().then((users) => {
+          if (users && users.length > 0) setAllUsersList(users);
+        });
+        if (ensured.isFirstLogin) {
+          setIsFirstLoginWelcomeOpen(true);
+          showToast(
+            `Primeiro acesso! Página pessoal "${ensured.userPage.title}" e Infobox de Usuário criados no NotMediaWiki.`
+          );
+        } else {
+          showToast("Acesso concedido como leitor convidado (válido por 24 horas).");
+        }
+      })
+      .catch(() => {
+        showToast("Acesso concedido como leitor convidado (válido por 24 horas).");
+      });
   };
 
   const getStoredGuestUser = () => {
@@ -645,6 +682,8 @@ export default function App() {
       setUser(null);
       setIsGuestUser(false);
       setIsAdmin(false);
+      setPersonalWikiPage(null);
+      setIsFirstLoginWelcomeOpen(false);
       if (privacySettings.autoPurgeLocalCacheOnLogout) {
         purgeOptionalLocalSessionData();
       }
@@ -653,6 +692,8 @@ export default function App() {
       await signOut(auth);
       setUser(null);
       setIsAdmin(false);
+      setPersonalWikiPage(null);
+      setIsFirstLoginWelcomeOpen(false);
       if (privacySettings.autoPurgeLocalCacheOnLogout) {
         purgeOptionalLocalSessionData();
       }
@@ -675,6 +716,23 @@ export default function App() {
         // Register profile into Firestore 'users' & 'usuários'
         await registerUser(currentUser, false);
 
+        // Provision personal NotMediaWiki page & Infobox on first login
+        try {
+          const ensured = await ensureUserNotMediaWikiPersonalPage(currentUser, false);
+          setPersonalWikiPage(ensured.userPage);
+          listAllUsersFromFirestore().then((users) => {
+            if (users && users.length > 0) setAllUsersList(users);
+          });
+          if (ensured.isFirstLogin) {
+            setIsFirstLoginWelcomeOpen(true);
+            showToast(
+              `Primeiro login concluído! Página pessoal "${ensured.userPage.title}" e Infobox de Usuário criados no NotMediaWiki.`
+            );
+          }
+        } catch (err) {
+          console.warn("Não foi possível provisionar página pessoal automática no NotMediaWiki:", err);
+        }
+
         // Check ban & admin roles (strictly checks AUTHORIZED_BUROCRATA_EMAIL)
         const banned = await checkIfUserIsBanned(currentUser.uid);
         setIsBanned(banned);
@@ -685,9 +743,14 @@ export default function App() {
         if (storedGuest) {
           setUser(storedGuest);
           setIsGuestUser(true);
+          ensureUserNotMediaWikiPersonalPage(storedGuest, true)
+            .then((ensured) => setPersonalWikiPage(ensured.userPage))
+            .catch(() => {});
         } else {
           setUser(null);
           setIsGuestUser(false);
+          setPersonalWikiPage(null);
+          setIsFirstLoginWelcomeOpen(false);
         }
       }
     });
@@ -1298,6 +1361,29 @@ export default function App() {
                   </span>
                 )}
                 <button
+                  onClick={() => uidNav.navigateToUid(user.uid)}
+                  className="bg-amber-900/40 text-amber-200 border border-amber-500/40 hover:bg-amber-800/60 text-[9px] px-1.5 py-0.2 rounded font-mono font-bold flex items-center gap-1 cursor-pointer"
+                  title="Visualizar seu Infobox oficial de usuário (?uid=)"
+                >
+                  <UserCheck className="w-2.5 h-2.5 text-amber-300" />
+                  <span>Meu Infobox</span>
+                </button>
+                <button
+                  onClick={() => {
+                    const slug =
+                      personalWikiPage?.slug ||
+                      buildPersonalUserPageSlug(resolveUserDisplayName(user), user.uid);
+                    setWikiTargetSlug(slug);
+                    setWikiTargetInnerTab("reader");
+                    switchTab("notmediawiki");
+                  }}
+                  className="bg-emerald-900/40 text-emerald-200 border border-emerald-500/40 hover:bg-emerald-800/60 text-[9px] px-1.5 py-0.2 rounded font-mono font-bold flex items-center gap-1 cursor-pointer"
+                  title="Abrir sua Página Pessoal e Contribuições no NotMediaWiki"
+                >
+                  <Database className="w-2.5 h-2.5 text-emerald-300" />
+                  <span>Minha Wiki</span>
+                </button>
+                <button
                   onClick={() => switchTab("bemtevi")}
                   className="bg-[#667eea]/20 text-indigo-300 border border-[#667eea]/40 hover:bg-[#667eea]/40 text-[9px] px-1.5 py-0.2 rounded font-mono font-bold flex items-center gap-1 cursor-pointer"
                   title="Abrir perfil social no Bemtevi"
@@ -1618,6 +1704,78 @@ export default function App() {
       {/* 5. MAIN CONTENT AREA */}
       {/* ============================================ */}
       <main className="max-w-7xl mx-auto px-4 py-8 flex-1 w-full">
+        {/* First-Login Personal NotMediaWiki Page & Infobox Welcome Banner */}
+        {isFirstLoginWelcomeOpen && user && (
+          <div className="mb-6 p-5 bg-[#FFFBEB] dark:bg-[#1E1C14] border-2 border-[#141414] dark:border-amber-600/60 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] dark:shadow-[4px_4px_0px_0px_rgba(217,119,6,0.3)] flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+            <div className="flex items-start gap-3">
+              <div className="w-9 h-9 bg-[#141414] dark:bg-amber-600 text-amber-400 dark:text-stone-950 flex items-center justify-center shrink-0 border border-[#141414]">
+                <UserCheck className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 bg-emerald-700 text-white">
+                    Primeiro Login • Identificação Ativa
+                  </span>
+                  <span className="text-[10px] font-mono text-stone-600 dark:text-stone-400">
+                    {personalWikiPage?.slug || buildPersonalUserPageSlug(resolveUserDisplayName(user), user.uid)}
+                  </span>
+                </div>
+                <h3 className="text-base font-editorial font-bold text-[#141414] dark:text-stone-100 mt-1">
+                  Bem-vindo(a), {resolveUserDisplayName(user)}! Sua Página Pessoal e seu Infobox de Usuário foram criados.
+                </h3>
+                <p className="text-xs font-serif text-stone-700 dark:text-stone-300 mt-1 max-w-3xl">
+                  Sua conta já possui um <strong>Infobox de Usuário</strong> para identificação pública e uma página pessoal exclusiva no{' '}
+                  <strong>NotMediaWiki</strong> listando automaticamente todas as suas edições, criações e revisões no acervo.
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 shrink-0 font-mono text-[11px]">
+              <button
+                type="button"
+                onClick={() => {
+                  const slug =
+                    personalWikiPage?.slug ||
+                    buildPersonalUserPageSlug(resolveUserDisplayName(user), user.uid);
+                  setWikiTargetSlug(slug);
+                  setWikiTargetInnerTab("reader");
+                  setIsFirstLoginWelcomeOpen(false);
+                  switchTab("notmediawiki");
+                }}
+                className="px-3 py-2 bg-[#141414] dark:bg-stone-100 text-white dark:text-stone-950 font-bold uppercase hover:bg-stone-800 dark:hover:bg-white flex items-center gap-1.5 cursor-pointer"
+              >
+                <Database className="w-3.5 h-3.5 text-amber-400 dark:text-amber-700" />
+                <span>Abrir Minha Página Pessoal</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => uidNav.navigateToUid(user.uid)}
+                className="px-3 py-2 bg-white dark:bg-[#242320] text-[#141414] dark:text-stone-100 border border-[#141414] dark:border-stone-600 font-bold uppercase hover:bg-stone-100 dark:hover:bg-[#2F2D28] cursor-pointer"
+              >
+                Ver Meu Infobox (?uid=)
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setWikiTargetInnerTab("tutorial");
+                  setIsFirstLoginWelcomeOpen(false);
+                  switchTab("notmediawiki");
+                }}
+                className="px-3 py-2 bg-emerald-800 hover:bg-emerald-900 text-white font-bold uppercase cursor-pointer"
+              >
+                Tutorial do Infobox
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsFirstLoginWelcomeOpen(false)}
+                className="p-2 text-stone-500 hover:text-black dark:hover:text-white cursor-pointer"
+                title="Fechar aviso"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Banned Alert Banner */}
         {isBanned && (
           <div className="mb-6 p-4 bg-red-100 border-2 border-red-700 text-red-950 flex items-start gap-3 shadow-[4px_4px_0px_0px_rgba(185,28,28,1)]">
@@ -2238,7 +2396,20 @@ export default function App() {
 
         {/* VIEW 6: NOTMEDIAWIKI (BETA) - PARSOID & MICROSERVICES ENGINE */}
         {currentTab === "notmediawiki" && (
-          <NotMediaWikiPortal currentUser={user} showToast={showToast} />
+          <NotMediaWikiPortal
+            currentUser={user}
+            showToast={showToast}
+            targetSlug={wikiTargetSlug}
+            initialInnerTab={wikiTargetInnerTab}
+            onNavigationConsumed={() => {
+              setWikiTargetSlug(null);
+              setWikiTargetInnerTab(undefined);
+            }}
+            onOpenUserInfobox={(targetUid) => {
+              uidNav.navigateToUid(targetUid);
+              setIsUserProfileModalOpen(true);
+            }}
+          />
         )}
 
         {/* VIEW 7: BEMTEVI - REDE SOCIAL LIVRE & COLABORATIVA */}
@@ -3069,11 +3240,12 @@ export default function App() {
         />
       )}
 
-      {/* 13. USER PROFILE MODAL (3.05.6.d UID INSPECTION) */}
+      {/* 13. USER PROFILE MODAL (3.05.6.d UID INSPECTION & INFOBOX USUÁRIO) */}
       {isUserProfileModalOpen && uidNav.currentUid && (
         <UserProfileModal
           uid={uidNav.currentUid}
           nav={uidNav}
+          currentUser={user}
           onClose={() => {
             setIsUserProfileModalOpen(false);
             uidNav.navigateToUid(currentTab);
@@ -3081,6 +3253,17 @@ export default function App() {
           onOpenInBemtevi={(_targetUid) => {
             setIsUserProfileModalOpen(false);
             switchTab("bemtevi");
+          }}
+          onOpenInNotMediaWiki={(_targetUid, slug) => {
+            setIsUserProfileModalOpen(false);
+            setWikiTargetSlug(slug);
+            setWikiTargetInnerTab("reader");
+            switchTab("notmediawiki");
+          }}
+          onOpenInfoboxTutorial={() => {
+            setIsUserProfileModalOpen(false);
+            setWikiTargetInnerTab("tutorial");
+            switchTab("notmediawiki");
           }}
           showToast={showToast}
         />

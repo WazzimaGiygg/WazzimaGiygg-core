@@ -62,7 +62,10 @@ import {
   Sliders,
   Copy,
   Share2,
-  Puzzle
+  Puzzle,
+  UserCheck,
+  History,
+  Info
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import ExtensionConfigModal from '../ExtensionConfigModal';
@@ -70,6 +73,14 @@ import AddExtensionCatalogModal from '../AddExtensionCatalogModal';
 import { exportWikiArticleFormattedPdf } from '../../utils/pdfExport';
 import AbntCitationGenerator from '../AbntCitationGenerator';
 import { updateSEO } from '../../wiki/utils/seoManager';
+import NotMediaWikiInfoboxTutorial from './NotMediaWikiInfoboxTutorial';
+import {
+  buildPersonalUserPageSlug,
+  buildUserInfoboxWikitext,
+  extractUserNotMediaWikiContributions,
+  INFOBOX_TUTORIAL_TEMPLATES,
+  resolveUserDisplayName
+} from '../../config/userInfobox';
 import {
   WikiArticle,
   WikiRevision,
@@ -96,6 +107,10 @@ import {
   deleteWikiArticleFromDb,
   listWikiRevisionsFromDb,
   listWikiEventsFromDb,
+  listNotMediaWikiUserPagesFromDb,
+  saveNotMediaWikiUserPageToDb,
+  ensureUserNotMediaWikiPersonalPage,
+  listLocalUserWikiRevisions,
   verifyExtensionIntegrityWithFirestore,
   registerExtensionHashInFirestore,
   executeExtensionSafely,
@@ -112,16 +127,37 @@ import {
 import { AdminExtensionsManagementView } from '../../wiki/components/AdminExtensionsManagementView';
 import type { UserProfile as WikiUserProfile } from '../../wiki/types';
 
+type NotMediaWikiInnerTab =
+  | 'portal'
+  | 'reader'
+  | 'editor'
+  | 'history'
+  | 'events'
+  | 'special'
+  | 'extensions'
+  | 'governance'
+  | 'tutorial';
+
 interface NotMediaWikiPortalProps {
   currentUser?: any;
   showToast: (msg: string, isError?: boolean) => void;
+  targetSlug?: string | null;
+  initialInnerTab?: NotMediaWikiInnerTab;
+  onNavigationConsumed?: () => void;
+  onOpenUserInfobox?: (uid: string) => void;
 }
 
-export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaWikiPortalProps) {
+export default function NotMediaWikiPortal({
+  currentUser,
+  showToast,
+  targetSlug,
+  initialInnerTab,
+  onNavigationConsumed,
+  onOpenUserInfobox
+}: NotMediaWikiPortalProps) {
   // Navigation & View States
-  const [activeTab, setActiveTab] = useState<
-    'portal' | 'reader' | 'editor' | 'history' | 'events' | 'special' | 'extensions' | 'governance'
-  >('portal');
+  const [activeTab, setActiveTab] = useState<NotMediaWikiInnerTab>(initialInnerTab || 'portal');
+  const [portalNamespaceFilter, setPortalNamespaceFilter] = useState<'all' | 0 | 1 | 2>('all');
 
   // Articles & Revisions Data (Strictly from Database)
   const [articles, setArticles] = useState<WikiArticle[]>([]);
@@ -640,30 +676,122 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
     }
   };
 
-  // Load articles from Firestore & Backend Database
+  // Load articles, personal user pages (Namespace 2), revisions & events from Firestore & Backend
   useEffect(() => {
+    let isMounted = true;
     const loadAllWikiDbData = async () => {
       setIsLoadingWikiData(true);
       try {
-        const [dbArticles, dbRevisions, dbEvents] = await Promise.all([
+        const [dbArticles, dbUserPages, dbRevisions, dbEvents] = await Promise.all([
           listWikiArticlesFromDb(),
+          listNotMediaWikiUserPagesFromDb(),
           listWikiRevisionsFromDb(),
           listWikiEventsFromDb()
         ]);
-        setArticles(dbArticles || []);
-        setRevisions(dbRevisions || []);
+
+        let ensuredPage: WikiArticle | null = null;
+        if (currentUser?.uid) {
+          const ensured = await ensureUserNotMediaWikiPersonalPage(
+            currentUser,
+            Boolean(currentUser.isGuest)
+          ).catch(() => null);
+          if (ensured?.userPage) {
+            ensuredPage = ensured.userPage;
+          }
+        }
+
+        if (!isMounted) return;
+
+        // Merge main articles + personal user pages cleanly without duplicate slugs
+        const articleBySlug = new Map<string, WikiArticle>();
+        for (const a of dbArticles || []) {
+          if (a?.slug) articleBySlug.set(a.slug.toLowerCase(), a);
+        }
+        for (const up of dbUserPages || []) {
+          if (up?.slug) articleBySlug.set(up.slug.toLowerCase(), up);
+        }
+        if (ensuredPage?.slug) {
+          articleBySlug.set(ensuredPage.slug.toLowerCase(), ensuredPage);
+        }
+        const mergedArticles = Array.from(articleBySlug.values());
+
+        // Merge backend/Firestore revisions + cached personal user page revisions
+        const localUserRevs = listLocalUserWikiRevisions();
+        const revById = new Map<string, WikiRevision>();
+        for (const r of [...localUserRevs, ...(dbRevisions || [])]) {
+          if (r?.id && !revById.has(r.id)) {
+            revById.set(r.id, r);
+          }
+        }
+        const mergedRevs = Array.from(revById.values()).sort(
+          (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+        );
+
+        setArticles(mergedArticles);
+        setRevisions(mergedRevs);
         setEvents(dbEvents || []);
-        if (dbArticles && dbArticles.length > 0 && !currentSlug) {
-          setCurrentSlug(dbArticles[0].slug);
+
+        if (targetSlug) {
+          setCurrentSlug(targetSlug);
+        } else if (mergedArticles.length > 0 && !currentSlug) {
+          setCurrentSlug(mergedArticles[0].slug);
         }
       } catch (err) {
         console.warn('Erro ao sincronizar NotWikiPedia com banco de dados:', err);
       } finally {
-        setIsLoadingWikiData(false);
+        if (isMounted) setIsLoadingWikiData(false);
       }
     };
     loadAllWikiDbData();
-  }, []);
+    return () => {
+      isMounted = false;
+    };
+  }, [currentUser?.uid]);
+
+  // Synchronize external navigation requests (e.g. from First-Login Banner or UserProfileModal)
+  useEffect(() => {
+    if (!targetSlug && !initialInnerTab) return;
+    if (targetSlug) {
+      setCurrentSlug(targetSlug);
+      if (!initialInnerTab) {
+        setActiveTab('reader');
+      }
+    }
+    if (initialInnerTab) {
+      setActiveTab(initialInnerTab);
+    }
+    onNavigationConsumed?.();
+  }, [targetSlug, initialInnerTab]);
+
+  // Active logged-in user's personal NotMediaWiki page
+  const myPersonalUserPage = useMemo(() => {
+    if (!currentUser?.uid) return null;
+    return (
+      articles.find(
+        (a) =>
+          (a.ownerUid && a.ownerUid === currentUser.uid) ||
+          (a.namespace === 2 &&
+            a.slug.toLowerCase() ===
+              buildPersonalUserPageSlug(resolveUserDisplayName(currentUser), currentUser.uid).toLowerCase())
+      ) || null
+    );
+  }, [articles, currentUser]);
+
+  const myContributionsCount = useMemo(() => {
+    if (!currentUser?.uid) return 0;
+    return extractUserNotMediaWikiContributions(
+      {
+        uid: currentUser.uid,
+        name: currentUser.name,
+        displayName: currentUser.displayName,
+        email: currentUser.email,
+        slug: myPersonalUserPage?.slug
+      },
+      articles,
+      revisions,
+      events
+    ).length;
+  }, [currentUser, myPersonalUserPage, articles, revisions, events]);
 
   // Currently active article object
   const currentArticle = useMemo(() => {
@@ -671,6 +799,30 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
     if (!currentSlug) return articles[0];
     return articles.find((a) => a.slug.toLowerCase() === currentSlug.toLowerCase()) || null;
   }, [articles, currentSlug]);
+
+  // Contributions for whichever Namespace 2 Personal User Page is currently open
+  const viewedUserContributions = useMemo(() => {
+    if (!currentArticle) return [];
+    const isUserPage =
+      currentArticle.namespace === 2 ||
+      currentArticle.isPersonalUserPage ||
+      currentArticle.slug.toLowerCase().startsWith('usuário:');
+    if (!isUserPage) return [];
+
+    const inferredName = (currentArticle as any).ownerName || currentArticle.title.replace(/^Usuário:/i, '');
+    return extractUserNotMediaWikiContributions(
+      {
+        uid: currentArticle.ownerUid,
+        name: inferredName,
+        displayName: inferredName,
+        email: currentArticle.ownerEmail,
+        slug: currentArticle.slug
+      },
+      articles,
+      revisions,
+      events
+    );
+  }, [currentArticle, articles, revisions, events]);
 
   // Compiled Parsoid AST Result for active article
   const parseResult: ParseResult = useMemo(() => {
@@ -782,7 +934,7 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
     setActiveTab('editor');
   };
 
-  // Save or Update Article Revision
+  // Save or Update Article Revision (supports Namespace 2 Personal User Pages via /userpage/{uid})
   const handleSaveArticle = async (e: React.FormEvent) => {
     e.preventDefault();
     const candidateSlug = editorTitle.trim() ? editorTitle.trim().replace(/\s+/g, '_') : '';
@@ -790,15 +942,24 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
       ? articles.findIndex((a) => a.slug.toLowerCase() === candidateSlug.toLowerCase())
       : -1;
     const existingArticle = existingIndex >= 0 ? articles[existingIndex] : null;
+    const isPersonalPageTarget = Boolean(
+      existingArticle?.namespace === 2 ||
+        existingArticle?.isPersonalUserPage ||
+        /^usu[aá]rio:/i.test(editorTitle.trim())
+    );
 
     const validation = validateWikiArticlePayload({
-      id: existingArticle?.id || `art-${Date.now()}`,
-      slug: candidateSlug,
+      id: existingArticle?.id || (isPersonalPageTarget && currentUser?.uid ? `userpage-${currentUser.uid}` : `art-${Date.now()}`),
+      slug: existingArticle?.slug || candidateSlug,
       title: editorTitle,
-      namespace: editorTitle.trim().startsWith('Talk:') || editorTitle.trim().startsWith('Discussão:') ? 1 : 0,
+      namespace: isPersonalPageTarget
+        ? 2
+        : editorTitle.trim().startsWith('Talk:') || editorTitle.trim().startsWith('Discussão:')
+        ? 1
+        : 0,
       wikitext: editorWikitext,
       summary: editorSummary.trim() || undefined,
-      categories: existingArticle?.categories || ['Geral', 'Comunidade'],
+      categories: existingArticle?.categories || (isPersonalPageTarget ? ['Usuários', 'NotMediaWiki'] : ['Geral', 'Comunidade']),
       views: existingArticle ? (existingArticle.views || 0) + 1 : 1
     });
 
@@ -813,7 +974,9 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
 
     setIsSavingArticle(true);
     try {
-      const slug = validatedWiki.slug;
+      const slug = isPersonalPageTarget
+        ? existingArticle?.slug || editorTitle.trim().replace(/\s+/g, '_')
+        : validatedWiki.slug;
       const authorName = currentUser?.displayName || currentUser?.name || currentUser?.email || 'Editor Comunitário';
       const authorId = currentUser?.uid || 'usr_community';
 
@@ -821,12 +984,12 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
       const newRev: WikiRevision = {
         id: revId,
         articleSlug: slug,
-        parentRevisionId: currentArticle?.latestRevisionId || null,
+        parentRevisionId: existingArticle?.latestRevisionId || currentArticle?.latestRevisionId || null,
         wikitext: validatedWiki.wikitext,
         comment: editorSummary.trim() || 'Atualização de conteúdo no banco de dados',
         author: { id: authorId, name: authorName, isBot: false },
         timestamp: new Date().toISOString(),
-        sha256: Math.random().toString(36).substring(2, 18),
+        sha256: computeSha256Hex(validatedWiki.wikitext),
         byteSize: validatedWiki.wikitext.length,
         isMinor: editorIsMinor
       };
@@ -837,30 +1000,42 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
         savedArt = {
           ...existingArticle,
           title: validatedWiki.title,
+          slug,
+          namespace: isPersonalPageTarget ? 2 : existingArticle.namespace,
           wikitext: validatedWiki.wikitext,
           summary: validatedWiki.summary,
           latestRevisionId: revId,
           updatedAt: new Date().toISOString(),
-          views: validatedWiki.views
+          views: validatedWiki.views,
+          ...(isPersonalPageTarget ? { isPersonalUserPage: true } : {})
         };
       } else {
         savedArt = {
           id: validatedWiki.id,
           slug,
           title: validatedWiki.title,
-          namespace: validatedWiki.namespace,
+          namespace: isPersonalPageTarget ? 2 : validatedWiki.namespace,
           wikitext: validatedWiki.wikitext,
           summary: validatedWiki.summary,
           latestRevisionId: revId,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
           categories: validatedWiki.categories,
-          views: validatedWiki.views
+          views: validatedWiki.views,
+          ...(isPersonalPageTarget
+            ? {
+                ownerUid: currentUser?.uid || 'usr_community',
+                isPersonalUserPage: true
+              }
+            : {})
         };
       }
 
-      // Persist directly to Firestore database and sync with backend
-      await saveWikiArticleInDb(savedArt, newRev);
+      if (isPersonalPageTarget) {
+        await saveNotMediaWikiUserPageToDb(savedArt, newRev);
+      } else {
+        await saveWikiArticleInDb(savedArt, newRev);
+      }
 
       setArticles((prev) => {
         const without = prev.filter((a) => a.slug.toLowerCase() !== slug.toLowerCase());
@@ -895,7 +1070,11 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
 
       setCurrentSlug(slug);
       setActiveTab('reader');
-      showToast(`✓ Artigo "${validatedWiki.title}" gravado com sucesso no banco de dados!`);
+      showToast(
+        isPersonalPageTarget
+          ? `✓ Página pessoal "${validatedWiki.title}" salva e registrada em suas contribuições!`
+          : `✓ Artigo "${validatedWiki.title}" gravado com sucesso no banco de dados!`
+      );
     } catch (err: any) {
       if (err instanceof ArticleValidationError) {
         setEditorFieldErrors(err.fieldErrors);
@@ -995,18 +1174,22 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
     }
   };
 
-  // Filtered articles for Search
+  // Filtered articles for Search + Namespace Filter
   const filteredArticles = useMemo(() => {
-    if (!searchQuery.trim()) return articles;
+    const nsFiltered =
+      portalNamespaceFilter === 'all'
+        ? articles
+        : articles.filter((a) => a.namespace === portalNamespaceFilter);
+    if (!searchQuery.trim()) return nsFiltered;
     const q = searchQuery.trim().toLowerCase();
-    return articles.filter(
+    return nsFiltered.filter(
       (a) =>
         a.title.toLowerCase().includes(q) ||
         a.summary.toLowerCase().includes(q) ||
         a.wikitext.toLowerCase().includes(q) ||
         a.categories.some((c) => c.toLowerCase().includes(q))
     );
-  }, [articles, searchQuery]);
+  }, [articles, searchQuery, portalNamespaceFilter]);
 
   return (
     <div className="space-y-6 text-left font-sans animate-fade-in">
@@ -1045,13 +1228,34 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+            {myPersonalUserPage && (
+              <button
+                type="button"
+                onClick={() => handleNavigateSlug(myPersonalUserPage.slug)}
+                className="bg-emerald-700 hover:bg-emerald-600 text-white px-3.5 py-2 text-xs font-mono font-bold uppercase tracking-wider flex items-center gap-1.5 border border-emerald-400 shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] cursor-pointer"
+                title={`Abrir sua página pessoal (${myPersonalUserPage.title}) e suas contribuições`}
+              >
+                <UserCheck className="w-3.5 h-3.5 text-amber-300" />
+                <span>Minha Página ({myContributionsCount} contrib.)</span>
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('tutorial')}
+              className="bg-stone-800 hover:bg-stone-700 text-amber-300 px-3.5 py-2 text-xs font-mono font-bold uppercase tracking-wider flex items-center gap-1.5 border border-amber-500/60 shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] cursor-pointer"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Tutorial Infobox</span>
+            </button>
+
             <a
               href="https://notmediawiki.wazzimagiygg.com/"
               target="_blank"
               rel="noopener noreferrer"
               className="bg-blue-600 hover:bg-blue-700 text-white px-3.5 py-2 text-xs font-mono font-bold uppercase tracking-wider flex items-center gap-1.5 border border-blue-400 shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] transition-transform active:translate-x-0.5 active:translate-y-0.5"
             >
-              <span>Acessar notmediawiki.wazzimagiygg.com</span>
+              <span>notmediawiki.wazzimagiygg.com</span>
               <ExternalLink className="w-3.5 h-3.5" />
             </a>
 
@@ -1073,6 +1277,7 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
             { id: 'portal', label: 'Portal Comunitário', icon: Compass },
             { id: 'reader', label: currentArticle ? `Verbete: ${currentArticle.title}` : 'Leitor de Verbete', icon: BookOpen },
             { id: 'editor', label: 'Editor Wikitexto', icon: Edit3 },
+            { id: 'tutorial', label: 'Tutorial Infobox', icon: Sparkles },
             { id: 'history', label: 'Histórico & Diff', icon: GitCompare },
             { id: 'events', label: 'EventStreams ao Vivo', icon: Zap },
             { id: 'special', label: 'Páginas Especiais', icon: List },
@@ -1084,7 +1289,7 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
             return (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id as any)}
+                onClick={() => setActiveTab(tab.id as NotMediaWikiInnerTab)}
                 className={`flex items-center gap-1.5 px-3 py-2 whitespace-nowrap transition-all cursor-pointer border ${
                   isActive
                     ? 'bg-[#141414] text-white border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
@@ -1107,7 +1312,7 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
           {/* Welcome Card */}
           <div className="bg-white border-2 border-[#141414] p-6 shadow-[6px_6px_0px_0px_rgba(20,20,20,1)]">
             <div className="border-b-2 border-[#141414] pb-4 mb-4">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
                   <h3 className="font-editorial text-2xl font-bold text-stone-950">
                     Bem-vindo(a) ao NotMediaWiki
@@ -1116,30 +1321,40 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
                     A enciclopédia livre desacoplada dos projetos <strong>WazzimaGiygg</strong> (wazzimagiygg.com).
                   </p>
                 </div>
-                <button
-                  onClick={() => {
-                    const pool = articles.filter((a) => a.slug !== currentSlug);
-                    const candidates = pool.length > 0 ? pool : articles;
-                    if (candidates.length > 0) {
-                      const random = candidates[Math.floor(Math.random() * candidates.length)];
-                      handleNavigateSlug(random.slug);
-                    } else {
-                      showToast('Nenhum artigo cadastrado no banco de dados para sorteio.', true);
-                    }
-                  }}
-                  className="paper-button-secondary px-3 py-1.5 text-xs font-mono font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer"
-                  title="Abrir verbete aleatório"
-                >
-                  <Shuffle className="w-3.5 h-3.5" />
-                  <span>Artigo Aleatório</span>
-                </button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('tutorial')}
+                    className="bg-amber-100 hover:bg-amber-200 text-amber-950 border border-amber-700 px-3 py-1.5 text-xs font-mono font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-amber-700" />
+                    <span>Como Usar Infobox</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      const pool = articles.filter((a) => a.slug !== currentSlug);
+                      const candidates = pool.length > 0 ? pool : articles;
+                      if (candidates.length > 0) {
+                        const random = candidates[Math.floor(Math.random() * candidates.length)];
+                        handleNavigateSlug(random.slug);
+                      } else {
+                        showToast('Nenhum artigo cadastrado no banco de dados para sorteio.', true);
+                      }
+                    }}
+                    className="paper-button-secondary px-3 py-1.5 text-xs font-mono font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer"
+                    title="Abrir verbete aleatório"
+                  >
+                    <Shuffle className="w-3.5 h-3.5" />
+                    <span>Artigo Aleatório</span>
+                  </button>
+                </div>
               </div>
             </div>
 
             {/* Quick Metrics */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 font-mono text-xs my-4">
               <div className="bg-[#FAF9F5] p-3 border border-stone-300">
-                <span className="text-[10px] text-stone-500 uppercase font-bold">Verbetes Ativos</span>
+                <span className="text-[10px] text-stone-500 uppercase font-bold">Páginas &amp; Usuários</span>
                 <div className="text-2xl font-bold text-stone-900 mt-1">{articles.length}</div>
               </div>
               <div className="bg-[#FAF9F5] p-3 border border-stone-300">
@@ -1147,86 +1362,123 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
                 <div className="text-2xl font-bold text-stone-900 mt-1">{revisions.length}</div>
               </div>
               <div className="bg-[#FAF9F5] p-3 border border-stone-300">
-                <span className="text-[10px] text-stone-500 uppercase font-bold">Leituras Totais</span>
-                <div className="text-2xl font-bold text-stone-900 mt-1">
-                  {articles.reduce((acc, a) => acc + a.views, 0).toLocaleString()}
+                <span className="text-[10px] text-stone-500 uppercase font-bold">Páginas de Usuário</span>
+                <div className="text-2xl font-bold text-amber-700 mt-1">
+                  {articles.filter((a) => a.namespace === 2 || a.isPersonalUserPage).length}
                 </div>
               </div>
               <div className="bg-[#FAF9F5] p-3 border border-stone-300">
                 <span className="text-[10px] text-stone-500 uppercase font-bold">Parser Parsoid</span>
-                <div className="text-sm font-bold text-emerald-700 mt-1">✓ AST Ativo (0.4ms)</div>
+                <div className="text-sm font-bold text-emerald-700 mt-1">✓ AST &amp; Infobox Ativos</div>
               </div>
             </div>
 
-            {/* Search Input */}
-            <div className="relative my-4">
-              <Search className="w-4 h-4 absolute left-3 top-3 text-stone-400" />
-              <input
-                type="text"
-                placeholder="Pesquisar verbetes no NotMediaWiki..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-4 py-2.5 text-xs font-mono bg-[#F8F7F4] border border-[#141414] focus:outline-none"
-              />
+            {/* Search Input + Namespace Filter */}
+            <div className="flex flex-col md:flex-row md:items-center gap-3 my-4">
+              <div className="relative flex-1">
+                <Search className="w-4 h-4 absolute left-3 top-3 text-stone-400" />
+                <input
+                  type="text"
+                  placeholder="Pesquisar verbetes ou páginas de usuário (Usuário:...) no NotMediaWiki..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2.5 text-xs font-mono bg-[#F8F7F4] border border-[#141414] focus:outline-none"
+                />
+              </div>
+
+              <div className="flex flex-wrap items-center gap-1.5 font-mono text-[10px] font-bold uppercase">
+                {[
+                  { id: 'all' as const, label: 'Todos' },
+                  { id: 0 as const, label: 'Artigos (Ns 0)' },
+                  { id: 2 as const, label: 'Usuários (Ns 2)' },
+                  { id: 1 as const, label: 'Discussões (Ns 1)' }
+                ].map((nsOpt) => (
+                  <button
+                    key={String(nsOpt.id)}
+                    type="button"
+                    onClick={() => setPortalNamespaceFilter(nsOpt.id)}
+                    className={`px-2.5 py-2 border cursor-pointer transition-colors ${
+                      portalNamespaceFilter === nsOpt.id
+                        ? 'bg-[#141414] text-amber-300 border-[#141414]'
+                        : 'bg-[#FAF9F5] text-stone-700 border-stone-300 hover:border-[#141414]'
+                    }`}
+                  >
+                    {nsOpt.label}
+                  </button>
+                ))}
+              </div>
             </div>
 
             {/* Articles Grid */}
             {isLoadingWikiData ? (
               <div className="p-12 text-center text-stone-500 font-mono text-xs flex flex-col items-center justify-center gap-3">
                 <div className="w-6 h-6 border-2 border-stone-800 border-t-amber-500 rounded-full animate-spin" />
-                <p>Sincronizando verbetes reais do banco de dados (Firestore)...</p>
+                <p>Sincronizando verbetes e páginas pessoais do banco de dados (Firestore)...</p>
               </div>
             ) : filteredArticles.length === 0 ? (
               <div className="p-10 border border-dashed border-stone-400 bg-stone-50 text-center font-mono text-xs space-y-3">
                 <BookOpen className="w-10 h-10 mx-auto text-stone-400" />
-                <p className="font-bold text-stone-800">Nenhum verbete encontrado no banco de dados.</p>
+                <p className="font-bold text-stone-800">Nenhum verbete encontrado neste filtro.</p>
                 <p className="text-stone-500 text-[11px] max-w-md mx-auto">
-                  A NotWikiPedia sincroniza apenas dados reais persistidos no banco. Seja o primeiro a criar um verbete colaborativo!
+                  A NotWikiPedia sincroniza dados persistidos no banco. Crie um verbete ou acesse o Tutorial Infobox!
                 </p>
                 <button
                   onClick={handleOpenNewArticle}
                   className="bg-[#141414] hover:bg-stone-800 text-white px-4 py-2 font-bold uppercase text-[10px] tracking-wider inline-flex items-center gap-1.5 cursor-pointer shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]"
                 >
                   <Plus className="w-3.5 h-3.5 text-amber-300" />
-                  <span>Criar Primeiro Artigo no Banco</span>
+                  <span>Criar Novo Verbete</span>
                 </button>
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pt-2">
-                {filteredArticles.map((art) => (
-                  <div
-                    key={art.id}
-                    className="paper-card p-4 flex flex-col justify-between hover:border-black cursor-pointer group"
-                    onClick={() => handleNavigateSlug(art.slug)}
-                  >
-                    <div>
-                      <div className="flex items-center justify-between text-[10px] font-mono text-stone-500 mb-2">
-                        <span className="bg-stone-100 text-stone-800 font-bold px-1.5 py-0.5 border border-stone-300 uppercase">
-                          {art.namespace === 1 ? 'Discussão' : 'Artigo'}
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <Eye className="w-3.5 h-3.5" />
-                          <span>{art.views.toLocaleString()}</span>
-                        </span>
+                {filteredArticles.map((art) => {
+                  const isUserNs = art.namespace === 2 || art.isPersonalUserPage;
+                  return (
+                    <div
+                      key={art.id}
+                      className={`paper-card p-4 flex flex-col justify-between hover:border-black cursor-pointer group ${
+                        isUserNs ? 'border-amber-600/70 bg-amber-50/30' : ''
+                      }`}
+                      onClick={() => handleNavigateSlug(art.slug)}
+                    >
+                      <div>
+                        <div className="flex items-center justify-between text-[10px] font-mono text-stone-500 mb-2">
+                          <span
+                            className={`font-bold px-1.5 py-0.5 border uppercase ${
+                              isUserNs
+                                ? 'bg-amber-100 text-amber-900 border-amber-400'
+                                : art.namespace === 1
+                                ? 'bg-indigo-100 text-indigo-900 border-indigo-300'
+                                : 'bg-stone-100 text-stone-800 border-stone-300'
+                            }`}
+                          >
+                            {isUserNs ? 'Usuário (Ns 2)' : art.namespace === 1 ? 'Discussão' : 'Artigo'}
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <Eye className="w-3.5 h-3.5" />
+                            <span>{art.views.toLocaleString()}</span>
+                          </span>
+                        </div>
+
+                        <h4 className="font-editorial text-lg font-bold text-stone-950 group-hover:text-blue-800 transition-colors">
+                          <HighlightedText text={art.title} query={searchQuery} />
+                        </h4>
+
+                        <p className="text-xs font-serif text-stone-600 line-clamp-3 mt-1.5 leading-relaxed">
+                          <HighlightedText text={art.summary} query={searchQuery} />
+                        </p>
                       </div>
 
-                      <h4 className="font-editorial text-lg font-bold text-stone-950 group-hover:text-blue-800 transition-colors">
-                        <HighlightedText text={art.title} query={searchQuery} />
-                      </h4>
-
-                      <p className="text-xs font-serif text-stone-600 line-clamp-3 mt-1.5 leading-relaxed">
-                        <HighlightedText text={art.summary} query={searchQuery} />
-                      </p>
+                      <div className="pt-3 border-t border-stone-200 mt-3 flex items-center justify-between text-[10px] font-mono text-stone-500">
+                        <span>Rev: {art.latestRevisionId}</span>
+                        <span className="text-blue-700 font-bold group-hover:translate-x-1 transition-transform">
+                          {isUserNs ? 'Ver perfil & contribuições ➔' : 'Ler verbete ➔'}
+                        </span>
+                      </div>
                     </div>
-
-                    <div className="pt-3 border-t border-stone-200 mt-3 flex items-center justify-between text-[10px] font-mono text-stone-500">
-                      <span>Rev: {art.latestRevisionId}</span>
-                      <span className="text-blue-700 font-bold group-hover:translate-x-1 transition-transform">
-                        Ler verbete ➔
-                      </span>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -1266,9 +1518,19 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
           <div className="bg-[#FAF9F5] border-2 border-[#141414] p-6 shadow-[6px_6px_0px_0px_rgba(20,20,20,1)]">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b-2 border-[#141414] pb-4 mb-6">
               <div>
-                <div className="flex items-center gap-2 text-xs font-mono mb-1">
-                  <span className="bg-stone-900 text-white font-bold px-2 py-0.5 text-[10px] uppercase">
-                    Namespace {currentArticle.namespace === 1 ? 'Discussão' : 'Principal'}
+                <div className="flex flex-wrap items-center gap-2 text-xs font-mono mb-1">
+                  <span
+                    className={`font-bold px-2 py-0.5 text-[10px] uppercase ${
+                      currentArticle.namespace === 2 || currentArticle.isPersonalUserPage
+                        ? 'bg-amber-600 text-white'
+                        : 'bg-stone-900 text-white'
+                    }`}
+                  >
+                    {currentArticle.namespace === 2 || currentArticle.isPersonalUserPage
+                      ? 'Namespace 2 • Página de Usuário'
+                      : currentArticle.namespace === 1
+                      ? 'Namespace Discussão'
+                      : 'Namespace Principal'}
                   </span>
                   <span className="text-stone-500">•</span>
                   <span className="text-stone-600">Revisão: {currentArticle.latestRevisionId}</span>
@@ -1285,12 +1547,33 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
 
               {/* Action Toolbar */}
               <div className="flex flex-wrap items-center gap-2">
+                {(currentArticle.namespace === 2 || currentArticle.isPersonalUserPage) &&
+                  currentArticle.ownerUid &&
+                  onOpenUserInfobox && (
+                    <button
+                      type="button"
+                      onClick={() => onOpenUserInfobox(currentArticle.ownerUid!)}
+                      className="paper-button bg-amber-500 hover:bg-amber-400 text-stone-950 px-3 py-1.5 text-xs font-mono font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <UserCheck className="w-3.5 h-3.5" />
+                      <span>Cartão Infobox (?uid=)</span>
+                    </button>
+                  )}
+
                 <button
                   onClick={() => handleOpenEditor(currentArticle)}
                   className="paper-button bg-stone-900 text-white hover:bg-stone-800 px-3 py-1.5 text-xs font-mono font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer"
                 >
                   <Edit3 className="w-3.5 h-3.5 text-amber-300" />
                   <span>Editar Wikitexto</span>
+                </button>
+
+                <button
+                  onClick={() => setActiveTab('tutorial')}
+                  className="paper-button-secondary px-3 py-1.5 text-xs font-mono font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-amber-700" />
+                  <span>Tutorial Infobox</span>
                 </button>
 
                 <button
@@ -1356,20 +1639,143 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
               </div>
             )}
 
-            {/* Compiled HTML Content from Parsoid */}
+            {/* Compiled HTML Content from Parsoid (flow-root ensures floated Infobox stays cleanly inside container) */}
             <div
-              className="wiki-article-body prose prose-stone max-w-none font-serif text-stone-900 leading-relaxed text-base"
+              className="wiki-article-body flow-root prose prose-stone max-w-none font-serif text-stone-900 leading-relaxed text-base"
               onClick={(e) => {
                 const target = e.target as HTMLElement;
                 const link = target.closest('a[data-wikilink]') as HTMLAnchorElement;
                 if (link) {
                   e.preventDefault();
-                  const targetSlug = link.getAttribute('data-wikilink');
-                  if (targetSlug) handleNavigateSlug(targetSlug);
+                  const targetSlugAttr = link.getAttribute('data-wikilink');
+                  if (targetSlugAttr) handleNavigateSlug(targetSlugAttr);
                 }
               }}
               dangerouslySetInnerHTML={{ __html: parseResult.html }}
             />
+
+            {/* Live Personal Contributions Table on Namespace 2 User Pages */}
+            {(currentArticle.namespace === 2 ||
+              currentArticle.isPersonalUserPage ||
+              currentArticle.slug.toLowerCase().startsWith('usuário:')) && (
+              <div className="mt-8 border-2 border-[#141414] bg-white p-5 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] font-mono text-xs">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b-2 border-[#141414] pb-3 mb-4">
+                  <div>
+                    <h3 className="font-editorial text-xl font-bold text-stone-950 flex items-center gap-2">
+                      <History className="w-5 h-5 text-amber-700" />
+                      <span>Todas as Contribuições no NotMediaWiki</span>
+                    </h3>
+                    <p className="text-[11px] text-stone-600 mt-0.5">
+                      Registro completo de criações, edições, revisões e eventos atribuídos a{' '}
+                      <strong>{(currentArticle as any).ownerName || currentArticle.title.replace(/^Usuário:/i, '')}</strong>.
+                    </p>
+                  </div>
+                  <span className="bg-amber-100 text-amber-950 border border-amber-500 px-2.5 py-1 text-[10px] font-bold uppercase">
+                    {viewedUserContributions.length} contribuição(ões)
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
+                  <div className="bg-[#FAF9F5] border border-stone-300 p-2.5">
+                    <span className="text-[10px] text-stone-500 uppercase block">Total</span>
+                    <strong className="text-lg text-stone-950">{viewedUserContributions.length}</strong>
+                  </div>
+                  <div className="bg-[#FAF9F5] border border-stone-300 p-2.5">
+                    <span className="text-[10px] text-stone-500 uppercase block">Páginas Criadas</span>
+                    <strong className="text-lg text-emerald-700">
+                      {viewedUserContributions.filter((c) => c.type === 'new').length}
+                    </strong>
+                  </div>
+                  <div className="bg-[#FAF9F5] border border-stone-300 p-2.5">
+                    <span className="text-[10px] text-stone-500 uppercase block">Edições</span>
+                    <strong className="text-lg text-blue-700">
+                      {viewedUserContributions.filter((c) => c.type !== 'new').length}
+                    </strong>
+                  </div>
+                  <div className="bg-[#FAF9F5] border border-stone-300 p-2.5">
+                    <span className="text-[10px] text-stone-500 uppercase block">Bytes Totais</span>
+                    <strong className="text-lg text-stone-900">
+                      {viewedUserContributions.reduce((sum, c) => sum + (c.byteSize || 0), 0).toLocaleString()}
+                    </strong>
+                  </div>
+                </div>
+
+                {viewedUserContributions.length === 0 ? (
+                  <p className="text-stone-500 italic p-4 bg-stone-50 border border-dashed border-stone-300 text-center">
+                    Nenhuma contribuição adicional registrada além da inicialização desta página pessoal.
+                  </p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full border-collapse border border-stone-300 text-[11px]">
+                      <thead>
+                        <tr className="bg-[#141414] text-white uppercase text-[10px]">
+                          <th className="p-2 text-left">Data / Hora</th>
+                          <th className="p-2 text-left">Página</th>
+                          <th className="p-2 text-left">Tipo</th>
+                          <th className="p-2 text-left">Sumário</th>
+                          <th className="p-2 text-right">Tamanho</th>
+                          <th className="p-2 text-right">Ação</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-stone-200">
+                        {viewedUserContributions.map((contrib) => (
+                          <tr key={contrib.id} className="hover:bg-amber-50/70">
+                            <td className="p-2 text-stone-600 whitespace-nowrap">
+                              {new Date(contrib.timestamp).toLocaleString('pt-BR')}
+                            </td>
+                            <td className="p-2 font-bold">
+                              <button
+                                type="button"
+                                onClick={() => handleNavigateSlug(contrib.articleSlug)}
+                                className="text-blue-800 hover:text-red-700 underline text-left cursor-pointer"
+                              >
+                                {contrib.articleTitle}
+                              </button>
+                            </td>
+                            <td className="p-2">
+                              <span
+                                className={`px-1.5 py-0.5 text-[9px] font-bold uppercase ${
+                                  contrib.type === 'new'
+                                    ? 'bg-emerald-100 text-emerald-900 border border-emerald-400'
+                                    : contrib.type === 'minor'
+                                    ? 'bg-stone-200 text-stone-800'
+                                    : 'bg-blue-100 text-blue-900 border border-blue-300'
+                                }`}
+                              >
+                                {contrib.type === 'new' ? 'Criação' : contrib.type === 'minor' ? 'Menor' : 'Edição'}
+                              </span>
+                            </td>
+                            <td className="p-2 font-serif text-stone-700">{contrib.comment}</td>
+                            <td className="p-2 text-right text-stone-600 whitespace-nowrap">
+                              {contrib.byteSize} B
+                            </td>
+                            <td className="p-2 text-right whitespace-nowrap">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const targetArt = articles.find(
+                                    (a) => a.slug.toLowerCase() === contrib.articleSlug.toLowerCase()
+                                  );
+                                  if (targetArt) {
+                                    setCurrentSlug(targetArt.slug);
+                                    setActiveTab('history');
+                                  } else {
+                                    showToast('Histórico completo disponível na aba Histórico & Diff.');
+                                  }
+                                }}
+                                className="px-2 py-0.5 bg-stone-900 hover:bg-stone-700 text-amber-300 text-[10px] font-bold uppercase cursor-pointer"
+                              >
+                                Ver Diff
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Categories Chips */}
             {parseResult.categories.length > 0 && (
@@ -1440,6 +1846,57 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
                 </button>
               ))}
             </div>
+          </div>
+
+          {/* Quick-Insert Infobox Toolbar */}
+          <div className="bg-[#FAF9F5] border border-stone-300 p-2.5 flex flex-wrap items-center justify-between gap-2 font-mono text-[10px]">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="font-bold uppercase text-stone-600 mr-1">Inserir Infobox:</span>
+              <button
+                type="button"
+                onClick={() => {
+                  const snippet = currentUser?.uid
+                    ? buildUserInfoboxWikitext(currentUser, {
+                        contributionsCount: Math.max(1, myContributionsCount),
+                        pagesCreated: 1
+                      })
+                    : INFOBOX_TUTORIAL_TEMPLATES[0].wikitext;
+                  setEditorWikitext((prev) => `${snippet}\n\n${prev}`);
+                  showToast('{{Infobox Usuário}} inserido no topo do Wikitexto!');
+                }}
+                className="px-2 py-1 bg-amber-100 hover:bg-amber-200 text-amber-950 border border-amber-500 font-bold uppercase cursor-pointer"
+              >
+                + Infobox Usuário
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditorWikitext((prev) => `${INFOBOX_TUTORIAL_TEMPLATES[1].wikitext}\n\n${prev}`);
+                  showToast('{{Infobox Artigo}} inserido no topo do Wikitexto!');
+                }}
+                className="px-2 py-1 bg-blue-100 hover:bg-blue-200 text-blue-950 border border-blue-400 font-bold uppercase cursor-pointer"
+              >
+                + Infobox Artigo
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditorWikitext((prev) => `${prev}\n{{Userbox|🌐|Membro ativo da comunidade NotMediaWiki}}`);
+                  showToast('{{Userbox}} adicionado ao editor!');
+                }}
+                className="px-2 py-1 bg-stone-200 hover:bg-stone-300 text-stone-900 border border-stone-400 font-bold uppercase cursor-pointer"
+              >
+                + Userbox
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={() => setActiveTab('tutorial')}
+              className="text-blue-800 hover:text-red-700 font-bold underline uppercase cursor-pointer flex items-center gap-1"
+            >
+              <Sparkles className="w-3 h-3" />
+              <span>Abrir Tutorial Completo de Infobox</span>
+            </button>
           </div>
 
           <form noValidate onSubmit={handleSaveArticle} className="space-y-4 font-mono text-xs">
@@ -1515,7 +1972,7 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
                     Pré-visualização Parsoid ao Vivo:
                   </span>
                   <div
-                    className="prose prose-stone max-w-none font-serif text-xs text-stone-900 leading-relaxed"
+                    className="wiki-article-body flow-root prose prose-stone max-w-none font-serif text-xs text-stone-900 leading-relaxed"
                     dangerouslySetInnerHTML={{ __html: parseWikitextToHtml(editorWikitext, editorTitle).html }}
                   />
                 </div>
@@ -1890,6 +2347,22 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
                 Ações Rápidas:
               </span>
               <div className="space-y-2">
+                {myPersonalUserPage && (
+                  <button
+                    type="button"
+                    onClick={() => handleNavigateSlug(myPersonalUserPage.slug)}
+                    className="w-full bg-emerald-700 hover:bg-emerald-800 text-white p-2 font-bold uppercase text-[10px] cursor-pointer"
+                  >
+                    Minha Página ({myPersonalUserPage.title})
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('tutorial')}
+                  className="w-full bg-amber-500 hover:bg-amber-400 text-stone-950 p-2 font-bold uppercase text-[10px] cursor-pointer border border-[#141414]"
+                >
+                  Tutorial Oficial de Infobox
+                </button>
                 <button
                   onClick={handleOpenNewArticle}
                   className="w-full bg-[#141414] hover:bg-stone-800 text-white p-2 font-bold uppercase text-[10px] cursor-pointer"
@@ -1913,6 +2386,70 @@ export default function NotMediaWikiPortal({ currentUser, showToast }: NotMediaW
             </div>
           </div>
         </div>
+      )}
+
+      {/* ===================================================================== */}
+      {/* TAB 3.5: TUTORIAL OFICIAL DE INFOBOX NOTMEDIAWIKI                     */}
+      {/* ===================================================================== */}
+      {activeTab === 'tutorial' && (
+        <NotMediaWikiInfoboxTutorial
+          currentUser={currentUser}
+          personalPageSlug={myPersonalUserPage?.slug}
+          contributionsCount={myContributionsCount}
+          showToast={showToast}
+          onInsertIntoEditor={(wikitext, suggestedTitle) => {
+            if (suggestedTitle) {
+              setEditorTitle(suggestedTitle);
+            } else if (!editorTitle.trim()) {
+              setEditorTitle('Novo_Verbete_com_Infobox');
+            }
+            setEditorWikitext(wikitext);
+            setEditorSummary('Inserção de modelo via Tutorial Oficial de Infobox');
+            setEditorFieldErrors({});
+            setActiveTab('editor');
+            showToast('Modelo de Infobox carregado no Editor Wikitexto!');
+          }}
+          onApplyToPersonalPage={
+            myPersonalUserPage
+              ? async (infoboxWikitext) => {
+                  const replacedBody = /\{\{Infobox[\s\S]*?\}\}/i.test(myPersonalUserPage.wikitext)
+                    ? myPersonalUserPage.wikitext.replace(/\{\{Infobox[\s\S]*?\}\}/i, infoboxWikitext)
+                    : `${infoboxWikitext}\n\n${myPersonalUserPage.wikitext}`;
+
+                  const revId = `rev-usr-${Date.now().toString(36)}`;
+                  const authorName = resolveUserDisplayName(currentUser);
+                  const updatedPage: WikiArticle = {
+                    ...myPersonalUserPage,
+                    wikitext: replacedBody,
+                    latestRevisionId: revId,
+                    updatedAt: new Date().toISOString()
+                  };
+                  const newRev: WikiRevision = {
+                    id: revId,
+                    articleSlug: myPersonalUserPage.slug,
+                    parentRevisionId: myPersonalUserPage.latestRevisionId,
+                    wikitext: replacedBody,
+                    comment: 'Atualização do {{Infobox Usuário}} via Tutorial Interativo',
+                    author: { id: currentUser?.uid || 'usr_community', name: authorName, isBot: false },
+                    timestamp: new Date().toISOString(),
+                    sha256: computeSha256Hex(replacedBody),
+                    byteSize: replacedBody.length,
+                    isMinor: false
+                  };
+
+                  await saveNotMediaWikiUserPageToDb(updatedPage, newRev);
+                  setArticles((prev) => [
+                    updatedPage,
+                    ...prev.filter((a) => a.slug.toLowerCase() !== updatedPage.slug.toLowerCase())
+                  ]);
+                  setRevisions((prev) => [newRev, ...prev]);
+                  setCurrentSlug(updatedPage.slug);
+                  setActiveTab('reader');
+                  showToast('✓ Infobox aplicado na sua página pessoal do NotMediaWiki!');
+                }
+              : undefined
+          }
+        />
       )}
 
       {/* ===================================================================== */}

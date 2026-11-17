@@ -18,12 +18,19 @@ import {
   onSnapshot
 } from "firebase/firestore";
 import {
+  WikiArticle,
   WikiExtension,
   ExtensionFile,
   computeSha256Hex,
   ALLOWED_EXTENSION_DOMAINS,
   SEED_WIKI_EXTENSIONS
 } from "./data/notMediaWikiData";
+import {
+  buildPersonalUserPageSlug,
+  buildPersonalUserPageTitle,
+  buildPersonalUserPageWikitext,
+  resolveUserDisplayName
+} from "./config/userInfobox";
 import {
   SEED_BEMTEVI_POSTS,
   extractHashtagsFromText
@@ -153,9 +160,13 @@ export interface AppUser {
   isBanned: boolean;
   isBan?: boolean;
   isTeacher: boolean;
+  isGuest?: boolean;
   createdAt?: any;
   updatedAt?: any;
+  firstLoginAt?: any;
   lastLoginAt?: any;
+  notMediaWikiPageSlug?: string;
+  notMediaWikiPageCreated?: boolean;
 }
 
 // ============================================
@@ -219,6 +230,11 @@ export interface DeletionRequest {
 export async function registerUser(user: User | { uid: string; displayName?: string; email?: string; photoURL?: string }, isGuest = false) {
   const uid = user.uid;
   const isBurocrata = isAuthorizedBurocrata(user.email);
+  const nowIso = new Date().toISOString();
+  const prevLocal = readLocalJson<any>("wzzm_local_session_profile", null);
+  const resolvedFirstLoginLocal =
+    prevLocal?.uid === uid && prevLocal?.firstLoginAt ? prevLocal.firstLoginAt : nowIso;
+
   const localProfile = {
     uid,
     email: user.email || (isGuest ? `${uid}@guest.local` : ""),
@@ -228,7 +244,10 @@ export async function registerUser(user: User | { uid: string; displayName?: str
     isBan: false,
     isBanned: false,
     isTeacher: isBurocrata,
-    lastLoginAt: new Date().toISOString()
+    isGuest,
+    createdAt: prevLocal?.uid === uid && prevLocal?.createdAt ? prevLocal.createdAt : nowIso,
+    firstLoginAt: resolvedFirstLoginLocal,
+    lastLoginAt: nowIso
   };
 
   writeLocalJson("wzzm_local_session_profile", localProfile);
@@ -238,23 +257,28 @@ export async function registerUser(user: User | { uid: string; displayName?: str
     return false;
   }
 
-  const userData = sanitizeFirestoreData({
-    uid,
-    email: user.email || "",
-    name: user.displayName || "Usuário",
-    profilePictureUrl: ("photoURL" in user ? user.photoURL : "") || "",
-    isAdmin: isBurocrata,
-    isBan: false,
-    isBanned: false,
-    isTeacher: isBurocrata,
-    isTeatcher: isBurocrata,
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-    lastLoginAt: serverTimestamp()
-  });
-
   try {
-    await setDoc(doc(db, "users", uid), userData, { merge: true });
+    const userRef = doc(db, "users", uid);
+    const existingSnap = await getDoc(userRef);
+    const existingData = existingSnap.exists() ? existingSnap.data() : null;
+
+    const userData = sanitizeFirestoreData({
+      uid,
+      email: user.email || "",
+      name: user.displayName || existingData?.name || "Usuário",
+      profilePictureUrl: ("photoURL" in user ? user.photoURL : "") || existingData?.profilePictureUrl || "",
+      isAdmin: isBurocrata || Boolean(existingData?.isAdmin),
+      isBan: Boolean(existingData?.isBan),
+      isBanned: Boolean(existingData?.isBanned),
+      isTeacher: isBurocrata || Boolean(existingData?.isTeacher),
+      isTeatcher: isBurocrata || Boolean(existingData?.isTeatcher),
+      ...(existingData?.createdAt ? {} : { createdAt: serverTimestamp() }),
+      ...(existingData?.firstLoginAt ? {} : { firstLoginAt: serverTimestamp() }),
+      updatedAt: serverTimestamp(),
+      lastLoginAt: serverTimestamp()
+    });
+
+    await setDoc(userRef, userData, { merge: true });
     await setDoc(doc(db, "usuários", uid), userData, { merge: true }).catch(() => {});
     return true;
   } catch {
@@ -617,14 +641,15 @@ export async function registerAuditLog(userUid: string, action: string, details?
 // ============================================
 
 export async function listAllUsersFromFirestore(): Promise<AppUser[]> {
-  // Publisher accounts may query the full Firestore users directory
+  const userMap = new Map<string, AppUser>();
+
+  // 1. Publisher accounts may query the full Firestore users directory
   if (auth.currentUser && isAuthorizedPublisher(auth.currentUser.email)) {
     try {
       const snapshot = await getDocs(collection(db, "users"));
-      const usersList: AppUser[] = [];
       snapshot.forEach((docSnap) => {
         const d = docSnap.data();
-        usersList.push({
+        userMap.set(docSnap.id, {
           uid: docSnap.id,
           email: d.email || "",
           name: d.name || d.displayName || "Usuário",
@@ -633,27 +658,87 @@ export async function listAllUsersFromFirestore(): Promise<AppUser[]> {
           isBanned: !!(d.isBanned || d.isBan),
           isTeacher: !!(d.isTeacher || d.isTeatcher),
           createdAt: d.createdAt?.toDate ? d.createdAt.toDate().toISOString() : d.createdAt,
-          lastLoginAt: d.lastLoginAt?.toDate ? d.lastLoginAt.toDate().toISOString() : d.lastLoginAt
+          firstLoginAt: d.firstLoginAt?.toDate ? d.firstLoginAt.toDate().toISOString() : d.firstLoginAt,
+          lastLoginAt: d.lastLoginAt?.toDate ? d.lastLoginAt.toDate().toISOString() : d.lastLoginAt,
+          notMediaWikiPageSlug: d.notMediaWikiPageSlug,
+          notMediaWikiPageCreated: d.notMediaWikiPageCreated
         });
       });
-      if (usersList.length > 0) return usersList;
     } catch {
       //
     }
   }
 
-  // Fallback: Backend API when available
+  // 2. Public userpage directory (allowed read: true by firestore.rules)
+  try {
+    const upSnap = await getDocs(collection(db, "userpage"));
+    upSnap.forEach((docSnap) => {
+      const d = docSnap.data();
+      const targetUid = d.ownerUid || docSnap.id;
+      if (!userMap.has(targetUid)) {
+        userMap.set(targetUid, {
+          uid: targetUid,
+          email: d.ownerEmail || "",
+          name: d.ownerName || d.displayName || (typeof d.title === "string" ? d.title.replace(/^Usuário:/i, "") : "Usuário"),
+          profilePictureUrl: d.avatarUrl || "",
+          isAdmin: !!d.isAdmin,
+          isBanned: false,
+          isTeacher: !!d.isTeacher,
+          isGuest: !!d.isGuest,
+          createdAt: d.createdAt?.toDate ? d.createdAt.toDate().toISOString() : d.createdAt,
+          firstLoginAt: d.firstLoginAt?.toDate ? d.firstLoginAt.toDate().toISOString() : d.firstLoginAt,
+          lastLoginAt: d.updatedAt?.toDate ? d.updatedAt.toDate().toISOString() : d.updatedAt,
+          notMediaWikiPageSlug: d.slug,
+          notMediaWikiPageCreated: true
+        });
+      }
+    });
+  } catch {
+    //
+  }
+
+  // 3. Backend API when available
   const res = await safeApiFetch("/api/admin/users");
   if (res && res.ok) {
     const data = await res.json().catch(() => null);
-    if (data && Array.isArray(data.users) && data.users.length > 0) {
-      return data.users;
+    if (data && Array.isArray(data.users)) {
+      for (const u of data.users) {
+        if (u?.uid && !userMap.has(u.uid)) {
+          userMap.set(u.uid, u);
+        }
+      }
     }
   }
 
-  // Fallback: own signed-in user or local session profile + baseline official curator
-  const result: AppUser[] = [
-    {
+  // 4. Local userpages & current session fallback
+  const localUserPages = readLocalJson<any[]>("wzzm_notmediawiki_userpages", []);
+  for (const lp of localUserPages) {
+    if (lp?.ownerUid && !userMap.has(lp.ownerUid)) {
+      userMap.set(lp.ownerUid, {
+        uid: lp.ownerUid,
+        email: lp.ownerEmail || "",
+        name: lp.ownerName || (typeof lp.title === "string" ? lp.title.replace(/^Usuário:/i, "") : "Usuário"),
+        profilePictureUrl: lp.avatarUrl || "",
+        isAdmin: !!lp.isAdmin,
+        isBanned: false,
+        isTeacher: !!lp.isTeacher,
+        isGuest: !!lp.isGuest,
+        createdAt: lp.createdAt,
+        firstLoginAt: lp.firstLoginAt || lp.createdAt,
+        lastLoginAt: lp.updatedAt,
+        notMediaWikiPageSlug: lp.slug,
+        notMediaWikiPageCreated: true
+      });
+    }
+  }
+
+  const localSession = readLocalJson<AppUser | null>("wzzm_local_session_profile", null);
+  if (localSession && localSession.uid && !userMap.has(localSession.uid)) {
+    userMap.set(localSession.uid, localSession);
+  }
+
+  if (!userMap.has("usr_pedro_cardona_official")) {
+    userMap.set("usr_pedro_cardona_official", {
       uid: "usr_pedro_cardona_official",
       email: "pedrohenriquecardonaperes@gmail.com",
       name: "Pedro Cardona",
@@ -661,15 +746,10 @@ export async function listAllUsersFromFirestore(): Promise<AppUser[]> {
       isAdmin: true,
       isBanned: false,
       isTeacher: true
-    }
-  ];
-
-  const localSession = readLocalJson<AppUser | null>("wzzm_local_session_profile", null);
-  if (localSession && localSession.uid && !result.some((u) => u.uid === localSession.uid)) {
-    result.unshift(localSession);
+    });
   }
 
-  return result;
+  return Array.from(userMap.values());
 }
 
 export async function getUserByUidFromFirestore(uid: string): Promise<AppUser | null> {
@@ -688,7 +768,10 @@ export async function getUserByUidFromFirestore(uid: string): Promise<AppUser | 
           isBanned: !!(d.isBanned || d.isBan),
           isTeacher: !!(d.isTeacher || d.isTeatcher),
           createdAt: d.createdAt?.toDate ? d.createdAt.toDate().toISOString() : d.createdAt,
-          lastLoginAt: d.lastLoginAt?.toDate ? d.lastLoginAt.toDate().toISOString() : d.lastLoginAt
+          firstLoginAt: d.firstLoginAt?.toDate ? d.firstLoginAt.toDate().toISOString() : d.firstLoginAt,
+          lastLoginAt: d.lastLoginAt?.toDate ? d.lastLoginAt.toDate().toISOString() : d.lastLoginAt,
+          notMediaWikiPageSlug: d.notMediaWikiPageSlug,
+          notMediaWikiPageCreated: d.notMediaWikiPageCreated
         };
       }
     } catch {
@@ -696,6 +779,58 @@ export async function getUserByUidFromFirestore(uid: string): Promise<AppUser | 
     }
   }
 
+  // Fallback 1: Public userpage document (readable by anyone per firestore.rules)
+  try {
+    const upSnap = await getDoc(doc(db, "userpage", uid));
+    if (upSnap.exists()) {
+      const d = upSnap.data();
+      return {
+        uid,
+        email: d.ownerEmail || "",
+        name: d.ownerName || d.displayName || (typeof d.title === "string" ? d.title.replace(/^Usuário:/i, "") : "Usuário"),
+        profilePictureUrl: d.avatarUrl || "",
+        isAdmin: !!d.isAdmin,
+        isBanned: false,
+        isTeacher: !!d.isTeacher,
+        isGuest: !!d.isGuest,
+        createdAt: d.createdAt?.toDate ? d.createdAt.toDate().toISOString() : d.createdAt,
+        firstLoginAt: d.firstLoginAt?.toDate ? d.firstLoginAt.toDate().toISOString() : d.firstLoginAt,
+        lastLoginAt: d.updatedAt?.toDate ? d.updatedAt.toDate().toISOString() : d.updatedAt,
+        notMediaWikiPageSlug: d.slug,
+        notMediaWikiPageCreated: true
+      };
+    }
+  } catch {
+    //
+  }
+
+  // Fallback 2: Local session or cached userpage
+  const localSession = readLocalJson<AppUser | null>("wzzm_local_session_profile", null);
+  if (localSession && localSession.uid === uid) {
+    return localSession;
+  }
+
+  const localUserPages = readLocalJson<any[]>("wzzm_notmediawiki_userpages", []);
+  const cachedPage = localUserPages.find((p) => p?.ownerUid === uid);
+  if (cachedPage) {
+    return {
+      uid,
+      email: cachedPage.ownerEmail || "",
+      name: cachedPage.ownerName || (typeof cachedPage.title === "string" ? cachedPage.title.replace(/^Usuário:/i, "") : "Usuário"),
+      profilePictureUrl: cachedPage.avatarUrl || "",
+      isAdmin: !!cachedPage.isAdmin,
+      isBanned: false,
+      isTeacher: !!cachedPage.isTeacher,
+      isGuest: !!cachedPage.isGuest,
+      createdAt: cachedPage.createdAt,
+      firstLoginAt: cachedPage.firstLoginAt || cachedPage.createdAt,
+      lastLoginAt: cachedPage.updatedAt,
+      notMediaWikiPageSlug: cachedPage.slug,
+      notMediaWikiPageCreated: true
+    };
+  }
+
+  // Fallback 3: Backend API
   const res = await safeApiFetch(`/api/admin/users`);
   if (res && res.ok) {
     const data = await res.json().catch(() => null);
@@ -1804,6 +1939,438 @@ export async function listWikiEventsFromDb(): Promise<any[]> {
   }
 
   return [];
+}
+
+// ============================================
+// NOTMEDIAWIKI USER PAGES (NAMESPACE 2) & FIRST-LOGIN AUTO-PROVISIONING
+// Uses Firestore /userpage/{uid} (owner writable) + Backend API + Local Cache
+// ============================================
+
+const NOTMEDIAWIKI_USERPAGES_CACHE_KEY = "wzzm_notmediawiki_userpages";
+const NOTMEDIAWIKI_USER_REVISIONS_CACHE_KEY = "wzzm_notmediawiki_user_revisions";
+
+function normalizeUserPageRecord(raw: any, fallbackUid?: string): WikiArticle & {
+  ownerUid: string;
+  ownerName?: string;
+  avatarUrl?: string;
+  isAdmin?: boolean;
+  isTeacher?: boolean;
+  isGuest?: boolean;
+  firstLoginAt?: string;
+} {
+  const uid = raw?.ownerUid || raw?.uid || fallbackUid || "usr_unknown";
+  const displayName = resolveUserDisplayName({
+    uid,
+    name: raw?.ownerName || raw?.name || (typeof raw?.title === "string" ? raw.title.replace(/^Usuário:/i, "") : undefined),
+    displayName: raw?.displayName,
+    email: raw?.ownerEmail || raw?.email
+  });
+  const createdAt = raw?.createdAt?.toDate ? raw.createdAt.toDate().toISOString() : (raw?.createdAt || new Date().toISOString());
+  const updatedAt = raw?.updatedAt?.toDate ? raw.updatedAt.toDate().toISOString() : (raw?.updatedAt || createdAt);
+  const firstLoginAt = raw?.firstLoginAt?.toDate ? raw.firstLoginAt.toDate().toISOString() : (raw?.firstLoginAt || createdAt);
+  const slug = raw?.slug || buildPersonalUserPageSlug(displayName, uid);
+  const title = raw?.title || buildPersonalUserPageTitle(displayName, uid);
+  const wikitext =
+    typeof raw?.wikitext === "string" && raw.wikitext.trim().length > 0
+      ? raw.wikitext
+      : buildPersonalUserPageWikitext(
+          {
+            uid,
+            name: displayName,
+            displayName,
+            profilePictureUrl: raw?.avatarUrl || raw?.profilePictureUrl || "",
+            isAdmin: Boolean(raw?.isAdmin),
+            isTeacher: Boolean(raw?.isTeacher),
+            isGuest: Boolean(raw?.isGuest),
+            firstLoginAt,
+            lastLoginAt: updatedAt
+          },
+          { contributionsCount: 1, pagesCreated: 1, lastEditAt: updatedAt }
+        );
+
+  return {
+    id: raw?.id || `userpage-${uid}`,
+    slug,
+    title,
+    namespace: 2,
+    wikitext,
+    summary: raw?.summary || `Página pessoal de ${displayName} no NotMediaWiki (com Infobox e contribuições).`,
+    latestRevisionId: raw?.latestRevisionId || `rev-user-${uid.slice(0, 8)}`,
+    createdAt,
+    updatedAt,
+    categories: Array.isArray(raw?.categories) && raw.categories.length > 0 ? raw.categories : ["Usuários", "NotMediaWiki"],
+    views: typeof raw?.views === "number" ? raw.views : 1,
+    ownerUid: uid,
+    ownerName: displayName,
+    avatarUrl: raw?.avatarUrl || raw?.profilePictureUrl || "",
+    isAdmin: Boolean(raw?.isAdmin),
+    isTeacher: Boolean(raw?.isTeacher),
+    isGuest: Boolean(raw?.isGuest),
+    firstLoginAt,
+    isPersonalUserPage: true
+  };
+}
+
+export function listLocalUserWikiRevisions(): any[] {
+  return readLocalJson<any[]>(NOTMEDIAWIKI_USER_REVISIONS_CACHE_KEY, []);
+}
+
+export async function listNotMediaWikiUserPagesFromDb(): Promise<WikiArticle[]> {
+  const pageMap = new Map<string, WikiArticle>();
+
+  // 1. Public Firestore userpage collection (read allowed globally)
+  try {
+    const snapshot = await getDocs(collection(db, "userpage"));
+    snapshot.forEach((docSnap) => {
+      const normalized = normalizeUserPageRecord({ id: `userpage-${docSnap.id}`, ...docSnap.data() }, docSnap.id);
+      pageMap.set(normalized.ownerUid || docSnap.id, normalized);
+    });
+  } catch {
+    // Graceful fallback
+  }
+
+  // 2. Express API userpages store
+  const apiRes = await safeApiFetch("/api/v1/userpages");
+  if (apiRes && apiRes.ok) {
+    const json = await apiRes.json().catch(() => null);
+    for (const up of json?.userPages || []) {
+      const normalized = normalizeUserPageRecord(up, up?.ownerUid);
+      const key = normalized.ownerUid || normalized.id;
+      if (!pageMap.has(key)) {
+        pageMap.set(key, normalized);
+      }
+    }
+  }
+
+  // 3. LocalStorage cache (preserves guest or offline userpages)
+  const localPages = readLocalJson<any[]>(NOTMEDIAWIKI_USERPAGES_CACHE_KEY, []);
+  for (const lp of localPages) {
+    const normalized = normalizeUserPageRecord(lp, lp?.ownerUid);
+    const key = normalized.ownerUid || normalized.id;
+    const existing = pageMap.get(key);
+    if (!existing || new Date(normalized.updatedAt).getTime() > new Date(existing.updatedAt).getTime()) {
+      pageMap.set(key, normalized);
+    }
+  }
+
+  const merged = Array.from(pageMap.values()).sort(
+    (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+  );
+  writeLocalJson(NOTMEDIAWIKI_USERPAGES_CACHE_KEY, merged.slice(0, 100));
+  return merged;
+}
+
+export async function getNotMediaWikiUserPageByUid(uid: string): Promise<WikiArticle | null> {
+  if (!uid) return null;
+
+  try {
+    const snap = await getDoc(doc(db, "userpage", uid));
+    if (snap.exists()) {
+      return normalizeUserPageRecord(snap.data(), uid);
+    }
+  } catch {
+    //
+  }
+
+  const localPages = readLocalJson<any[]>(NOTMEDIAWIKI_USERPAGES_CACHE_KEY, []);
+  const localHit = localPages.find((p) => p?.ownerUid === uid);
+  if (localHit) return normalizeUserPageRecord(localHit, uid);
+
+  const apiRes = await safeApiFetch(`/api/v1/userpages/${encodeURIComponent(uid)}`);
+  if (apiRes && apiRes.ok) {
+    const json = await apiRes.json().catch(() => null);
+    if (json?.userPage) return normalizeUserPageRecord(json.userPage, uid);
+  }
+
+  return null;
+}
+
+export async function ensureUserNotMediaWikiPersonalPage(
+  user: User | { uid: string; displayName?: string | null; name?: string | null; email?: string | null; photoURL?: string | null; profilePictureUrl?: string | null; isAdmin?: boolean; isTeacher?: boolean; isGuest?: boolean },
+  isGuest = false
+): Promise<{ userPage: WikiArticle; isFirstLogin: boolean }> {
+  const uid = user.uid;
+  const email = user.email || "";
+  const isBurocrata = isAuthorizedBurocrata(email) || Boolean((user as any).isAdmin);
+  const displayName = resolveUserDisplayName({
+    uid,
+    name: (user as any).name,
+    displayName: user.displayName,
+    email
+  });
+  const avatarUrl = (user as any).photoURL || (user as any).profilePictureUrl || "";
+  const nowIso = new Date().toISOString();
+
+  // Check existing page across Firestore /userpage/{uid}, localStorage cache, and backend
+  let existingRaw: any = null;
+  if (!isGuest && auth.currentUser && auth.currentUser.uid === uid) {
+    try {
+      const snap = await getDoc(doc(db, "userpage", uid));
+      if (snap.exists()) {
+        existingRaw = snap.data();
+      }
+    } catch {
+      //
+    }
+  }
+
+  if (!existingRaw) {
+    const localPages = readLocalJson<any[]>(NOTMEDIAWIKI_USERPAGES_CACHE_KEY, []);
+    existingRaw = localPages.find((p) => p?.ownerUid === uid) || null;
+  }
+
+  const alreadyProvisioned = Boolean(
+    existingRaw &&
+      existingRaw.notMediaWikiPageCreated &&
+      typeof existingRaw.wikitext === "string" &&
+      existingRaw.wikitext.trim().length > 0
+  );
+
+  if (alreadyProvisioned) {
+    const normalizedExisting = normalizeUserPageRecord(existingRaw, uid);
+    // Sync silently with backend
+    safeApiFetch("/api/v1/userpages/ensure", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        uid,
+        name: displayName,
+        displayName,
+        email,
+        profilePictureUrl: avatarUrl,
+        isAdmin: isBurocrata,
+        isTeacher: isBurocrata || Boolean((user as any).isTeacher),
+        isGuest
+      })
+    }).catch(() => {});
+    return { userPage: normalizedExisting, isFirstLogin: false };
+  }
+
+  // First login provisioning!
+  const slug = buildPersonalUserPageSlug(displayName, uid);
+  const title = buildPersonalUserPageTitle(displayName, uid);
+  const firstLoginIso = existingRaw?.firstLoginAt || nowIso;
+  const wikitext = buildPersonalUserPageWikitext(
+    {
+      uid,
+      name: displayName,
+      displayName,
+      email,
+      profilePictureUrl: avatarUrl,
+      isAdmin: isBurocrata,
+      isTeacher: isBurocrata || Boolean((user as any).isTeacher),
+      isGuest,
+      firstLoginAt: firstLoginIso,
+      lastLoginAt: nowIso
+    },
+    { contributionsCount: 1, pagesCreated: 1, lastEditAt: nowIso }
+  );
+
+  const initRevId = `rev-usr-init-${Date.now().toString(36)}`;
+  const createdPage = normalizeUserPageRecord(
+    {
+      id: `userpage-${uid}`,
+      slug,
+      title,
+      namespace: 2,
+      wikitext,
+      summary: `Página pessoal oficial de ${displayName} no NotMediaWiki (provisionada no primeiro login).`,
+      latestRevisionId: initRevId,
+      createdAt: firstLoginIso,
+      updatedAt: nowIso,
+      firstLoginAt: firstLoginIso,
+      categories: ["Usuários", "NotMediaWiki"],
+      views: 1,
+      ownerUid: uid,
+      ownerName: displayName,
+      avatarUrl,
+      isAdmin: isBurocrata,
+      isTeacher: isBurocrata || Boolean((user as any).isTeacher),
+      isGuest,
+      isPersonalUserPage: true,
+      notMediaWikiPageCreated: true
+    },
+    uid
+  );
+
+  // Persist to local cache
+  const localPages = readLocalJson<any[]>(NOTMEDIAWIKI_USERPAGES_CACHE_KEY, []);
+  const nextLocalPages = [
+    { ...createdPage, notMediaWikiPageCreated: true },
+    ...localPages.filter((p) => p?.ownerUid !== uid)
+  ];
+  writeLocalJson(NOTMEDIAWIKI_USERPAGES_CACHE_KEY, nextLocalPages.slice(0, 100));
+
+  // Record initial contribution revision locally
+  const initRev = {
+    id: initRevId,
+    articleSlug: slug,
+    parentRevisionId: null,
+    wikitext,
+    comment: `Criação automática da página pessoal ${title} e Infobox Usuário no primeiro login`,
+    author: { id: uid, name: displayName, isBot: false },
+    timestamp: nowIso,
+    sha256: computeSha256Hex(wikitext),
+    byteSize: wikitext.length,
+    isMinor: false
+  };
+  const localRevs = readLocalJson<any[]>(NOTMEDIAWIKI_USER_REVISIONS_CACHE_KEY, []);
+  writeLocalJson(NOTMEDIAWIKI_USER_REVISIONS_CACHE_KEY, [initRev, ...localRevs.filter((r) => r.id !== initRev.id)].slice(0, 200));
+
+  // Persist to Firestore /userpage/{uid} (allowed for owner per firestore.rules) without exposing raw PII email
+  if (!isGuest && auth.currentUser && auth.currentUser.uid === uid) {
+    try {
+      await setDoc(
+        doc(db, "userpage", uid),
+        sanitizeFirestoreData({
+          id: createdPage.id,
+          uid,
+          ownerUid: uid,
+          ownerName: displayName,
+          displayName,
+          avatarUrl,
+          slug: createdPage.slug,
+          title: createdPage.title,
+          namespace: 2,
+          wikitext: createdPage.wikitext,
+          summary: createdPage.summary,
+          latestRevisionId: initRevId,
+          categories: createdPage.categories,
+          views: 1,
+          isAdmin: isBurocrata,
+          isTeacher: isBurocrata || Boolean((user as any).isTeacher),
+          isGuest: false,
+          isPersonalUserPage: true,
+          notMediaWikiPageCreated: true,
+          firstLoginAt: serverTimestamp(),
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        }),
+        { merge: true }
+      );
+
+      await setDoc(
+        doc(db, "users", uid),
+        sanitizeFirestoreData({
+          notMediaWikiPageSlug: createdPage.slug,
+          notMediaWikiPageCreated: true
+        }),
+        { merge: true }
+      ).catch(() => {});
+    } catch {
+      // Cache + backend API still guarantee full persistence
+    }
+  }
+
+  // Sync with backend Express gateway
+  safeApiFetch("/api/v1/userpages/ensure", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      uid,
+      name: displayName,
+      displayName,
+      email,
+      profilePictureUrl: avatarUrl,
+      isAdmin: isBurocrata,
+      isTeacher: isBurocrata || Boolean((user as any).isTeacher),
+      isGuest
+    })
+  }).catch(() => {});
+
+  return { userPage: createdPage, isFirstLogin: true };
+}
+
+export async function saveNotMediaWikiUserPageToDb(
+  userPageData: WikiArticle,
+  revisionData?: any
+): Promise<{ userPage: WikiArticle; revision?: any }> {
+  const ownerUid = userPageData.ownerUid || auth.currentUser?.uid || "usr_community";
+  const revId =
+    revisionData?.id ||
+    userPageData.latestRevisionId ||
+    `rev-usr-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`;
+  const nowIso = new Date().toISOString();
+
+  const savedPage = normalizeUserPageRecord(
+    {
+      ...userPageData,
+      ownerUid,
+      latestRevisionId: revId,
+      updatedAt: nowIso,
+      notMediaWikiPageCreated: true
+    },
+    ownerUid
+  );
+
+  // 1. Update localStorage cache immediately
+  const localPages = readLocalJson<any[]>(NOTMEDIAWIKI_USERPAGES_CACHE_KEY, []);
+  writeLocalJson(NOTMEDIAWIKI_USERPAGES_CACHE_KEY, [
+    { ...savedPage, notMediaWikiPageCreated: true },
+    ...localPages.filter((p) => p?.ownerUid !== ownerUid)
+  ].slice(0, 100));
+
+  const finalRev = revisionData
+    ? {
+        ...revisionData,
+        id: revId,
+        articleSlug: savedPage.slug,
+        timestamp: nowIso,
+        sha256: revisionData.sha256 || computeSha256Hex(savedPage.wikitext),
+        byteSize: savedPage.wikitext.length
+      }
+    : null;
+
+  if (finalRev) {
+    const localRevs = readLocalJson<any[]>(NOTMEDIAWIKI_USER_REVISIONS_CACHE_KEY, []);
+    writeLocalJson(NOTMEDIAWIKI_USER_REVISIONS_CACHE_KEY, [finalRev, ...localRevs.filter((r) => r.id !== finalRev.id)].slice(0, 200));
+  }
+
+  // 2. Write to Firestore /userpage/{ownerUid} (allowed for owner || publisher)
+  if (auth.currentUser && (auth.currentUser.uid === ownerUid || isAuthorizedPublisher(auth.currentUser.email))) {
+    try {
+      await setDoc(
+        doc(db, "userpage", ownerUid),
+        sanitizeFirestoreData({
+          id: savedPage.id,
+          uid: ownerUid,
+          ownerUid,
+          ownerName: (savedPage as any).ownerName || savedPage.title.replace(/^Usuário:/i, ""),
+          slug: savedPage.slug,
+          title: savedPage.title,
+          namespace: 2,
+          wikitext: savedPage.wikitext,
+          summary: savedPage.summary,
+          latestRevisionId: revId,
+          categories: savedPage.categories,
+          views: savedPage.views,
+          isPersonalUserPage: true,
+          notMediaWikiPageCreated: true,
+          updatedAt: serverTimestamp()
+        }),
+        { merge: true }
+      );
+    } catch {
+      //
+    }
+  }
+
+  // 3. Sync with backend /api/v1/userpages/:uid
+  safeApiFetch(`/api/v1/userpages/${encodeURIComponent(ownerUid)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      title: savedPage.title,
+      wikitext: savedPage.wikitext,
+      summary: finalRev?.comment || savedPage.summary,
+      isMinor: finalRev?.isMinor || false,
+      authorName: finalRev?.author?.name || (savedPage as any).ownerName,
+      authorId: finalRev?.author?.id || ownerUid,
+      userEmail: auth.currentUser?.email || ""
+    })
+  }).catch(() => {});
+
+  return { userPage: savedPage, revision: finalRev };
 }
 
 // ============================================

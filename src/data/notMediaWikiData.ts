@@ -11,7 +11,7 @@ export interface WikiArticle {
   id: string;
   slug: string;
   title: string;
-  namespace: number; // 0: Main, 1: Talk, 4: Project, 10: Template, 14: Category
+  namespace: number; // 0: Main, 1: Talk, 2: User, 4: Project, 10: Template, 12: Help, 14: Category
   wikitext: string;
   summary: string;
   latestRevisionId: string;
@@ -20,6 +20,9 @@ export interface WikiArticle {
   categories: string[];
   views: number;
   isProtected?: boolean;
+  ownerUid?: string;
+  ownerEmail?: string;
+  isPersonalUserPage?: boolean;
 }
 
 export interface WikiRevision {
@@ -1471,39 +1474,87 @@ export function parseWikitextToHtml(wikitext: string, pageTitle: string = 'Artig
     return '';
   });
 
-  // 2. Extract Infobox: {{Infobox ... }}
-  text = text.replace(/\{\{Infobox\s+([^\n|]+)([\s\S]*?)\}\}/gi, (_, type, body) => {
-    const lines = body.split('\n');
+  // 2. Extract Infobox: {{Infobox ... }} (supports {{Infobox Tipo ...}} or {{Infobox\n| ...}})
+  const accentColorMap: Record<string, string> = {
+    amber: 'bg-amber-700 text-white',
+    blue: 'bg-blue-800 text-white',
+    emerald: 'bg-emerald-800 text-white',
+    red: 'bg-red-800 text-white',
+    indigo: 'bg-indigo-800 text-white',
+    slate: 'bg-slate-800 text-white',
+  };
+
+  text = text.replace(/\{\{Infobox(?:\s+([^\n|}]+))?([\s\S]*?)\}\}/gi, (_, type, body) => {
+    const lines = String(body || '').split('\n');
     let rowsHtml = '';
-    let title = type.trim();
+    let title = (type || 'Informações').trim();
+    let subtitle = '';
+    let imageUrl = '';
+    let imageCaption = '';
+    let headerClass = 'bg-[#141414] text-white';
 
     for (const line of lines) {
       const match = line.match(/^\s*\|\s*([^=]+?)\s*=\s*(.*)$/);
       if (match) {
         const key = match[1].trim();
+        const keyLower = key.toLowerCase();
         const val = match[2].trim();
-        if (key.toLowerCase() === 'name') {
+        if (!val) continue;
+
+        if (keyLower === 'name' || keyLower === 'nome' || keyLower === 'titulo' || keyLower === 'título') {
           title = val;
-        } else if (val) {
-          const formattedVal = val.replace(
+        } else if (keyLower === 'subtitulo' || keyLower === 'subtítulo' || keyLower === 'subtitle') {
+          subtitle = val;
+        } else if (keyLower === 'cor' || keyLower === 'tema' || keyLower === 'color') {
+          headerClass = accentColorMap[val.toLowerCase()] || headerClass;
+        } else if (keyLower === 'imagem' || keyLower === 'image' || keyLower === 'avatar' || keyLower === 'foto') {
+          if (/^(https?:\/\/|\/)/i.test(val)) {
+            imageUrl = val;
+          }
+        } else if (keyLower === 'legenda' || keyLower === 'caption') {
+          imageCaption = val;
+        } else {
+          let formattedVal = val.replace(
             /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g,
-            (_: string, target: string, label?: string) => label || target
+            (_m: string, target: string, label?: string) => {
+              const linkTarget = target.trim();
+              const linkLabel = (label || target).trim();
+              if (!internalLinks.includes(linkTarget)) internalLinks.push(linkTarget);
+              return `<a href="#wiki/${linkTarget.replace(/\s+/g, '_')}" data-wikilink="${linkTarget}" class="wiki-internal-link text-blue-800 hover:text-red-700 underline font-semibold">${linkLabel}</a>`;
+            }
           );
+          formattedVal = formattedVal.replace(
+            /\[(https?:\/\/[^\s]+)\s+([^\]]+)\]/g,
+            (_m: string, url: string, label: string) =>
+              `<a href="${url}" target="_blank" rel="noopener noreferrer" class="text-blue-700 hover:text-red-700 underline">${label} ↗</a>`
+          );
+
           rowsHtml += `
             <tr class="border-b border-stone-200">
-              <th class="py-1 px-2.5 text-left text-xs font-bold text-stone-700 bg-stone-100 uppercase tracking-wider">${key.replace(/_/g, ' ')}</th>
-              <td class="py-1 px-2.5 text-xs text-stone-900">${formattedVal}</td>
+              <th class="py-1.5 px-2.5 text-left text-[11px] font-bold text-stone-700 bg-stone-100 uppercase tracking-wider align-top w-2/5">${key.replace(/_/g, ' ')}</th>
+              <td class="py-1.5 px-2.5 text-xs text-stone-900 break-words">${formattedVal}</td>
             </tr>
           `;
         }
       }
     }
 
-    return `
-      <div class="wiki-infobox float-right sm:w-80 ml-6 mb-6 bg-white border-2 border-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] text-stone-900 overflow-hidden font-sans">
-        <div class="bg-[#141414] text-white p-2.5 text-center font-bold font-editorial text-sm tracking-wide">
-          ${title}
+    const imageBlock = imageUrl
+      ? `
+        <div class="p-3 bg-stone-50 border-b border-stone-200 text-center">
+          <img src="${imageUrl}" alt="${title}" class="max-h-40 mx-auto object-cover border border-stone-300 shadow-xs" onerror="this.style.display='none'" />
+          ${imageCaption ? `<p class="text-[10px] font-mono text-stone-600 mt-1.5">${imageCaption}</p>` : ''}
         </div>
+      `
+      : '';
+
+    return `
+      <div class="wiki-infobox float-right sm:w-80 ml-0 sm:ml-6 mb-6 w-full bg-white border-2 border-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] text-stone-900 overflow-hidden font-sans">
+        <div class="${headerClass} p-2.5 text-center border-b-2 border-[#141414]">
+          <div class="font-bold font-editorial text-sm tracking-wide">${title}</div>
+          ${subtitle ? `<div class="text-[10px] font-mono opacity-90 mt-0.5">${subtitle}</div>` : ''}
+        </div>
+        ${imageBlock}
         <table class="w-full text-xs border-collapse">
           <tbody>
             ${rowsHtml}
@@ -1511,6 +1562,11 @@ export function parseWikitextToHtml(wikitext: string, pageTitle: string = 'Artig
         </table>
       </div>
     `;
+  });
+
+  // 2.5 Extract Userbox templates: {{Userbox|icon|text}}
+  text = text.replace(/\{\{Userbox\|([^|}]+)\|([^}]+)\}\}/gi, (_, icon, boxText) => {
+    return `<div class="inline-flex items-center gap-2 bg-[#FAF9F5] border-2 border-[#141414] px-3 py-1.5 mr-2 mb-2 font-mono text-[11px] text-stone-900 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]"><span class="text-sm">${icon.trim()}</span><span>${boxText.trim()}</span></div>`;
   });
 
   // 3. Extract <ref> tags
