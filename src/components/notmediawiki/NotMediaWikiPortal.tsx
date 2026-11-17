@@ -903,10 +903,56 @@ export default function NotMediaWikiPortal({
     }
   }, [selectedOldRevId, selectedNewRevId, revisions]);
 
+  // Pick and open a random article inside NotMediaWiki (prioritizes Namespace 0 encyclopedia articles)
+  const handleOpenRandomArticle = () => {
+    if (articles.length === 0) {
+      showToast('Nenhum artigo cadastrado no banco de dados para sorteio.', true);
+      return;
+    }
+
+    const encyclopediaPool = articles.filter(
+      (a) =>
+        a.namespace === 0 &&
+        !a.isPersonalUserPage &&
+        !a.slug.toLowerCase().startsWith('usuário:') &&
+        !a.slug.toLowerCase().startsWith('usuario:')
+    );
+
+    const basePool = encyclopediaPool.length > 0 ? encyclopediaPool : articles;
+    const currentNormalized = (currentSlug || '').toLowerCase();
+    const differentInBase = basePool.filter((a) => a.slug.toLowerCase() !== currentNormalized);
+    const differentInAll = articles.filter((a) => a.slug.toLowerCase() !== currentNormalized);
+
+    const candidates =
+      differentInBase.length > 0
+        ? differentInBase
+        : differentInAll.length > 0
+          ? differentInAll
+          : basePool;
+
+    const chosen = candidates[Math.floor(Math.random() * candidates.length)];
+    setCurrentSlug(chosen.slug);
+    setActiveTab('reader');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    showToast(`Artigo aleatório: "${chosen.title}"`);
+  };
+
   // Internal link handler
   const handleNavigateSlug = (slug: string) => {
     const formatted = slug.replace(/^wiki\//, '').replace(/\s+/g, '_');
-    const target = articles.find((a) => a.slug.toLowerCase() === formatted.toLowerCase());
+    const normalized = formatted.toLowerCase();
+    if (
+      normalized === 'special:random' ||
+      normalized === 'especial:aleatório' ||
+      normalized === 'especial:aleatorio' ||
+      normalized === 'artigo_aleatório' ||
+      normalized === 'artigo_aleatorio'
+    ) {
+      handleOpenRandomArticle();
+      return;
+    }
+
+    const target = articles.find((a) => a.slug.toLowerCase() === normalized);
     if (target) {
       setCurrentSlug(target.slug);
       setActiveTab('reader');
@@ -1245,6 +1291,16 @@ export default function NotMediaWikiPortal({
 
             <button
               type="button"
+              onClick={handleOpenRandomArticle}
+              className="bg-stone-800 hover:bg-stone-700 text-stone-100 px-3.5 py-2 text-xs font-mono font-bold uppercase tracking-wider flex items-center gap-1.5 border border-stone-500 shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] cursor-pointer"
+              title="Sortear e ler um artigo aleatório no NotMediaWiki"
+            >
+              <Shuffle className="w-3.5 h-3.5 text-amber-300" />
+              <span>Artigo Aleatório</span>
+            </button>
+
+            <button
+              type="button"
               onClick={() => setActiveTab('tutorial')}
               className="bg-stone-800 hover:bg-stone-700 text-amber-300 px-3.5 py-2 text-xs font-mono font-bold uppercase tracking-wider flex items-center gap-1.5 border border-amber-500/60 shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] cursor-pointer"
             >
@@ -1304,6 +1360,15 @@ export default function NotMediaWikiPortal({
               </button>
             );
           })}
+          <button
+            type="button"
+            onClick={handleOpenRandomArticle}
+            className="ml-auto flex items-center gap-1.5 px-3 py-2 whitespace-nowrap transition-all cursor-pointer border border-[#141414] bg-amber-100 hover:bg-amber-200 text-stone-950 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]"
+            title="Especial:Aleatório — Abrir um artigo aleatório do acervo"
+          >
+            <Shuffle className="w-3.5 h-3.5 text-amber-800" />
+            <span>Artigo Aleatório</span>
+          </button>
         </div>
       </nav>
 
@@ -1334,18 +1399,10 @@ export default function NotMediaWikiPortal({
                     <span>Como Usar Infobox</span>
                   </button>
                   <button
-                    onClick={() => {
-                      const pool = articles.filter((a) => a.slug !== currentSlug);
-                      const candidates = pool.length > 0 ? pool : articles;
-                      if (candidates.length > 0) {
-                        const random = candidates[Math.floor(Math.random() * candidates.length)];
-                        handleNavigateSlug(random.slug);
-                      } else {
-                        showToast('Nenhum artigo cadastrado no banco de dados para sorteio.', true);
-                      }
-                    }}
+                    type="button"
+                    onClick={handleOpenRandomArticle}
                     className="paper-button-secondary px-3 py-1.5 text-xs font-mono font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer"
-                    title="Abrir verbete aleatório"
+                    title="Abrir verbete aleatório no NotMediaWiki"
                   >
                     <Shuffle className="w-3.5 h-3.5" />
                     <span>Artigo Aleatório</span>
@@ -1500,18 +1557,30 @@ export default function NotMediaWikiPortal({
           <p className="text-stone-600 max-w-md mx-auto">
             O acervo da NotWikiPedia sincroniza exclusivamente dados reais salvos no banco. Não há dados sugeridos ou simulados.
           </p>
-          <button
-            onClick={() => {
-              setEditorTitle(currentSlug || 'Página_Principal');
-              setEditorWikitext('== Introdução ==\nEscreva aqui o conteúdo do novo verbete no banco de dados...');
-              setEditorSummary('Criação do verbete');
-              setActiveTab('editor');
-            }}
-            className="paper-button bg-stone-900 text-white hover:bg-stone-800 px-4 py-2 font-bold uppercase tracking-wider inline-flex items-center gap-2 cursor-pointer"
-          >
-            <Plus className="w-4 h-4 text-amber-300" />
-            <span>Criar Este Artigo no Banco</span>
-          </button>
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            <button
+              onClick={() => {
+                setEditorTitle(currentSlug || 'Página_Principal');
+                setEditorWikitext('== Introdução ==\nEscreva aqui o conteúdo do novo verbete no banco de dados...');
+                setEditorSummary('Criação do verbete');
+                setActiveTab('editor');
+              }}
+              className="paper-button bg-stone-900 text-white hover:bg-stone-800 px-4 py-2 font-bold uppercase tracking-wider inline-flex items-center gap-2 cursor-pointer"
+            >
+              <Plus className="w-4 h-4 text-amber-300" />
+              <span>Criar Este Artigo no Banco</span>
+            </button>
+            {articles.length > 0 && (
+              <button
+                type="button"
+                onClick={handleOpenRandomArticle}
+                className="paper-button-secondary px-4 py-2 font-bold uppercase tracking-wider inline-flex items-center gap-2 cursor-pointer"
+              >
+                <Shuffle className="w-4 h-4" />
+                <span>Artigo Aleatório</span>
+              </button>
+            )}
+          </div>
         </div>
       )}
 
@@ -1569,6 +1638,16 @@ export default function NotMediaWikiPortal({
                 >
                   <Edit3 className="w-3.5 h-3.5 text-amber-300" />
                   <span>Editar Wikitexto</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleOpenRandomArticle}
+                  className="paper-button-secondary px-3 py-1.5 text-xs font-mono font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer"
+                  title="Ir para outro artigo aleatório"
+                >
+                  <Shuffle className="w-3.5 h-3.5 text-amber-700" />
+                  <span>Aleatório</span>
                 </button>
 
                 <button
@@ -2385,17 +2464,13 @@ export default function NotMediaWikiPortal({
                   Criar Nova Página
                 </button>
                 <button
-                  onClick={() => {
-                    if (articles.length === 0) {
-                      showToast('Nenhum artigo cadastrado no banco de dados para sorteio.', true);
-                      return;
-                    }
-                    const random = articles[Math.floor(Math.random() * articles.length)];
-                    handleNavigateSlug(random.slug);
-                  }}
-                  className="w-full paper-button-secondary p-2 font-bold uppercase text-[10px] cursor-pointer"
+                  type="button"
+                  onClick={handleOpenRandomArticle}
+                  className="w-full paper-button-secondary p-2 font-bold uppercase text-[10px] cursor-pointer flex items-center justify-center gap-1.5"
+                  title="Especial:Aleatório — Sortear artigo no acervo"
                 >
-                  Página Aleatória
+                  <Shuffle className="w-3.5 h-3.5 text-amber-800" />
+                  <span>Artigo Aleatório (Special:Random)</span>
                 </button>
               </div>
             </div>
