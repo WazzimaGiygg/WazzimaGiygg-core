@@ -1575,14 +1575,17 @@ export function parseWikitextToHtml(wikitext: string, pageTitle: string = 'Artig
 
   text = text.replace(/<ref(?:\s+name="([^"]+)")?>([\s\S]*?)<\/ref>/gi, (_, name, content) => {
     let index: number;
+    let isFirst = false;
     if (name && namedRefs.has(name)) {
       index = namedRefs.get(name)!;
     } else {
       index = refCount++;
+      isFirst = true;
       if (name) namedRefs.set(name, index);
       references.push(content.trim());
     }
-    return `<sup class="wiki-ref cursor-pointer font-bold text-blue-700 hover:text-red-700" title="Citação ${index}"><a href="#cite_note-${index}">[${index}]</a></sup>`;
+    const idAttr = isFirst ? ` id="cite_ref-${index}"` : '';
+    return `<sup${idAttr} class="wiki-ref cursor-pointer font-bold text-blue-700 hover:text-red-700" title="Citação ${index}"><a href="#cite_note-${index}">[${index}]</a></sup>`;
   });
 
   // 4. Headings & Table of Contents (TOC)
@@ -1679,14 +1682,27 @@ export function parseWikitextToHtml(wikitext: string, pageTitle: string = 'Artig
         <h4 class="font-bold text-stone-900 uppercase tracking-wider text-[11px] mb-3">Notas de Rodapé & Citações:</h4>
         <ol class="space-y-1.5 list-decimal list-inside text-stone-700">
           ${references
-            .map(
-              (ref, i) => `
+            .map((ref, i) => {
+              let renderedRef = ref.replace(
+                /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g,
+                (_m: string, target: string, label?: string) => {
+                  const linkTarget = target.trim();
+                  const linkLabel = (label || target).trim();
+                  if (!internalLinks.includes(linkTarget)) internalLinks.push(linkTarget);
+                  return `<a href="#wiki/${linkTarget.replace(/\s+/g, '_')}" data-wikilink="${linkTarget}" class="wiki-internal-link text-blue-800 hover:text-red-700 underline font-semibold">${linkLabel}</a>`;
+                }
+              );
+              renderedRef = renderedRef.replace(
+                /\[(https?:\/\/[^\s]+)\s+([^\]]+)\]/g,
+                '<a href="$1" target="_blank" rel="noopener noreferrer" class="underline text-blue-700">$2 ↗</a>'
+              );
+              return `
             <li id="cite_note-${i + 1}" class="hover:bg-amber-50 p-1">
               <a href="#cite_ref-${i + 1}" class="text-blue-700 font-bold mr-1">↑</a>
-              <span>${ref.replace(/\[(https?:\/\/[^\s]+)\s+([^\]]+)\]/g, '<a href="$1" target="_blank" rel="noopener noreferrer" class="underline text-blue-700">$2 ↗</a>')}</span>
+              <span>${renderedRef}</span>
             </li>
-          `
-            )
+          `;
+            })
             .join('')}
         </ol>
       </div>

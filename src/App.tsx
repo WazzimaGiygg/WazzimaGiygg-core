@@ -79,9 +79,12 @@ import {
   getStaticSanctionsFallback,
   db,
   sanitizeFirestoreData,
-  ensureUserNotMediaWikiPersonalPage
+  ensureUserNotMediaWikiPersonalPage,
+  listWikiArticlesFromDb,
+  listNotMediaWikiUserPagesFromDb,
+  getUserByUidFromFirestore
 } from "./firebase";
-import { addDoc, collection, serverTimestamp } from "firebase/firestore";
+import { addDoc, collection, doc, getDoc, serverTimestamp } from "firebase/firestore";
 import { stripHtmlToPlainText } from "./utils/text";
 import AdminPanel from "./components/AdminPanel";
 import NotMediaWikiPortal from "./components/notmediawiki/NotMediaWikiPortal";
@@ -194,6 +197,10 @@ export default function App() {
   const [isVersionModalOpen, setIsVersionModalOpen] = useState(false);
   const [toast, setToast] = useState<{ message: string; isError: boolean } | null>(null);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+
+  // Catalog index for NotMediaWiki articles & async ?uid= reference resolution
+  const [wikiArticlesList, setWikiArticlesList] = useState<WikiArticle[]>([]);
+  const [isInitialCatalogLoaded, setIsInitialCatalogLoaded] = useState(false);
 
   // First-login NotMediaWiki Personal Page & Infobox Tutorial Navigation
   const [personalWikiPage, setPersonalWikiPage] = useState<WikiArticle | null>(null);
@@ -457,7 +464,7 @@ export default function App() {
       return;
     }
 
-    const rawUid = uidNav.currentUid;
+    const rawUid = uidNav.currentUid.trim();
     const tabMatch = parseTabFromUid(rawUid);
 
     if (tabMatch) {
@@ -468,10 +475,13 @@ export default function App() {
       return;
     }
 
-    // Check if it's an article ID
+    // 1. Check if it's a Portal Article ID across all collections
     let foundArticle: Article | null = null;
+    const rawLower = rawUid.toLowerCase();
     for (const list of Object.values(articles)) {
-      const art = list.find((a) => a.id === rawUid);
+      const art = list.find(
+        (a) => a.id === rawUid || (a.id && a.id.toLowerCase() === rawLower)
+      );
       if (art) {
         foundArticle = art;
         break;
@@ -487,11 +497,114 @@ export default function App() {
       return;
     }
 
-    // Otherwise it is a user profile UID (e.g. usr_* or convid_*)
-    if (currentTab !== "bemtevi") {
-      setIsUserProfileModalOpen(true);
+    // 2. Check if it's a NotMediaWiki Article (by id, slug, or title)
+    const normalizedSlug = rawUid.replace(/\s+/g, "_").toLowerCase();
+    const foundWikiArticle = wikiArticlesList.find(
+      (w) =>
+        w.id === rawUid ||
+        (w.id && w.id.toLowerCase() === rawLower) ||
+        w.slug.toLowerCase() === rawLower ||
+        w.slug.toLowerCase() === normalizedSlug ||
+        w.title.toLowerCase() === rawLower.replace(/_/g, " ")
+    );
+
+    if (foundWikiArticle) {
+      setSelectedArticle(null);
+      setIsUserProfileModalOpen(false);
+      setWikiTargetSlug(foundWikiArticle.slug);
+      setWikiTargetInnerTab("reader");
+      setCurrentTab("notmediawiki");
+      return;
     }
-  }, [uidNav.currentUid, articles, currentTab]);
+
+    // 3. Check if it is explicitly a known User Profile UID (usr_*, convid_*, logged user, or in allUsersList)
+    const isExplicitUserUid =
+      rawUid.startsWith("usr_") ||
+      rawUid.startsWith("convid_") ||
+      rawUid === user?.uid ||
+      allUsersList.some((u) => u.uid === rawUid);
+
+    if (isExplicitUserUid) {
+      if (currentTab !== "bemtevi") {
+        setIsUserProfileModalOpen(true);
+      }
+      return;
+    }
+
+    // 4. Wait for initial article catalogs to finish loading before resolving unknown UIDs
+    if (!isInitialCatalogLoaded) {
+      return;
+    }
+
+    // 5. On-demand fallback lookup (newly published articles or Firestore 'artigos' / 'wiki_articles' docs vs real user UID)
+    let cancelled = false;
+    (async () => {
+      try {
+        const [freshWikiArts, freshUserPages] = await Promise.all([
+          listWikiArticlesFromDb().catch(() => []),
+          listNotMediaWikiUserPagesFromDb().catch(() => [])
+        ]);
+        if (cancelled) return;
+
+        const combinedWiki: WikiArticle[] = [...freshWikiArts, ...freshUserPages];
+        if (combinedWiki.length > 0) {
+          setWikiArticlesList(combinedWiki);
+          const freshMatch = combinedWiki.find(
+            (w) =>
+              w.id === rawUid ||
+              (w.id && w.id.toLowerCase() === rawLower) ||
+              w.slug.toLowerCase() === rawLower ||
+              w.slug.toLowerCase() === normalizedSlug
+          );
+          if (freshMatch) {
+            setSelectedArticle(null);
+            setIsUserProfileModalOpen(false);
+            setWikiTargetSlug(freshMatch.slug);
+            setWikiTargetInnerTab("reader");
+            setCurrentTab("notmediawiki");
+            return;
+          }
+        }
+
+        // Check generic 'artigos' collection by document ID
+        try {
+          const artSnap = await getDoc(doc(db, "artigos", rawUid));
+          if (!cancelled && artSnap.exists()) {
+            const d = artSnap.data();
+            setSelectedArticle({
+              id: artSnap.id,
+              titulo: d.titulo || "Artigo do Acervo",
+              descricao: d.descricao || d.conteudo || "",
+              conteudo: d.conteudo || d.descricao || "",
+              setor: d.setor || "Geral",
+              criadorEmail: d.criadorEmail || d.autor || "Redação",
+              dataCriacao: d.dataCriacao?.toDate ? d.dataCriacao.toDate().toLocaleDateString("pt-BR") : (d.dataCriacao || "Recente"),
+              ultimaEdicao: d.ultimaEdicao?.toDate ? d.ultimaEdicao.toDate().toLocaleDateString("pt-BR") : (d.ultimaEdicao || "Recente"),
+              visualizacoes: d.visualizacoes || 0,
+              colecao: d.colecao || "wikiworldweb",
+              link: d.link
+            });
+            setIsUserProfileModalOpen(false);
+            return;
+          }
+        } catch {
+          // ignore
+        }
+
+        // Only open UserProfileModal if this UID actually belongs to a user record
+        const dbUser = await getUserByUidFromFirestore(rawUid).catch(() => null);
+        if (!cancelled && dbUser && currentTab !== "bemtevi") {
+          setIsUserProfileModalOpen(true);
+        }
+      } catch {
+        // ignore lookup errors
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [uidNav.currentUid, articles, wikiArticlesList, isInitialCatalogLoaded, currentTab, allUsersList, user?.uid]);
 
   // Dynamic Canonical, Meta Tags, OpenGraph & Schema.org SEO Sync for core.wazzimagiygg.com
   useEffect(() => {
@@ -775,12 +888,14 @@ export default function App() {
     async function initData() {
       setIsLoading(true);
       try {
-        const [www, ensaio, acad, mat, books] = await Promise.all([
+        const [www, ensaio, acad, mat, books, wikiArts, wikiUserPages] = await Promise.all([
           loadCollectionContent("wikiworldweb"),
           loadCollectionContent("materiadeensaio"),
           loadCollectionContent("academico"),
           loadCollectionContent("materia"),
-          loadCollectionContent("uwgbooks")
+          loadCollectionContent("uwgbooks"),
+          listWikiArticlesFromDb().catch(() => []),
+          listNotMediaWikiUserPagesFromDb().catch(() => [])
         ]);
 
         setArticles({
@@ -790,6 +905,12 @@ export default function App() {
           materia: mat,
           uwgbooks: books
         });
+
+        const wikiBySlug = new Map<string, WikiArticle>();
+        for (const w of [...(wikiArts || []), ...(wikiUserPages || [])]) {
+          if (w?.slug) wikiBySlug.set(w.slug.toLowerCase(), w);
+        }
+        setWikiArticlesList(Array.from(wikiBySlug.values()));
 
         // Single probe to check whether Express backend API is mounted
         const backendOk = await isBackendApiAvailable();
@@ -900,6 +1021,7 @@ export default function App() {
         console.error("Error loading initial catalog:", err);
       } finally {
         setIsLoading(false);
+        setIsInitialCatalogLoaded(true);
       }
     }
 
@@ -2311,6 +2433,9 @@ export default function App() {
             onOpenUserInfobox={(targetUid) => {
               uidNav.navigateToUid(targetUid);
               setIsUserProfileModalOpen(true);
+            }}
+            onArticlesSynced={(syncedArticles) => {
+              setWikiArticlesList(syncedArticles);
             }}
           />
         )}

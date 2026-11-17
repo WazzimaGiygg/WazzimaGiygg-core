@@ -726,11 +726,11 @@ export default function AbntCitationGenerator({
             <span>{generated.referenceParts.subtitleSuffix}</span>
             <span>{generated.referenceParts.restSuffix}</span>
             <a
-              href={generated.referenceParts.url}
+              href={articleUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="text-blue-700 dark:text-sky-400 hover:text-red-700 dark:hover:text-red-400 underline font-bold"
-              title={`Abrir UID do artigo: ${articleId}`}
+              title={`Abrir artigo "${articleTitle}" (?uid=${articleId})`}
             >
               {generated.referenceParts.url}
             </a>
@@ -797,10 +797,11 @@ export default function AbntCitationGenerator({
             {articleId}
           </code>
           <a
-            href={activeUrl}
+            href={articleUrl}
             target="_blank"
             rel="noopener noreferrer"
             className="text-blue-700 dark:text-sky-400 hover:underline flex items-center gap-0.5 font-semibold"
+            title={`Abrir artigo "${articleTitle}" pelo UID`}
           >
             <span>Abrir</span>
             <ExternalLink className="w-3 h-3" />

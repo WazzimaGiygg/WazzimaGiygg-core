@@ -145,6 +145,7 @@ interface NotMediaWikiPortalProps {
   initialInnerTab?: NotMediaWikiInnerTab;
   onNavigationConsumed?: () => void;
   onOpenUserInfobox?: (uid: string) => void;
+  onArticlesSynced?: (articles: WikiArticle[]) => void;
 }
 
 export default function NotMediaWikiPortal({
@@ -153,7 +154,8 @@ export default function NotMediaWikiPortal({
   targetSlug,
   initialInnerTab,
   onNavigationConsumed,
-  onOpenUserInfobox
+  onOpenUserInfobox,
+  onArticlesSynced
 }: NotMediaWikiPortalProps) {
   // Navigation & View States
   const [activeTab, setActiveTab] = useState<NotMediaWikiInnerTab>(initialInnerTab || 'portal');
@@ -728,13 +730,14 @@ export default function NotMediaWikiPortal({
         );
 
         setArticles(mergedArticles);
+        onArticlesSynced?.(mergedArticles);
         setRevisions(mergedRevs);
         setEvents(dbEvents || []);
 
         if (targetSlug) {
           setCurrentSlug(targetSlug);
-        } else if (mergedArticles.length > 0 && !currentSlug) {
-          setCurrentSlug(mergedArticles[0].slug);
+        } else if (mergedArticles.length > 0) {
+          setCurrentSlug((prev) => prev || mergedArticles[0].slug);
         }
       } catch (err) {
         console.warn('Erro ao sincronizar NotWikiPedia com banco de dados:', err);
@@ -1644,11 +1647,23 @@ export default function NotMediaWikiPortal({
               className="wiki-article-body flow-root prose prose-stone max-w-none font-serif text-stone-900 leading-relaxed text-base"
               onClick={(e) => {
                 const target = e.target as HTMLElement;
-                const link = target.closest('a[data-wikilink]') as HTMLAnchorElement;
-                if (link) {
+                const wikiLink = target.closest('a[data-wikilink]') as HTMLAnchorElement | null;
+                if (wikiLink) {
                   e.preventDefault();
-                  const targetSlugAttr = link.getAttribute('data-wikilink');
+                  const targetSlugAttr = wikiLink.getAttribute('data-wikilink');
                   if (targetSlugAttr) handleNavigateSlug(targetSlugAttr);
+                  return;
+                }
+                const anchorLink = target.closest('a[href^="#cite_"]') as HTMLAnchorElement | null;
+                if (anchorLink) {
+                  const hashId = anchorLink.getAttribute('href')?.slice(1);
+                  if (hashId) {
+                    const el = document.getElementById(hashId);
+                    if (el) {
+                      e.preventDefault();
+                      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
+                  }
                 }
               }}
               dangerouslySetInnerHTML={{ __html: parseResult.html }}
@@ -1796,7 +1811,7 @@ export default function NotMediaWikiPortal({
             )}
             {/* Gerador de Citação ABNT Customizável para Verbetes Wiki */}
             <AbntCitationGenerator
-              articleId={currentArticle.id || currentArticle.slug}
+              articleId={currentArticle.slug || currentArticle.id}
               articleTitle={currentArticle.title}
               articleRawContent={parseResult.html || currentArticle.summary || currentArticle.wikitext || ''}
               defaultAuthor="NotMediaWiki"
@@ -1805,8 +1820,8 @@ export default function NotMediaWikiPortal({
                 const match = String(currentArticle.updatedAt || currentArticle.createdAt || '').match(/\b(19|20)\d{2}\b/);
                 return match ? match[0] : String(new Date().getFullYear());
               })()}
-              articleUrl={`${window.location.origin}/?uid=${encodeURIComponent(currentArticle.id || currentArticle.slug)}`}
-              canonicalCoreUrl={`https://core.wazzimagiygg.com/?uid=${encodeURIComponent(currentArticle.id || currentArticle.slug)}`}
+              articleUrl={`${window.location.origin}/?uid=${encodeURIComponent(currentArticle.slug || currentArticle.id)}`}
+              canonicalCoreUrl={`https://core.wazzimagiygg.com/?uid=${encodeURIComponent(currentArticle.slug || currentArticle.id)}`}
               showToast={showToast}
             />
           </div>
