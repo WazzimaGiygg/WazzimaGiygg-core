@@ -2634,7 +2634,6 @@ app.get('/sitemap.xml', (_req: Request, res: Response) => {
     { loc: `${baseUrl}/?uid=dossie`, changefreq: 'daily', priority: '0.95' },
     { loc: `${baseUrl}/?uid=wikiwazzimagiygg`, changefreq: 'daily', priority: '0.95' },
     { loc: `${baseUrl}/?uid=notmediawiki`, changefreq: 'daily', priority: '0.9' },
-    { loc: `${baseUrl}/?uid=wnpx`, changefreq: 'weekly', priority: '0.9' },
     { loc: `${baseUrl}/?uid=academico`, changefreq: 'weekly', priority: '0.85' },
     { loc: `${baseUrl}/?uid=materiadeensaio`, changefreq: 'weekly', priority: '0.85' },
     { loc: `${baseUrl}/?uid=uwgbooks`, changefreq: 'weekly', priority: '0.85' },

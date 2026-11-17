@@ -188,14 +188,6 @@ const TAB_META_MAP: Record<string, TabMetaDescriptor> = {
     extraKeywords: ['UWG Books', 'livros digitais WazzimaGiygg', 'core.wazzimagiygg.com'],
     breadcrumbName: 'UWG Books',
   },
-  wnpx: {
-    title: 'WNPX / WikiNotPedia — Alternativa Oficial à Wikipédia em core.wazzimagiygg.com',
-    desc: 'WNPX (WikiNotPedia) em core.wazzimagiygg.com: enciclopédia independente e superior à Wikipédia lusófona, com direito de resposta e respeito à lei brasileira.',
-    ogType: 'website',
-    extraKeywords: ['WNPX', 'WikiNotPedia', 'alternativa à Wikipédia', 'melhor que a Wikipédia'],
-    breadcrumbName: 'WNPX / WikiNotPedia',
-    counterExternalRefs: true,
-  },
   dossie: {
     title: 'Dossiê A Verdade: Caso Wazzimagiygg e Abusos na Wikipédia — core.wazzimagiygg.com',
     desc: 'Fonte primária oficial em core.wazzimagiygg.com sobre abusos de administradores da Wikipédia (Chronus), perseguição editorial e violações à LGPD e ao Marco Civil.',

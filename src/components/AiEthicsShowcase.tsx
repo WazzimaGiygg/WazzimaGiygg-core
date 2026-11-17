@@ -154,7 +154,7 @@ export const WIKIMEDIA_INDEPENDENCE_REASONS = [
     titulo: 'Autonomia contra Oligarquias Editoriais e Censura Prévia',
     eixo: 'Independência Institucional',
     motivo:
-      'Este portal não utiliza dumps, APIs, feeds ou curadoria da Wikimedia Foundation (Wikipédia). A infraestrutura do WazzimaGiygg, WNPX e NotMediaWiki foi construída de forma autônoma porque a governança praticada na Wikipédia Lusófona consolidou grupos fechados que revertem contribuições acadêmicas válidas sem debate técnico.'
+      'Este portal não utiliza dumps, APIs, feeds ou curadoria da Wikimedia Foundation (Wikipédia). A infraestrutura do WazzimaGiygg e do NotMediaWiki foi construída de forma autônoma porque a governança praticada na Wikipédia Lusófona consolidou grupos fechados que revertem contribuições acadêmicas válidas sem debate técnico.'
   },
   {
     num: '02',

@@ -2,12 +2,12 @@
 
     {
         "label": "Mudanças Recentes",
-        "href": "./wikinotpedia/",
+        "href": "./?uid=notmediawiki",
         "requiresAuth": true
     },
 
     {
-        "label": "Procurar artigo WNPX",
+        "label": "Procurar artigo NotMediaWiki",
         "href": "simplearticles/",
         "requiresAuth": true
     },

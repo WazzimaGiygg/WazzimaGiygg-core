@@ -1520,7 +1520,6 @@ export default function App() {
               { id: "academico", label: "Acadêmico", icon: GraduationCap },
               { id: "materia", label: "Matérias Didáticas", icon: BookOpen },
               { id: "uwgbooks", label: "UWG Books", icon: Book },
-              { id: "wnpx", label: "WNPX / WikiNotPedia", icon: Newspaper },
               { id: "dossie", label: "Dossiê & Abusos Wikipédia", icon: Scale },
               { id: "tickets", label: supportConfig.buttonLabel || "Ouvidoria & Tickets", icon: Ticket },
               { id: "chat", label: "Chat & Mensagens", icon: MessageSquare },
@@ -2029,102 +2028,6 @@ export default function App() {
                 ))}
               </div>
             )}
-          </div>
-        )}
-
-        {/* VIEW 2: WNPX / WIKINOTPEDIA (Alternative Encyclopedia) */}
-        {currentTab === "wnpx" && (
-          <div className="space-y-6">
-            <div className="bg-white dark:bg-[#1A1A18] border-2 border-[#141414] dark:border-[#3E3D38] p-6 sm:p-8 shadow-[6px_6px_0px_0px_rgba(20,20,20,1)]">
-              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border-b-2 border-[#141414] dark:border-[#3E3D38] pb-4 mb-6">
-                <div>
-                  <span className="bg-[#B91C1C] text-white font-mono text-[10px] font-bold px-2 py-0.5 uppercase tracking-widest">
-                    PROJETO ESPECIAL
-                  </span>
-                  <h2 className="text-3xl sm:text-4xl font-editorial font-bold mt-1 text-[#141414] dark:text-stone-100">
-                    WNPX — A Enciclopédia NotPedia
-                  </h2>
-                  <p className="text-xs font-mono text-stone-700 dark:text-stone-300 mt-1">
-                    Iniciativa editorial independente para documentação irrestrita de artigos, verbetes e história digital.
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <a
-                    href="https://wazzimagiygg.com/wikinotpedia.html"
-                    onClick={(e) => handleExternalLinkClick("https://wazzimagiygg.com/wikinotpedia.html", e)}
-                    className="paper-button px-3 py-2 text-xs font-mono font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <span>Abrir Portal WNPX</span>
-                    <ExternalLink className="w-3.5 h-3.5" />
-                  </a>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 font-serif text-xs text-stone-800 dark:text-stone-300 leading-relaxed">
-                <div className="p-4 bg-[#F8F7F4] dark:bg-[#141413] border border-stone-300 dark:border-[#34332F]">
-                  <h4 className="font-editorial font-bold text-sm mb-2 text-[#141414] dark:text-stone-100 uppercase font-mono">
-                    1. Imparcialidade Real
-                  </h4>
-                  <p>
-                    Diferente de wikis controladas por pequenos oligopólios de moderadores com interesses corporativos ou conflitos de interesse, o WNPX assegura o direito de resposta e a preservação de dados históricos.
-                  </p>
-                </div>
-
-                <div className="p-4 bg-[#F8F7F4] dark:bg-[#141413] border border-stone-300 dark:border-[#34332F]">
-                  <h4 className="font-editorial font-bold text-sm mb-2 text-[#141414] dark:text-stone-100 uppercase font-mono">
-                    2. Garantia do Marco Civil
-                  </h4>
-                  <p>
-                    Preservação de registros conforme Lei 12.965/2014, transparência nas edições e proibição de perseguição editorial sistemática ou doxxing.
-                  </p>
-                </div>
-
-                <div className="p-4 bg-[#F8F7F4] dark:bg-[#141413] border border-stone-300 dark:border-[#34332F]">
-                  <h4 className="font-editorial font-bold text-sm mb-2 text-[#141414] dark:text-stone-100 uppercase font-mono">
-                    3. Acervo Indexado
-                  </h4>
-                  <p>
-                    Mais de 28 matérias acadêmicas, relatórios de mobilidade urbana (Metrô de São Paulo, Trens Intercidades) e artigos da reforma psiquiátrica brasileira.
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Quick search inside WNPX articles */}
-            <div className="bg-[#EBE8E1] dark:bg-[#1D1C19] border-2 border-[#141414] dark:border-[#3E3D38] p-6">
-              <h3 className="font-mono font-bold text-xs uppercase tracking-wider mb-3 dark:text-stone-100">
-                Verbetes & Artigos Históricos Catalogados
-              </h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 font-mono text-xs">
-                {[
-                  "Ano de 2025 - Cronologia",
-                  "Ano de 2024 - Cronologia",
-                  "Ano de 2023 - Cronologia",
-                  "Ano de 2022 - Cronologia",
-                  "Ano de 2021 - Cronologia",
-                  "Ano de 2020 - Cronologia",
-                  "Metrô de São Paulo - Estação Sacomã",
-                  "Linha 8-Diamante - Extensão Operacional",
-                  "Trem Intercidades Sorocaba (R$ 11,9 Bi)",
-                  "Reforma Psiquiátrica & CAPS no Brasil",
-                  "Franco Basaglia & Desinstitucionalização",
-                  "Neutralidade de Rede e Direitos Digitais"
-                ].map((item, idx) => (
-                  <div
-                    key={idx}
-                    className="p-3 bg-white dark:bg-[#1A1A18] text-[#141414] dark:text-stone-100 border border-[#141414] dark:border-[#3E3D38] hover:bg-amber-50 dark:hover:bg-[#242320] cursor-pointer flex items-center justify-between transition-colors"
-                    onClick={() => {
-                      showToast(`Carregando artigo: ${item}`);
-                      switchTab("wikiworldweb");
-                      setSearchTerm(item.split(" - ")[0]);
-                    }}
-                  >
-                    <span className="font-bold">{item}</span>
-                    <ChevronRight className="w-3.5 h-3.5 text-stone-500 dark:text-stone-400" />
-                  </div>
-                ))}
-              </div>
-            </div>
           </div>
         )}
 
@@ -3103,8 +3006,8 @@ export default function App() {
               Metodologia Científica
             </button>
             <span className="text-stone-700">•</span>
-            <button onClick={() => switchTab("wnpx")} className="hover:text-amber-400">
-              WNPX NotPedia
+            <button onClick={() => switchTab("notmediawiki")} className="hover:text-amber-400">
+              NotMediaWiki
             </button>
             <span className="text-stone-700">•</span>
             <button onClick={() => switchTab("dossie")} className="hover:text-amber-400">

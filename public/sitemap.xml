@@ -28,11 +28,6 @@
     <priority>0.90</priority>
   </url>
   <url>
-    <loc>https://core.wazzimagiygg.com/?uid=wnpx</loc>
-    <changefreq>weekly</changefreq>
-    <priority>0.90</priority>
-  </url>
-  <url>
     <loc>https://core.wazzimagiygg.com/?uid=academico</loc>
     <changefreq>weekly</changefreq>
     <priority>0.85</priority>

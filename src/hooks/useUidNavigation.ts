@@ -15,7 +15,6 @@ export const PORTAL_TAB_METADATA = [
   { id: 'academico', label: 'Acadêmico', description: 'Metodologia e Pesquisa Acadêmica' },
   { id: 'materia', label: 'Matérias Didáticas', description: 'Ensino Fundamental e Médio' },
   { id: 'uwgbooks', label: 'UWG Books', description: 'Acervo Digital de Livros e Obras' },
-  { id: 'wnpx', label: 'WNPX / WikiNotPedia', description: 'Enciclopédia Livre e Aberta WNPX' },
   { id: 'dossie', label: 'Dossiê & Abusos', description: 'Dossiê de Abusos da Wikipédia' },
   { id: 'tickets', label: 'Ouvidoria & Tickets', description: 'Central de Atendimento e LGPD' },
   { id: 'chat', label: 'Chat & Mensagens', description: 'Comunicação em Tempo Real' },
@@ -58,6 +57,13 @@ export function parseTabFromUid(uid: string | null | undefined): PortalTabId | n
     stripped === 'etica'
   ) {
     return 'eticaia';
+  }
+  if (
+    stripped === 'wnpx' ||
+    stripped === 'wikinotpedia' ||
+    stripped === 'notpedia'
+  ) {
+    return 'notmediawiki';
   }
   const match = PORTAL_TAB_METADATA.find((t) => t.id === stripped);
   if (match) return match.id;
