@@ -39,7 +39,9 @@ import {
   FileCode,
   PieChart as PieChartIcon,
   BarChart2,
-  Puzzle
+  Puzzle,
+  Clock,
+  ArrowRight
 } from "lucide-react";
 import { signInWithPopup } from "firebase/auth";
 import { collection, addDoc, getDocs, serverTimestamp } from "firebase/firestore";
@@ -134,6 +136,26 @@ export default function AdminPanel({
   const [selectedDeletionRequest, setSelectedDeletionRequest] = useState<DeletionRequest | null>(null);
   const [deletionProcessingNotes, setDeletionProcessingNotes] = useState("");
   const [isProcessingDeletion, setIsProcessingDeletion] = useState(false);
+  const [lastDeletionSyncAt, setLastDeletionSyncAt] = useState<Date>(() => new Date());
+
+  const lgpdDeletionSummary = useMemo(() => {
+    const total = deletionRequestsList.length;
+    const pending = deletionRequestsList.filter((r) => r.status === "pending").length;
+    const processing = deletionRequestsList.filter((r) => r.status === "processing").length;
+    const completed = deletionRequestsList.filter((r) => r.status === "completed").length;
+    const rejected = deletionRequestsList.filter((r) => r.status === "rejected").length;
+    const safeTotal = total > 0 ? total : 1;
+    return {
+      total,
+      pending,
+      processing,
+      completed,
+      rejected,
+      pendingPct: Math.round((pending / safeTotal) * 100),
+      processingPct: Math.round((processing / safeTotal) * 100),
+      completedPct: Math.round((completed / safeTotal) * 100)
+    };
+  }, [deletionRequestsList]);
 
   // Authentication & Elevation Form State
   const [passkeyInput, setPasskeyInput] = useState("");
@@ -316,6 +338,7 @@ export default function AdminPanel({
     if (!isAdmin) return;
     const unsubscribe = setupDeletionRequestsListener((requests) => {
       setDeletionRequestsList(requests);
+      setLastDeletionSyncAt(new Date());
     });
     return () => {
       if (typeof unsubscribe === "function") unsubscribe();
@@ -1123,6 +1146,230 @@ export default function AdminPanel({
                 <span className="text-[10px] text-stone-500 mt-2 block">Central de Ouvidoria</span>
               </div>
             </div>
+
+            {/* Real-Time LGPD Deletion Summary Card (Art. 18 & solicitacaodeexlusao) */}
+            <section
+              aria-label="Resumo em tempo real das solicitações de exclusão LGPD"
+              className="bg-white border-2 border-[#141414] shadow-[6px_6px_0px_0px_rgba(185,28,28,1)] overflow-hidden"
+            >
+              <div className="bg-[#141414] text-white px-5 py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b-2 border-black">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 bg-red-700 border border-red-500 flex items-center justify-center shrink-0">
+                    <ShieldAlert className="w-5 h-5 text-amber-300" />
+                  </div>
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="font-editorial text-lg font-bold text-white leading-tight">
+                        Solicitações de Exclusão LGPD (Art. 18) — Resumo em Tempo Real
+                      </h3>
+                      <span className="inline-flex items-center gap-1.5 bg-emerald-950 text-emerald-300 border border-emerald-500/60 px-2 py-0.5 font-mono text-[10px] font-bold uppercase">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                        <span>Tempo Real</span>
+                      </span>
+                    </div>
+                    <p className="font-mono text-[11px] text-stone-300 mt-0.5">
+                      Total consolidado: <strong>{lgpdDeletionSummary.total}</strong> protocolos • Última atualização:{" "}
+                      {lastDeletionSyncAt.toLocaleTimeString("pt-BR")}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 shrink-0 font-mono text-[11px]">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      setIsLoadingDeletionRequests(true);
+                      try {
+                        const fresh = await listDeletionRequests();
+                        setDeletionRequestsList(fresh);
+                        setLastDeletionSyncAt(new Date());
+                        showToast("Resumo LGPD sincronizado com o Firestore.");
+                      } finally {
+                        setIsLoadingDeletionRequests(false);
+                      }
+                    }}
+                    className="bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-600 px-2.5 py-1.5 font-bold uppercase flex items-center gap-1.5 cursor-pointer"
+                    title="Forçar sincronização da fila LGPD"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isLoadingDeletionRequests ? "animate-spin" : ""}`} />
+                    <span>Sincronizar</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDeletionStatusFilter("all");
+                      setExclusaoViewMode("queue");
+                      setAdminTab("exclusao");
+                    }}
+                    className="bg-red-700 hover:bg-red-600 text-white border border-red-400 px-3 py-1.5 font-bold uppercase flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <span>Gerenciar Exclusões</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+
+              <div className="p-5 space-y-4">
+                {/* Real-Time Status Breakdown Counters (clickable shortcuts into filtered queue) */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 font-mono">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDeletionStatusFilter("pending");
+                      setExclusaoViewMode("queue");
+                      setAdminTab("exclusao");
+                    }}
+                    className="text-left p-4 bg-amber-50 hover:bg-amber-100/80 border-2 border-amber-600 transition-colors cursor-pointer group"
+                    title="Abrir fila filtrada por solicitações pendentes"
+                  >
+                    <div className="flex items-center justify-between text-[11px] font-bold uppercase text-amber-900">
+                      <span className="flex items-center gap-1.5">
+                        <Clock className="w-3.5 h-3.5 text-amber-700" />
+                        Pendentes
+                      </span>
+                      <span>{lgpdDeletionSummary.pendingPct}%</span>
+                    </div>
+                    <div className="text-3xl font-black text-amber-700 mt-1">
+                      {lgpdDeletionSummary.pending}
+                    </div>
+                    <div className="text-[11px] text-amber-900/80 mt-1.5 flex items-center justify-between">
+                      <span>Aguardando triagem (15 dias)</span>
+                      <ArrowRight className="w-3.5 h-3.5 opacity-60 group-hover:translate-x-0.5 transition-transform" />
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDeletionStatusFilter("processing");
+                      setExclusaoViewMode("queue");
+                      setAdminTab("exclusao");
+                    }}
+                    className="text-left p-4 bg-blue-50 hover:bg-blue-100/80 border-2 border-blue-700 transition-colors cursor-pointer group"
+                    title="Abrir fila filtrada por solicitações em processamento"
+                  >
+                    <div className="flex items-center justify-between text-[11px] font-bold uppercase text-blue-900">
+                      <span className="flex items-center gap-1.5">
+                        <RefreshCw className="w-3.5 h-3.5 text-blue-700" />
+                        Em Processamento
+                      </span>
+                      <span>{lgpdDeletionSummary.processingPct}%</span>
+                    </div>
+                    <div className="text-3xl font-black text-blue-700 mt-1">
+                      {lgpdDeletionSummary.processing}
+                    </div>
+                    <div className="text-[11px] text-blue-900/80 mt-1.5 flex items-center justify-between">
+                      <span>Varredura &amp; expurgo em curso</span>
+                      <ArrowRight className="w-3.5 h-3.5 opacity-60 group-hover:translate-x-0.5 transition-transform" />
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDeletionStatusFilter("completed");
+                      setExclusaoViewMode("queue");
+                      setAdminTab("exclusao");
+                    }}
+                    className="text-left p-4 bg-emerald-50 hover:bg-emerald-100/80 border-2 border-emerald-700 transition-colors cursor-pointer group"
+                    title="Abrir fila filtrada por solicitações concluídas"
+                  >
+                    <div className="flex items-center justify-between text-[11px] font-bold uppercase text-emerald-900">
+                      <span className="flex items-center gap-1.5">
+                        <CheckCircle className="w-3.5 h-3.5 text-emerald-700" />
+                        Concluídas
+                      </span>
+                      <span>{lgpdDeletionSummary.completedPct}%</span>
+                    </div>
+                    <div className="text-3xl font-black text-emerald-700 mt-1">
+                      {lgpdDeletionSummary.completed}
+                    </div>
+                    <div className="text-[11px] text-emerald-900/80 mt-1.5 flex items-center justify-between">
+                      <span>Expurgadas com certificado</span>
+                      <ArrowRight className="w-3.5 h-3.5 opacity-60 group-hover:translate-x-0.5 transition-transform" />
+                    </div>
+                  </button>
+                </div>
+
+                {/* Proportional Progress Bar */}
+                {lgpdDeletionSummary.total > 0 && (
+                  <div className="space-y-1.5">
+                    <div className="h-2.5 w-full bg-stone-200 border border-[#141414] flex overflow-hidden">
+                      <div
+                        style={{ width: `${(lgpdDeletionSummary.pending / lgpdDeletionSummary.total) * 100}%` }}
+                        className="bg-amber-500 h-full transition-all duration-300"
+                        title={`Pendentes: ${lgpdDeletionSummary.pending}`}
+                      />
+                      <div
+                        style={{ width: `${(lgpdDeletionSummary.processing / lgpdDeletionSummary.total) * 100}%` }}
+                        className="bg-blue-600 h-full transition-all duration-300"
+                        title={`Em Processamento: ${lgpdDeletionSummary.processing}`}
+                      />
+                      <div
+                        style={{ width: `${(lgpdDeletionSummary.completed / lgpdDeletionSummary.total) * 100}%` }}
+                        className="bg-emerald-600 h-full transition-all duration-300"
+                        title={`Concluídas: ${lgpdDeletionSummary.completed}`}
+                      />
+                    </div>
+                    {lgpdDeletionSummary.rejected > 0 && (
+                      <p className="font-mono text-[10px] text-stone-600">
+                        Nota: {lgpdDeletionSummary.rejected} solicitação(ões) indeferida(s) por base legal também registrada(s) no histórico.
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {/* Direct Links to Deletion Administration Tool */}
+                <div className="pt-3 border-t border-stone-300 flex flex-wrap items-center justify-between gap-2 font-mono text-[11px]">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDeletionStatusFilter("all");
+                        setExclusaoViewMode("queue");
+                        setAdminTab("exclusao");
+                      }}
+                      className="px-3 py-1.5 bg-[#141414] hover:bg-stone-800 text-white font-bold uppercase flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <FileText className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Fila de Exclusão LGPD</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setExclusaoViewMode("dashboard");
+                        setAdminTab("exclusao");
+                      }}
+                      className="px-3 py-1.5 bg-white hover:bg-stone-100 text-[#141414] border border-[#141414] font-bold uppercase flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <PieChartIcon className="w-3.5 h-3.5 text-red-700" />
+                      <span>Painel Recharts</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setExclusaoViewMode("monthly");
+                        setAdminTab("exclusao");
+                      }}
+                      className="px-3 py-1.5 bg-white hover:bg-stone-100 text-[#141414] border border-[#141414] font-bold uppercase flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <BarChart2 className="w-3.5 h-3.5 text-emerald-700" />
+                      <span>Relatório Mensal</span>
+                    </button>
+                  </div>
+
+                  <a
+                    href="/admin/admintools/solicitacaodeexlusao/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-3 py-1.5 bg-stone-100 hover:bg-amber-100 text-[#141414] border border-stone-400 font-bold uppercase inline-flex items-center gap-1.5"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5 text-red-700" />
+                    <span>Ferramenta Standalone (/admin/admintools/solicitacaodeexlusao/)</span>
+                  </a>
+                </div>
+              </div>
+            </section>
 
             {/* Quick Actions & Short Menu */}
             <div className="bg-white border-2 border-[#141414] p-6 shadow-[6px_6px_0px_0px_rgba(20,20,20,1)]">
