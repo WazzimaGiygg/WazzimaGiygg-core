@@ -33,6 +33,19 @@ import {
   markAllNotificationsAsRead,
   setNotificationReadState
 } from "../firebase";
+import {
+  BrowserPushStatus,
+  PORTAL_ALERT_CHANNEL_META,
+  PortalAlertChannel,
+  getBrowserPushStatus,
+  hasArticleBeenDispatchedForPush,
+  requestBrowserPushPermission,
+  sendTestPushNotification,
+  subscribeBrowserPushChanges,
+  toggleBrowserPushPause,
+  toggleNewArticleAlertsEnabled,
+  togglePortalChannelAlert
+} from "../utils/browserPushManager";
 
 export interface NotificationPreferences {
   soundEnabled: boolean;
@@ -159,14 +172,20 @@ export default function NotificationCenter({
   const [activeFilter, setActiveFilter] = useState<FilterTab>("todas");
   const [searchQuery, setSearchQuery] = useState("");
   const [prefs, setPrefs] = useState<NotificationPreferences>(() => loadPreferences());
-  const [browserPermission, setBrowserPermission] = useState<NotificationPermission | "unsupported">(() => {
-    if (typeof window === "undefined" || !("Notification" in window)) return "unsupported";
-    return window.Notification.permission;
-  });
+  const [pushStatus, setPushStatus] = useState<BrowserPushStatus>(() => getBrowserPushStatus(userId));
+  const browserPermission = pushStatus.permission;
 
   const containerRef = useRef<HTMLDivElement>(null);
   const knownIdsRef = useRef<Set<string>>(new Set());
   const initializedRef = useRef(false);
+
+  // Sync browser push permission & preferences reactively
+  useEffect(() => {
+    setPushStatus(getBrowserPushStatus(userId));
+    return subscribeBrowserPushChanges(() => {
+      setPushStatus(getBrowserPushStatus(userId));
+    });
+  }, [userId]);
 
   // Filter notifications by user's category preferences
   const visibleNotifications = useMemo(() => {
@@ -206,24 +225,42 @@ export default function NotificationCenter({
         if (prefs.soundEnabled) {
           playSubtleNotificationChime();
         }
+        // Avoid duplicating native push if already dispatched by browserPushManager for this article
+        const isAlreadyHandledArticlePush =
+          latest.id.startsWith("local_art_") ||
+          (Boolean(latest.actionUid) && hasArticleBeenDispatchedForPush(latest.actionUid!));
         if (
-          prefs.desktopPushEnabled &&
+          !isAlreadyHandledArticlePush &&
+          pushStatus.canTriggerPush &&
           typeof window !== "undefined" &&
           "Notification" in window &&
           window.Notification.permission === "granted"
         ) {
           try {
-            new window.Notification(`WazzimaGiygg • ${latest.titulo}`, {
+            const notif = new window.Notification(`WazzimaGiygg • ${latest.titulo}`, {
               body: latest.mensagem,
+              icon: "/logo.png",
+              badge: "/favicom.png",
               tag: latest.id
             });
+            notif.onclick = () => {
+              try {
+                window.focus();
+              } catch {
+                // ignore
+              }
+              if (latest.actionUid || latest.actionTab) {
+                onNavigateAction?.(latest);
+              }
+              notif.close();
+            };
           } catch {
             // Browser prevented constructor in current context
           }
         }
       }
     }
-  }, [notifications, prefs.desktopPushEnabled, prefs.enabledCategories, prefs.soundEnabled]);
+  }, [notifications, pushStatus.canTriggerPush, prefs.enabledCategories, prefs.soundEnabled, onNavigateAction]);
 
   // Close popover on outside click or Escape key
   useEffect(() => {
@@ -256,29 +293,18 @@ export default function NotificationCenter({
   };
 
   const handleRequestBrowserPush = async () => {
-    if (typeof window === "undefined" || !("Notification" in window)) {
-      showToast?.("Este navegador não suporta notificações de área de trabalho.", true);
-      return;
-    }
-    try {
-      const result = await window.Notification.requestPermission();
-      setBrowserPermission(result);
-      if (result === "granted") {
-        updatePrefs((prev) => ({ ...prev, desktopPushEnabled: true }));
-        showToast?.("✓ Notificações no navegador ativadas com sucesso!");
-        try {
-          new window.Notification("WazzimaGiygg • Notificações Ativas", {
-            body: "Você receberá alertas importantes em tempo real."
-          });
-        } catch {
-          // Ignore constructor block
-        }
-      } else {
-        updatePrefs((prev) => ({ ...prev, desktopPushEnabled: false }));
-        showToast?.("Permissão de notificações no navegador não concedida.", true);
-      }
-    } catch {
-      showToast?.("Não foi possível solicitar permissão de notificação neste contexto.", true);
+    const result = await requestBrowserPushPermission({
+      userId,
+      sendConfirmation: true
+    });
+    setPushStatus(getBrowserPushStatus(userId));
+
+    if (result.granted) {
+      updatePrefs((prev) => ({ ...prev, desktopPushEnabled: true }));
+      showToast?.(`✓ ${result.reason}`);
+    } else {
+      updatePrefs((prev) => ({ ...prev, desktopPushEnabled: false }));
+      showToast?.(result.reason, true);
     }
   };
 
@@ -532,12 +558,13 @@ export default function NotificationCenter({
                 type="button"
                 onClick={() => {
                   setIsOpen(false);
+                  setShowPrefsPanel(true);
                   setIsFullModalOpen(true);
                 }}
                 className="font-bold uppercase text-stone-800 dark:text-stone-200 hover:underline cursor-pointer flex items-center gap-1"
               >
                 <SlidersHorizontal className="w-3 h-3" />
-                <span>Central &amp; Preferências</span>
+                <span>Gerenciar Push &amp; Preferências</span>
               </button>
 
               {browserPermission === "default" ? (
@@ -547,6 +574,28 @@ export default function NotificationCenter({
                   className="bg-amber-500 hover:bg-amber-400 text-stone-950 px-2 py-0.5 border border-[#141414] font-bold uppercase cursor-pointer"
                 >
                   Ativar Push
+                </button>
+              ) : browserPermission === "granted" ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const nextEnabled = !pushStatus.preferences.enabled;
+                    toggleBrowserPushPause(nextEnabled, userId);
+                    updatePrefs((prev) => ({ ...prev, desktopPushEnabled: nextEnabled }));
+                    showToast?.(
+                      nextEnabled
+                        ? "✓ Alertas push de novos artigos reativados."
+                        : "Alertas push do navegador pausados."
+                    );
+                  }}
+                  className={`px-2 py-0.5 border border-[#141414] font-bold uppercase cursor-pointer ${
+                    pushStatus.canTriggerPush
+                      ? "bg-emerald-600 text-white"
+                      : "bg-stone-200 dark:bg-stone-700 text-stone-800 dark:text-stone-200"
+                  }`}
+                  title="Alternar recebimento de notificações push de novos artigos"
+                >
+                  {pushStatus.canTriggerPush ? "Push Ativo" : "Push Pausado"}
                 </button>
               ) : isAdmin && onOpenAdminComposer ? (
                 <button
@@ -636,48 +685,95 @@ export default function NotificationCenter({
               <div className="p-4 bg-[#F7F5EE] dark:bg-[#23221F] border-b-2 border-[#141414] dark:border-[#3E3D38] space-y-3 font-mono text-xs">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
-                    <div className="font-bold uppercase text-[11px]">
-                      Notificações do Navegador (Desktop)
-                    </div>
-                    <p className="text-[11px] text-stone-600 dark:text-stone-400">
-                      Status atual:{" "}
-                      <span className="font-bold">
+                    <div className="font-bold uppercase text-[11px] flex items-center gap-2">
+                      <span>Notificações Push do Navegador (Novos Artigos)</span>
+                      <span
+                        className={`px-1.5 py-0.5 text-[9px] border font-bold uppercase ${
+                          browserPermission === "granted"
+                            ? pushStatus.canTriggerPush
+                              ? "bg-emerald-100 text-emerald-900 border-emerald-500 dark:bg-emerald-950/60 dark:text-emerald-200"
+                              : "bg-amber-100 text-amber-900 border-amber-500 dark:bg-amber-950/60 dark:text-amber-200"
+                            : browserPermission === "denied"
+                              ? "bg-red-100 text-red-900 border-red-500 dark:bg-red-950/60 dark:text-red-200"
+                              : "bg-stone-200 text-stone-800 border-stone-400 dark:bg-stone-800 dark:text-stone-300"
+                        }`}
+                      >
                         {browserPermission === "granted"
-                          ? "Permitido"
+                          ? pushStatus.canTriggerPush
+                            ? "Ativo"
+                            : "Pausado"
                           : browserPermission === "denied"
-                            ? "Bloqueado nas configurações do navegador"
+                            ? "Bloqueado"
                             : browserPermission === "unsupported"
-                              ? "Não suportado neste navegador"
-                              : "Aguardando permissão"}
+                              ? "Indisponível"
+                              : "Pendente"}
                       </span>
+                    </div>
+                    <p className="text-[11px] text-stone-600 dark:text-stone-400 mt-0.5">
+                      {browserPermission === "granted"
+                        ? "Permissão concedida. Receba alertas no dispositivo sempre que um novo artigo for publicado."
+                        : browserPermission === "denied"
+                          ? "Bloqueado nas configurações do site no navegador. Libere 'Notificações' no ícone ao lado da URL."
+                          : browserPermission === "unsupported"
+                            ? "Este navegador não suporta a API de Notificações."
+                            : "Autorize o navegador para receber alertas instantâneos de novos artigos publicados."}
                     </p>
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     {browserPermission === "granted" ? (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          updatePrefs((prev) => ({
-                            ...prev,
-                            desktopPushEnabled: !prev.desktopPushEnabled
-                          }))
-                        }
-                        className={`px-3 py-1.5 border border-[#141414] font-bold uppercase text-[10px] cursor-pointer ${
-                          prefs.desktopPushEnabled
-                            ? "bg-emerald-600 text-white"
-                            : "bg-white dark:bg-stone-800 text-stone-800 dark:text-stone-200"
-                        }`}
-                      >
-                        {prefs.desktopPushEnabled ? "Push Ativado" : "Push Pausado"}
-                      </button>
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const nextEnabled = !pushStatus.preferences.enabled;
+                            toggleBrowserPushPause(nextEnabled, userId);
+                            updatePrefs((prev) => ({ ...prev, desktopPushEnabled: nextEnabled }));
+                            showToast?.(
+                              nextEnabled
+                                ? "✓ Notificações push ativadas."
+                                : "Notificações push pausadas."
+                            );
+                          }}
+                          className={`px-3 py-1.5 border border-[#141414] font-bold uppercase text-[10px] cursor-pointer ${
+                            pushStatus.preferences.enabled
+                              ? "bg-emerald-600 text-white"
+                              : "bg-white dark:bg-stone-800 text-stone-800 dark:text-stone-200"
+                          }`}
+                        >
+                          {pushStatus.preferences.enabled ? "Push Ativado" : "Push Pausado"}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const ok = sendTestPushNotification(() => setIsFullModalOpen(false));
+                            if (ok) {
+                              showToast?.("✓ Notificação push de teste enviada!");
+                            } else {
+                              showToast?.("Não foi possível enviar o teste neste navegador.", true);
+                            }
+                          }}
+                          className="px-3 py-1.5 border border-[#141414] bg-white dark:bg-stone-800 hover:bg-amber-50 dark:hover:bg-stone-700 font-bold uppercase text-[10px] cursor-pointer"
+                        >
+                          Testar Push
+                        </button>
+                      </>
                     ) : browserPermission === "default" ? (
                       <button
                         type="button"
                         onClick={handleRequestBrowserPush}
                         className="bg-amber-500 hover:bg-amber-400 text-stone-950 px-3 py-1.5 border border-[#141414] font-bold uppercase text-[10px] cursor-pointer"
                       >
-                        Permitir Notificações
+                        Permitir Notificações Push
+                      </button>
+                    ) : browserPermission === "denied" ? (
+                      <button
+                        type="button"
+                        onClick={() => setPushStatus(getBrowserPushStatus(userId))}
+                        className="px-3 py-1.5 border border-[#141414] bg-white dark:bg-stone-800 font-bold uppercase text-[10px] cursor-pointer"
+                      >
+                        Verificar Permissão
                       </button>
                     ) : null}
 
@@ -705,9 +801,67 @@ export default function NotificationCenter({
                   </div>
                 </div>
 
+                {/* Alertas de Novos Artigos por Coleção */}
+                <div className="pt-2.5 border-t border-stone-300 dark:border-stone-700 space-y-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-bold uppercase text-[10px] text-stone-700 dark:text-stone-300">
+                      Alertas de Novos Artigos Publicados:
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const nextVal = !pushStatus.preferences.newArticlesEnabled;
+                        toggleNewArticleAlertsEnabled(nextVal, userId);
+                        showToast?.(
+                          nextVal
+                            ? "Alertas de novos artigos ativados."
+                            : "Alertas de novos artigos desativados."
+                        );
+                      }}
+                      className={`px-2 py-0.5 border text-[10px] font-bold uppercase cursor-pointer ${
+                        pushStatus.preferences.newArticlesEnabled
+                          ? "bg-blue-700 text-white border-blue-900"
+                          : "bg-stone-200 dark:bg-stone-800 text-stone-600 dark:text-stone-400 border-stone-400"
+                      }`}
+                    >
+                      {pushStatus.preferences.newArticlesEnabled ? "Recebendo Alertas" : "Silenciado"}
+                    </button>
+                  </div>
+
+                  {pushStatus.preferences.newArticlesEnabled && (
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {(Object.keys(PORTAL_ALERT_CHANNEL_META) as PortalAlertChannel[]).map((ch) => {
+                        const active = pushStatus.preferences.channels[ch] !== false;
+                        return (
+                          <button
+                            key={ch}
+                            type="button"
+                            onClick={() => togglePortalChannelAlert(ch, !active, userId)}
+                            title={PORTAL_ALERT_CHANNEL_META[ch].description}
+                            className={`px-2 py-1 border text-[10px] font-bold uppercase inline-flex items-center gap-1 cursor-pointer ${
+                              active
+                                ? "bg-white dark:bg-stone-900 text-stone-900 dark:text-amber-300 border-[#141414] dark:border-amber-600/60"
+                                : "bg-stone-200 dark:bg-stone-800 text-stone-500 border-stone-400 line-through"
+                            }`}
+                          >
+                            {active && <Check className="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400" />}
+                            <span>{PORTAL_ALERT_CHANNEL_META[ch].shortLabel}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {pushStatus.isEmbeddedIframe && browserPermission !== "granted" && (
+                    <p className="text-[10px] text-amber-800 dark:text-amber-300 bg-amber-100/70 dark:bg-amber-950/40 border border-amber-400/70 px-2.5 py-1.5">
+                      Aviso: Em visualização incorporada (iframe), alguns navegadores exigem abrir o portal em uma aba independente para exibir o pedido de permissão de push.
+                    </p>
+                  )}
+                </div>
+
                 <div className="pt-2 border-t border-stone-300 dark:border-stone-700 flex flex-wrap items-center gap-3">
                   <span className="font-bold uppercase text-[10px] text-stone-600 dark:text-stone-400">
-                    Categorias visíveis:
+                    Categorias na Central:
                   </span>
                   {(Object.keys(CATEGORY_META) as NotificationCategory[]).map((cat) => {
                     const active = prefs.enabledCategories[cat] !== false;

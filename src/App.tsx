@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useEffect, useState, useMemo, useCallback } from "react";
+import React, { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { onAuthStateChanged, signInWithPopup, signOut } from "firebase/auth";
 import DOMPurify from "dompurify";
 import {
@@ -48,7 +48,8 @@ import {
   ShieldCheck,
   Sparkles,
   Tag,
-  UserCheck
+  UserCheck,
+  BellRing
 } from "lucide-react";
 import jsPDF from "jspdf";
 
@@ -81,7 +82,8 @@ import {
   ensureUserNotMediaWikiPersonalPage,
   listWikiArticlesFromDb,
   listNotMediaWikiUserPagesFromDb,
-  getUserByUidFromFirestore
+  getUserByUidFromFirestore,
+  watchNewPortalArticlesForPush
 } from "./firebase";
 import { addDoc, collection, doc, getDoc, serverTimestamp } from "firebase/firestore";
 import { stripHtmlToPlainText } from "./utils/text";
@@ -134,6 +136,20 @@ import { updatePortalSEO } from "./wiki/utils/seoManager";
 import AbntCitationGenerator from "./components/AbntCitationGenerator";
 import WikiSiteVersionModal from "./components/WikiSiteVersionModal";
 import { WIKI_SITE_VERSION, WIKI_SITE_DISPLAY_ID } from "./config/wikiVersion";
+import {
+  BrowserPushStatus,
+  PORTAL_ALERT_CHANNEL_META,
+  dismissPushOptInBanner,
+  dispatchNewArticlePushNotification,
+  getBrowserPushStatus,
+  normalizePortalAlertChannel,
+  requestBrowserPushPermission,
+  subscribeBrowserPushChanges
+} from "./utils/browserPushManager";
+import { PWAInstallButton } from "./components/PWAInstallButton";
+import { OfflineIndicator } from "./components/OfflineIndicator";
+import { MobileAppBottomNav } from "./components/MobileAppBottomNav";
+import { loadOfflineArticlesSnapshot, saveOfflineArticlesSnapshot } from "./hooks/useOnlineStatus";
 
 export default function App() {
   // Persistent Theme State (Light / Dark)
@@ -185,8 +201,11 @@ export default function App() {
   const [isWebGroundingLoading, setIsWebGroundingLoading] = useState(false);
   const [webGroundingError, setWebGroundingError] = useState<string | null>(null);
 
-  // Notifications State
+  // Notifications & Browser Push Permission State
   const [notifications, setNotifications] = useState<UserNotification[]>([]);
+  const [pushStatus, setPushStatus] = useState<BrowserPushStatus>(() => getBrowserPushStatus("all"));
+  const [isRequestingPush, setIsRequestingPush] = useState(false);
+  const knownPushedArticleIdsRef = useRef<Set<string>>(new Set());
 
   // Modals & Drawers
   const [isLoading, setIsLoading] = useState(true);
@@ -966,6 +985,104 @@ export default function App() {
     };
   }, [user]);
 
+  // Sync Browser Push Permission & Preferences Reactively
+  useEffect(() => {
+    const activeUid = user?.uid || "all";
+    setPushStatus(getBrowserPushStatus(activeUid));
+    return subscribeBrowserPushChanges(() => {
+      setPushStatus(getBrowserPushStatus(activeUid));
+    });
+  }, [user?.uid]);
+
+  // Refs to avoid tearing down real-time article watchers when navigation/auth state updates
+  const uidNavRef = useRef(uidNav);
+  uidNavRef.current = uidNav;
+  const switchTabRef = useRef(switchTab);
+  switchTabRef.current = switchTab;
+  const userUidRef = useRef(user?.uid || "all");
+  userUidRef.current = user?.uid || "all";
+  const showToastRef = useRef(showToast);
+  showToastRef.current = showToast;
+
+  // Real-time Watcher for Newly Published Portal & NotMediaWiki Articles -> Push Alerts
+  useEffect(() => {
+    const unsubWatcher = watchNewPortalArticlesForPush((art) => {
+      if (knownPushedArticleIdsRef.current.has(art.id)) {
+        return;
+      }
+      knownPushedArticleIdsRef.current.add(art.id);
+
+      const channel = normalizePortalAlertChannel(art.collection, art.isWiki);
+      const channelMeta = PORTAL_ALERT_CHANNEL_META[channel];
+
+      if (!art.isWiki) {
+        setArticles((prev) => {
+          const currentList = prev[art.collection] || [];
+          if (currentList.some((item) => item.id === art.id)) {
+            return prev;
+          }
+          const createdArticle: Article = {
+            id: art.id,
+            titulo: art.title,
+            descricao: art.summary || "",
+            conteudo: art.summary || "",
+            setor: art.sector || "Geral",
+            criadorEmail: art.author || "Redação",
+            dataCriacao: new Date().toLocaleDateString("pt-BR"),
+            ultimaEdicao: new Date().toLocaleDateString("pt-BR"),
+            visualizacoes: 0,
+            colecao: art.collection
+          };
+          return {
+            ...prev,
+            [art.collection]: [createdArticle, ...currentList]
+          };
+        });
+      }
+
+      const activeUid = userUidRef.current;
+
+      pushLocalUserNotification(activeUid, {
+        id: `local_art_${art.id}`,
+        titulo: `Novo artigo em ${channelMeta.shortLabel}: ${art.title}`,
+        mensagem: `Publicado em ${channelMeta.label}${
+          art.sector ? ` (${art.sector})` : ""
+        }. Clique para ler agora.`,
+        tipo: "noticia",
+        prioridade: "info",
+        actionUid: art.id,
+        actionTab: art.isWiki ? "notmediawiki" : art.collection,
+        actionLabel: "Ler Artigo"
+      });
+
+      const navigateToArticle = (targetId: string, _col: string, isWiki?: boolean) => {
+        if (isWiki) {
+          setWikiTargetSlug(targetId);
+          setWikiTargetInnerTab("reader");
+          switchTabRef.current("notmediawiki");
+        } else {
+          uidNavRef.current.navigateToUid(targetId);
+        }
+      };
+
+      dispatchNewArticlePushNotification(art, {
+        userId: activeUid,
+        onClickNavigate: navigateToArticle
+      });
+
+      showToastRef.current(`Novo artigo publicado em ${channelMeta.shortLabel}: "${art.title}"`, {
+        variant: "info",
+        title: "Nova Publicação no Portal",
+        actionLabel: "Ler Agora",
+        onAction: () => navigateToArticle(art.id, art.collection, art.isWiki)
+      });
+    });
+
+    return () => {
+      if (typeof unsubWatcher === "function") unsubWatcher();
+    };
+  }, []);
+
   // Initial Data Fetching from Firestore & Optimized Backend API
   useEffect(() => {
     async function initData() {
@@ -981,13 +1098,22 @@ export default function App() {
           listNotMediaWikiUserPagesFromDb().catch(() => [])
         ]);
 
-        setArticles({
+        const loadedArticlesMap = {
           wikiworldweb: www,
           materiadeensaio: ensaio,
           academico: acad,
           materia: mat,
           uwgbooks: books
-        });
+        };
+
+        const loadedTotal = Object.values(loadedArticlesMap).reduce((acc, l) => acc + l.length, 0);
+        if (loadedTotal > 0) {
+          setArticles(loadedArticlesMap);
+          saveOfflineArticlesSnapshot(loadedArticlesMap);
+        } else {
+          const offlineSnapshot = loadOfflineArticlesSnapshot();
+          setArticles(offlineSnapshot || loadedArticlesMap);
+        }
 
         const wikiBySlug = new Map<string, WikiArticle>();
         for (const w of [...(wikiArts || []), ...(wikiUserPages || [])]) {
@@ -1387,7 +1513,7 @@ export default function App() {
       data-theme={theme}
       className={`${
         isDark ? "dark theme-dark" : "theme-light"
-      } min-h-screen wzzm-theme-canvas bg-[#F8F7F4] dark:bg-[#111110] text-[#141414] dark:text-[#F5F4F0] flex flex-col font-sans selection:bg-[#141414] selection:text-white dark:selection:bg-amber-400 dark:selection:text-stone-950 transition-colors duration-150`}
+      } min-h-screen wzzm-theme-canvas bg-[#F8F7F4] dark:bg-[#111110] text-[#141414] dark:text-[#F5F4F0] flex flex-col font-sans selection:bg-[#141414] selection:text-white dark:selection:bg-amber-400 dark:selection:text-stone-950 transition-colors duration-150 pb-14 md:pb-0`}
     >
       {/* 3.05.3.e: Top Banner de Manutenção Exclusivo para o Burocrata */}
       {isMaintenanceActive && isBurocrataUser && (
@@ -1511,6 +1637,11 @@ export default function App() {
               onOpenAdminComposer={() => setIsAdminPanelOpen(true)}
               showToast={(msg, err) => showToast(msg, Boolean(err))}
             />
+
+            <span className="text-stone-700">|</span>
+
+            {/* Installable App Button (Desktop & Mobile PWA) */}
+            <PWAInstallButton variant="header" showToast={(msg, err) => showToast(msg, Boolean(err))} />
 
             <span className="text-stone-700">|</span>
 
@@ -1801,6 +1932,59 @@ export default function App() {
           </div>
         </div>
       </aside>
+
+      {/* ============================================ */}
+      {/* 3.2. BARRA DE PERMISSÃO PUSH PARA NOVOS ARTIGOS */}
+      {/* ============================================ */}
+      {pushStatus.supported &&
+        pushStatus.permission === "default" &&
+        !pushStatus.preferences.promptDismissedAt && (
+          <div
+            role="region"
+            aria-label="Ativar notificações push do navegador para novos artigos"
+            className="bg-amber-50 dark:bg-[#1E1C14] border-b border-amber-600/50 dark:border-amber-700/60 px-4 py-2 text-xs transition-colors"
+          >
+            <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+              <div className="flex items-start sm:items-center gap-2 text-[#141414] dark:text-amber-100">
+                <BellRing className="w-4 h-4 text-amber-700 dark:text-amber-400 shrink-0 mt-0.5 sm:mt-0" />
+                <p className="font-serif text-[12px] leading-snug">
+                  <strong className="font-mono text-[10px] uppercase tracking-wider bg-[#141414] dark:bg-amber-500 text-amber-300 dark:text-stone-950 px-1.5 py-0.5 mr-2">
+                    Alertas Push
+                  </strong>
+                  Receba notificações no navegador sempre que novos artigos forem publicados no portal ou no NotMediaWiki.
+                </p>
+              </div>
+              <div className="flex items-center gap-2 font-mono text-[10px] shrink-0">
+                <button
+                  type="button"
+                  disabled={isRequestingPush}
+                  onClick={async () => {
+                    setIsRequestingPush(true);
+                    try {
+                      const result = await requestBrowserPushPermission({
+                        userId: user?.uid || "all",
+                        sendConfirmation: true
+                      });
+                      showToast(result.reason, !result.granted && result.permission === "denied");
+                    } finally {
+                      setIsRequestingPush(false);
+                    }
+                  }}
+                  className="px-2.5 py-1 bg-[#141414] dark:bg-amber-500 hover:bg-stone-800 dark:hover:bg-amber-400 text-white dark:text-stone-950 font-bold uppercase cursor-pointer disabled:opacity-50"
+                >
+                  {isRequestingPush ? "Solicitando..." : "Permitir Notificações"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => dismissPushOptInBanner(user?.uid || "all")}
+                  className="px-2 py-1 bg-white dark:bg-[#242320] hover:bg-stone-100 dark:hover:bg-[#32302B] text-stone-700 dark:text-stone-300 border border-stone-400 dark:border-stone-600 font-bold uppercase cursor-pointer"
+                >
+                  Agora não
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
       {/* ============================================ */}
       {/* 4. SEARCH & SECTOR FILTER BAR */}
@@ -2871,21 +3055,64 @@ export default function App() {
 
                 try {
                   // Save to Firestore collections (schema asserted before write)
-                  await createArticle(validated);
+                  const createdId = (await createArticle(validated)) || `art_${Date.now()}`;
+                  knownPushedArticleIdsRef.current.add(createdId);
 
-                  // Update local state
-                  setArticles((prev) => ({
-                    ...prev,
-                    [validated.colecao]: [newArt, ...(prev[validated.colecao] || [])]
-                  }));
+                  const publishedArt: Article = {
+                    ...newArt,
+                    id: createdId
+                  };
+
+                  // Update local state safely without duplicating
+                  setArticles((prev) => {
+                    const currentColList = prev[validated.colecao] || [];
+                    if (currentColList.some((item) => item.id === createdId)) {
+                      return prev;
+                    }
+                    return {
+                      ...prev,
+                      [validated.colecao]: [publishedArt, ...currentColList]
+                    };
+                  });
+
+                  const channel = normalizePortalAlertChannel(validated.colecao, false);
+                  const channelMeta = PORTAL_ALERT_CHANNEL_META[channel];
+
+                  pushLocalUserNotification(user?.uid || "all", {
+                    id: `local_art_${createdId}`,
+                    titulo: `Novo artigo em ${channelMeta.shortLabel}: ${validated.titulo}`,
+                    mensagem: `Publicado em ${channelMeta.label}${
+                      validated.setor ? ` (${validated.setor})` : ""
+                    }. Clique para ler agora.`,
+                    tipo: "noticia",
+                    prioridade: "info",
+                    actionUid: createdId,
+                    actionTab: validated.colecao,
+                    actionLabel: "Ler Artigo"
+                  });
+
+                  dispatchNewArticlePushNotification(
+                    {
+                      id: createdId,
+                      title: validated.titulo,
+                      summary: validated.descricao,
+                      collection: validated.colecao,
+                      sector: validated.setor,
+                      author: validated.criadorEmail,
+                      isWiki: false
+                    },
+                    {
+                      userId: user?.uid || "all",
+                      onClickNavigate: (targetId) => uidNav.navigateToUid(targetId)
+                    }
+                  );
 
                   setArticleFormErrors({});
                   setIsCreateModalOpen(false);
                   showToast("✓ Artigo publicado com sucesso no acervo!", {
-                    persistToCenter: true,
                     title: "Nova Publicação Editorial",
-                    notifCategory: "noticia",
-                    actionTab: validated.colecao
+                    actionLabel: "Abrir Artigo",
+                    onAction: () => uidNav.navigateToUid(createdId)
                   });
                 } catch (publishErr: any) {
                   if (publishErr instanceof ArticleValidationError) {
@@ -3167,6 +3394,14 @@ export default function App() {
       {/* Multi-Toast Notification Stack */}
       <NotificationToastStack toasts={toasts} onDismiss={dismissToast} />
 
+      {/* Offline Status Indicator & Thumb-Friendly Mobile Bottom App Bar */}
+      <OfflineIndicator />
+      <MobileAppBottomNav
+        currentTab={currentTab}
+        onSelectTab={(tab) => switchTab(tab)}
+        showToast={(msg, err) => showToast(msg, Boolean(err))}
+      />
+
       {/* ============================================ */}
       {/* 11. EDITORIAL FOOTER */}
       {/* ============================================ */}
@@ -3260,6 +3495,8 @@ export default function App() {
               <Crown className="w-3 h-3 text-amber-400" />
               <span>Área do Burocrata</span>
             </button>
+            <span className="text-stone-700">•</span>
+            <PWAInstallButton variant="footer" showToast={(msg, err) => showToast(msg, Boolean(err))} />
             <span className="text-stone-700">•</span>
             <a
               href="https://wazzimagiygg.com/donate/"

@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <rect width="64" height="64" rx="10" fill="#F8F7F4"/>
+  <g fill="#FF0000">
+    <!-- Top-left glyph -->
+    <path d="M8 8h21v21H8V8zm3.5 3.5v14h14v-14h-14z"/>
+    <rect x="14.5" y="14.5" width="8" height="8"/>
+    <!-- Top-right glyph -->
+    <path d="M35 8h21v21H35V8zm3.5 3.5v14h14v-14h-14z"/>
+    <rect x="44" y="13" width="3" height="11"/>
+    <rect x="40" y="17" width="11" height="3"/>
+    <!-- Bottom-left glyph -->
+    <path d="M8 35h21v21H8V35zm3.5 3.5v14h14v-14h-14z"/>
+    <rect x="17" y="40" width="3" height="11"/>
+    <rect x="13" y="44" width="11" height="3"/>
+    <!-- Bottom-right glyph -->
+    <path d="M35 35h21v21H35V35zm3.5 3.5v14h14v-14h-14z"/>
+    <rect x="38.5" y="40" width="9" height="5" fill="#FF0000"/>
+    <rect x="40" y="41.5" width="5.5" height="2" fill="#F8F7F4"/>
+  </g>
+</svg>

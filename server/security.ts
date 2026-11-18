@@ -416,6 +416,8 @@ export function createSecurityHeadersMiddleware(isDev: boolean) {
     "img-src 'self' data: blob: https:",
     `connect-src ${connectSrc}`,
     "frame-src 'self' https://wzzm-ce3fc.firebaseapp.com https://accounts.google.com https://*.google.com",
+    "worker-src 'self' blob:",
+    "manifest-src 'self'",
     "object-src 'none'",
     "base-uri 'self'",
     "frame-ancestors 'self' https://aistudio.google.com https://*.google.com https://*.googleusercontent.com",

@@ -117,7 +117,8 @@ import {
   executeExtensionSafely,
   loadAndVerifyAllExtensionsFromDb,
   ExtensionIntegrityCheckResult,
-  safeApiFetch
+  safeApiFetch,
+  pushLocalUserNotification
 } from '../../firebase';
 import { stripHtmlToPlainText } from '../../utils/text';
 import HighlightedText from '../HighlightedText';
@@ -125,6 +126,7 @@ import {
   validateWikiArticlePayload,
   ArticleValidationError
 } from '../../utils/articleSchema';
+import { dispatchNewArticlePushNotification } from '../../utils/browserPushManager';
 import { AdminExtensionsManagementView } from '../../wiki/components/AdminExtensionsManagementView';
 import type { UserProfile as WikiUserProfile } from '../../wiki/types';
 
@@ -1117,6 +1119,39 @@ export default function NotMediaWikiPortal({
         type: existingArticle ? 'edit' : 'new'
       };
       setEvents((prev) => [newEvent, ...prev]);
+
+      if (!existingArticle && !isPersonalPageTarget && savedArt.namespace === 0) {
+        const activeUid = currentUser?.uid || 'all';
+        pushLocalUserNotification(activeUid, {
+          id: `local_art_${slug}`,
+          titulo: `Novo verbete no NotMediaWiki: ${validatedWiki.title}`,
+          mensagem: `${validatedWiki.summary || 'Nova entrada enciclopédica publicada no acervo.'}`,
+          tipo: 'noticia',
+          prioridade: 'info',
+          actionUid: slug,
+          actionTab: 'notmediawiki',
+          actionLabel: 'Ler Verbete'
+        });
+
+        dispatchNewArticlePushNotification(
+          {
+            id: slug,
+            title: validatedWiki.title,
+            summary: validatedWiki.summary,
+            collection: 'notmediawiki',
+            sector: validatedWiki.categories?.[0] || 'NotMediaWiki',
+            author: authorName,
+            isWiki: true
+          },
+          {
+            userId: activeUid,
+            onClickNavigate: (targetSlug) => {
+              setCurrentSlug(targetSlug);
+              setActiveTab('reader');
+            }
+          }
+        );
+      }
 
       setCurrentSlug(slug);
       setActiveTab('reader');

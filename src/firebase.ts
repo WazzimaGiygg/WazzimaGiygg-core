@@ -541,6 +541,28 @@ export async function createArticle(articleData: PortalArticleInput): Promise<st
     const docRef = await addDoc(collection(db, validated.colecao), payload);
     // Also save to generic articles collection for global search
     await addDoc(collection(db, "artigos"), { ...payload, originalId: docRef.id });
+
+    // Broadcast global notification when published by Burocrata (matches firestore.rules)
+    if (isAuthorizedBurocrata(auth.currentUser?.email)) {
+      await addDoc(collection(db, "notifications"), sanitizeFirestoreData({
+        userId: "all",
+        titulo: `Novo Artigo: ${validated.titulo}`,
+        mensagem: `Publicado na coleção ${validated.colecao} (${validated.setor || "Geral"}). Clique para ler agora.`,
+        tipo: "noticia",
+        lida: false,
+        timestamp: serverTimestamp(),
+        title: `Novo Artigo: ${validated.titulo}`,
+        message: `Publicado na coleção ${validated.colecao} (${validated.setor || "Geral"}). Clique para ler agora.`,
+        type: "noticia",
+        read: false,
+        createdAt: serverTimestamp(),
+        senderEmail: auth.currentUser?.email || validated.criadorEmail,
+        actionUid: docRef.id,
+        actionTab: validated.colecao,
+        actionLabel: "Ler Novo Artigo"
+      })).catch(() => {});
+    }
+
     return docRef.id;
   } catch (error) {
     console.warn("Failed to save to Firestore directly, returning mock id:", error);
@@ -947,6 +969,126 @@ export async function clearReadNotifications(notifs: UserNotification[], userId 
   writeJsonArray(key, remaining);
 
   emitNotificationsUpdated();
+}
+
+export interface WatchNewArticleEvent {
+  id: string;
+  title: string;
+  summary: string;
+  collection: string;
+  sector?: string;
+  author?: string;
+  isWiki?: boolean;
+}
+
+/**
+ * Monitora em tempo real novas publicações de artigos nas 5 coleções do portal
+ * e no acervo NotMediaWiki (ignorando a carga inicial existente).
+ */
+export function watchNewPortalArticlesForPush(
+  onNewArticle: (article: WatchNewArticleEvent) => void
+): () => void {
+  const unsubscribers: Array<() => void> = [];
+  const portalCollections = ["wikiworldweb", "materiadeensaio", "academico", "materia", "uwgbooks"];
+
+  for (const colName of portalCollections) {
+    let initialized = false;
+    const knownIds = new Set<string>();
+
+    try {
+      const unsub = onSnapshot(
+        collection(db, colName),
+        (snapshot) => {
+          if (!initialized) {
+            snapshot.docs.forEach((d) => knownIds.add(d.id));
+            initialized = true;
+            return;
+          }
+
+          snapshot.docChanges().forEach((change) => {
+            if (change.type !== "added") return;
+            const docId = change.doc.id;
+            if (knownIds.has(docId)) return;
+            knownIds.add(docId);
+
+            const data = change.doc.data() || {};
+            const title = String(data.titulo || data.title || "Nova Publicação").trim();
+            const summary = String(data.descricao || data.conteudo || "").trim();
+            onNewArticle({
+              id: docId,
+              title,
+              summary,
+              collection: colName,
+              sector: data.setor || undefined,
+              author: data.criadorEmail || undefined,
+              isWiki: false
+            });
+          });
+        },
+        () => {
+          // Fail silently if offline or unreachable
+        }
+      );
+      unsubscribers.push(unsub);
+    } catch {
+      // Ignore setup errors
+    }
+  }
+
+  // Watch NotMediaWiki articles (Namespace 0 principal)
+  let wikiInitialized = false;
+  const knownWikiIds = new Set<string>();
+  try {
+    const unsubWiki = onSnapshot(
+      collection(db, "wiki_articles"),
+      (snapshot) => {
+        if (!wikiInitialized) {
+          snapshot.docs.forEach((d) => knownWikiIds.add(d.id));
+          wikiInitialized = true;
+          return;
+        }
+
+        snapshot.docChanges().forEach((change) => {
+          if (change.type !== "added") return;
+          const docId = change.doc.id;
+          if (knownWikiIds.has(docId)) return;
+          knownWikiIds.add(docId);
+
+          const data = change.doc.data() || {};
+          const slug = String(data.slug || docId);
+          const ns = typeof data.namespace === "number" ? data.namespace : 0;
+          if (ns !== 0 || slug.toLowerCase().startsWith("usuário:") || data.isPersonalUserPage) {
+            return;
+          }
+
+          onNewArticle({
+            id: slug,
+            title: String(data.title || slug).trim(),
+            summary: String(data.summary || "").trim(),
+            collection: "notmediawiki",
+            sector: Array.isArray(data.categories) && data.categories[0] ? String(data.categories[0]) : "NotMediaWiki",
+            isWiki: true
+          });
+        });
+      },
+      () => {
+        // Ignore snapshot errors
+      }
+    );
+    unsubscribers.push(unsubWiki);
+  } catch {
+    // Ignore setup errors
+  }
+
+  return () => {
+    unsubscribers.forEach((fn) => {
+      try {
+        fn();
+      } catch {
+        // ignore
+      }
+    });
+  };
 }
 
 // ============================================
