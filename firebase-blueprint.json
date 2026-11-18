@@ -17,16 +17,91 @@
     },
     "User": {
       "title": "User",
-      "description": "User profile and permissions",
+      "description": "User profile and verified server/bureaucrat-managed permissions",
       "type": "object",
       "properties": {
         "uid": { "type": "string" },
         "email": { "type": "string" },
         "name": { "type": "string" },
         "isAdmin": { "type": "boolean" },
-        "isBanned": { "type": "boolean" }
+        "isTeacher": { "type": "boolean" },
+        "isBanned": { "type": "boolean" },
+        "notMediaWikiPageSlug": { "type": "string" },
+        "notMediaWikiPageCreated": { "type": "boolean" }
       },
       "required": ["uid"]
+    },
+    "UserPage": {
+      "title": "UserPage",
+      "description": "Public NotMediaWiki personal page (Namespace 2) without raw e-mail PII",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "ownerUid": { "type": "string" },
+        "ownerName": { "type": "string" },
+        "slug": { "type": "string" },
+        "title": { "type": "string" },
+        "wikitext": { "type": "string" },
+        "isPersonalUserPage": { "type": "boolean" }
+      },
+      "required": ["ownerUid", "slug", "wikitext"]
+    },
+    "SupportTicket": {
+      "title": "SupportTicket",
+      "description": "LGPD and Ouvidoria ticket submitted by a visitor or authenticated titular",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "requesterUid": { "type": "string" },
+        "nome": { "type": "string", "maxLength": 150 },
+        "email": { "type": "string", "maxLength": 200 },
+        "tipo": { "type": "string" },
+        "mensagem": { "type": "string", "maxLength": 5000 },
+        "status": { "type": "string" },
+        "criadoEm": { "type": "string", "format": "date-time" }
+      },
+      "required": ["email", "mensagem"]
+    },
+    "LgpdDeletionRequest": {
+      "title": "LgpdDeletionRequest",
+      "description": "LGPD Art. 18 data deletion request restricted to Burocrata/DPO processing",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "reason": { "type": "string" },
+        "dataTypes": { "type": "array", "items": { "type": "string" } },
+        "status": { "type": "string" },
+        "requestDate": { "type": "string", "format": "date-time" },
+        "processedBy": { "type": "string" },
+        "certificateId": { "type": "string" }
+      },
+      "required": ["email", "status"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "Append-only security and compliance audit event (LGPD Art. 37 / Marco Civil Art. 15)",
+      "type": "object",
+      "properties": {
+        "action": { "type": "string", "maxLength": 200 },
+        "userId": { "type": "string" },
+        "details": { "type": "object" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["action"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "User notification document scoped by userId or global broadcast",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "titulo": { "type": "string" },
+        "mensagem": { "type": "string" },
+        "lida": { "type": "boolean" }
+      },
+      "required": ["userId"]
     },
     "BemteviPost": {
       "title": "BemteviPost",
@@ -132,9 +207,61 @@
       "schema": "Article",
       "description": "UWG Books publications"
     },
+    "/documentos/{docId}": {
+      "schema": "Article",
+      "description": "Editorial and compliance documents"
+    },
+    "/wiki_articles/{slug}": {
+      "schema": "Article",
+      "description": "NotMediaWiki articles"
+    },
+    "/wiki_revisions/{revId}": {
+      "schema": "Article",
+      "description": "NotMediaWiki article revisions"
+    },
+    "/wiki_events/{eventId}": {
+      "schema": "Article",
+      "description": "NotMediaWiki EventStream history"
+    },
+    "/wiki_extensions/{extId}": {
+      "schema": "Article",
+      "description": "NotMediaWiki extension registry (Burocrata managed)"
+    },
+    "/extensions_integrity_registry/{extId}": {
+      "schema": "Article",
+      "description": "Cryptographic integrity metadata for extensions"
+    },
+    "/userpage/{userId}": {
+      "schema": "UserPage",
+      "description": "Public personal Wiki user page without private email PII"
+    },
     "/users/{userId}": {
       "schema": "User",
-      "description": "User accounts and permissions"
+      "description": "User accounts and Burocrata-protected role flags"
+    },
+    "/usuários/{userId}": {
+      "schema": "User",
+      "description": "Localized user accounts mirror with same least-privilege protections"
+    },
+    "/notifications/{notifId}": {
+      "schema": "Notification",
+      "description": "User-scoped portal notifications"
+    },
+    "/tickets/{ticketId}": {
+      "schema": "SupportTicket",
+      "description": "Ouvidoria & LGPD tickets isolated to requester and Burocrata"
+    },
+    "/deletion_requests/{reqId}": {
+      "schema": "LgpdDeletionRequest",
+      "description": "LGPD Art. 18 data deletion queue (write-only create, Burocrata-only read/process)"
+    },
+    "/audit_logs/{logId}": {
+      "schema": "AuditLog",
+      "description": "Append-only security audit log (Burocrata-only read)"
+    },
+    "/checkuser/{logId}": {
+      "schema": "AuditLog",
+      "description": "Append-only CheckUser access/audit log (Burocrata-only read)"
     },
     "/bemtevi_posts/{postId}": {
       "schema": "BemteviPost",

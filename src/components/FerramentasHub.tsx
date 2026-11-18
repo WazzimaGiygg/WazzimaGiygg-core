@@ -37,7 +37,8 @@ import {
   Award
 } from "lucide-react";
 import { collection, addDoc, serverTimestamp } from "firebase/firestore";
-import { db, registerAuditLog, updateUserTeacherStatus, updateUserAdminStatus, updateUserBanStatus, AppUser, Article, safeApiFetch } from "../firebase";
+import DOMPurify from "dompurify";
+import { db, registerAuditLog, updateUserTeacherStatus, updateUserAdminStatus, updateUserBanStatus, AppUser, Article, safeApiFetch, isAuthorizedBurocrata } from "../firebase";
 import { FERRAMENTAS_LIST, FerramentaItem } from "../data/ferramentasSource";
 import {
   CostItem,
@@ -204,8 +205,11 @@ export default function FerramentasHub({
     return FERRAMENTAS_LIST.find((f) => f.href === selectedToolHref) || null;
   }, [selectedToolHref]);
 
-  // Load backend data if available
+  // Load backend data only when authenticated as Burocrata
   useEffect(() => {
+    if (!currentUser?.email || !isAuthorizedBurocrata(currentUser.email)) {
+      return;
+    }
     const fetchToolsData = async () => {
       try {
         const [cRes, rRes, fRes, sRes, bRes] = await Promise.all([
@@ -241,7 +245,7 @@ export default function FerramentasHub({
       }
     };
     fetchToolsData();
-  }, []);
+  }, [currentUser?.email]);
 
   // Handlers for tool actions
   const handleAddCost = async (e: React.FormEvent) => {
@@ -1055,7 +1059,7 @@ export default function FerramentasHub({
               </label>
               <div
                 className="p-4 border-2 border-dashed border-stone-400 bg-stone-50 min-h-[80px]"
-                dangerouslySetInnerHTML={{ __html: floatingHtml }}
+                dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(floatingHtml) }}
               />
             </div>
 

@@ -42,7 +42,7 @@ import {
   Puzzle
 } from "lucide-react";
 import { signInWithPopup } from "firebase/auth";
-import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { collection, addDoc, getDocs, serverTimestamp } from "firebase/firestore";
 
 import {
   auth,
@@ -77,6 +77,7 @@ import {
 } from "../data/ferramentasSource";
 import FerramentasHub from "./FerramentasHub";
 import DeletionRequestsDashboard from "./DeletionRequestsDashboard";
+import LgpdMonthlyReportChart from "./LgpdMonthlyReportChart";
 import { AdminExtensionsManagementView } from "../wiki/components/AdminExtensionsManagementView";
 import type { UserProfile as WikiUserProfile } from "../wiki/types";
 
@@ -127,7 +128,7 @@ export default function AdminPanel({
   // Solicitacao de Exclusao LGPD State (admin/admintools/solicitacaodeexlusao/)
   const [deletionRequestsList, setDeletionRequestsList] = useState<DeletionRequest[]>([]);
   const [isLoadingDeletionRequests, setIsLoadingDeletionRequests] = useState(false);
-  const [exclusaoViewMode, setExclusaoViewMode] = useState<"dashboard" | "queue">("dashboard");
+  const [exclusaoViewMode, setExclusaoViewMode] = useState<"dashboard" | "monthly" | "queue">("dashboard");
   const [deletionSearchTerm, setDeletionSearchTerm] = useState("");
   const [deletionStatusFilter, setDeletionStatusFilter] = useState<string>("all");
   const [selectedDeletionRequest, setSelectedDeletionRequest] = useState<DeletionRequest | null>(null);
@@ -223,19 +224,39 @@ export default function AdminPanel({
         setAdminArticles([...news, ...acad, ...ensaio, ...books, ...mat].slice(0, 100));
       }
 
-      // 3. Fetch Tickets
+      // 3. Fetch Tickets (Firestore + API + localStorage merged)
+      const ticketMap = new Map<string, any>();
+      try {
+        const localTkts = localStorage.getItem("wzzm_tickets");
+        const parsedLocal = localTkts ? JSON.parse(localTkts) : [];
+        if (Array.isArray(parsedLocal)) {
+          parsedLocal.forEach((t: any) => {
+            if (t?.id) ticketMap.set(t.id, t);
+          });
+        }
+      } catch {
+        // Ignore storage error
+      }
+      try {
+        const tktSnap = await getDocs(collection(db, "tickets"));
+        tktSnap.forEach((docSnap) => {
+          const d = docSnap.data();
+          const id = d.id || docSnap.id;
+          ticketMap.set(id, { ...d, id });
+        });
+      } catch {
+        // Ignore Firestore read error if not publisher
+      }
       const tktRes = await safeApiFetch("/api/tickets");
       if (tktRes && tktRes.ok) {
         const data = await tktRes.json();
-        setTicketsList(data || []);
-      } else {
-        try {
-          const localTkts = localStorage.getItem("wzzm_tickets");
-          setTicketsList(localTkts ? JSON.parse(localTkts) : []);
-        } catch {
-          setTicketsList([]);
+        if (Array.isArray(data)) {
+          data.forEach((t: any) => {
+            if (t?.id) ticketMap.set(t.id, t);
+          });
         }
       }
+      setTicketsList(Array.from(ticketMap.values()));
 
       // 4. Fetch Sanctions
       const sancRes = await safeApiFetch("/api/sanctions");
@@ -1140,15 +1161,27 @@ export default function AdminPanel({
                 <button
                   onClick={() => {
                     setAdminTab("exclusao");
-                    setExclusaoViewMode("dashboard");
+                    setExclusaoViewMode("monthly");
                   }}
                   className="paper-button p-4 text-left flex flex-col justify-between cursor-pointer border-2 border-red-700 bg-red-50/50"
                 >
-                  <PieChartIcon className="w-5 h-5 text-red-700 mb-2" />
-                  <span>Dashboard de Exclusões (Recharts) →</span>
+                  <BarChart2 className="w-5 h-5 text-red-700 mb-2" />
+                  <span>Relatório Mensal LGPD (Recharts) →</span>
                 </button>
               </div>
             </div>
+
+            {/* Embedded Monthly LGPD Compliance Visual Report */}
+            <LgpdMonthlyReportChart
+              deletionRequests={deletionRequestsList}
+              tickets={ticketsList}
+              onSelectDeletionRequest={(req) => {
+                setSelectedDeletionRequest(req);
+                setDeletionProcessingNotes(req.observacoes || "");
+              }}
+              onShowToast={showToast}
+              compact
+            />
           </div>
         )}
 
@@ -1669,7 +1702,18 @@ export default function AdminPanel({
                   }`}
                 >
                   <PieChartIcon className="w-4 h-4 text-red-600" />
-                  <span>Dashboard Estatístico em Tempo Real (Recharts)</span>
+                  <span>Dashboard em Tempo Real (Recharts)</span>
+                </button>
+                <button
+                  onClick={() => setExclusaoViewMode("monthly")}
+                  className={`px-3.5 py-2 font-bold uppercase tracking-wider flex items-center gap-2 border-2 cursor-pointer transition-all ${
+                    exclusaoViewMode === "monthly"
+                      ? "bg-[#141414] text-white border-black shadow-[3px_3px_0px_0px_rgba(5,150,105,1)]"
+                      : "bg-white text-stone-700 border-stone-300 hover:bg-stone-100"
+                  }`}
+                >
+                  <BarChart2 className="w-4 h-4 text-emerald-600" />
+                  <span>Relatório Mensal LGPD (Recharts)</span>
                 </button>
                 <button
                   onClick={() => setExclusaoViewMode("queue")}
@@ -1695,6 +1739,19 @@ export default function AdminPanel({
                 requests={deletionRequestsList}
                 onSelectRequest={setSelectedDeletionRequest}
                 currentUserEmail={currentUser?.email}
+              />
+            )}
+
+            {/* Mode 2: Monthly LGPD Statistics Report (Recharts) */}
+            {exclusaoViewMode === "monthly" && (
+              <LgpdMonthlyReportChart
+                deletionRequests={deletionRequestsList}
+                tickets={ticketsList}
+                onSelectDeletionRequest={(req) => {
+                  setSelectedDeletionRequest(req);
+                  setDeletionProcessingNotes(req.observacoes || "");
+                }}
+                onShowToast={showToast}
               />
             )}
 

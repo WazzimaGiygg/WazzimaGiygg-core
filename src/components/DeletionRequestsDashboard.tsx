@@ -73,11 +73,22 @@ export default function DeletionRequestsDashboard({
   const [lastSyncTime, setLastSyncTime] = useState<Date>(new Date());
   const [isRealTimeConnected, setIsRealTimeConnected] = useState<boolean>(true);
 
-  // Bind real-time listener from Firestore
+  const canViewPii = Boolean(
+    currentUserEmail &&
+    currentUserEmail.toLowerCase().trim() === AUTHORIZED_BUROCRATA_EMAIL.toLowerCase()
+  );
+
+  // Bind real-time listener from Firestore (restricted to Burocrata)
   useEffect(() => {
     if (propRequests && propRequests.length > 0) {
       setRequestsList(propRequests);
       setLastSyncTime(new Date());
+      setIsLoading(false);
+      return;
+    }
+
+    if (!canViewPii) {
+      setRequestsList([]);
       setIsLoading(false);
       return;
     }
@@ -95,9 +106,10 @@ export default function DeletionRequestsDashboard({
         unsubscribe();
       }
     };
-  }, [propRequests]);
+  }, [propRequests, canViewPii]);
 
   const handleManualRefresh = async () => {
+    if (!canViewPii) return;
     setIsLoading(true);
     try {
       const fresh = await listDeletionRequests();

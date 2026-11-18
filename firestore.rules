@@ -6,8 +6,17 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isBurocrata() {
+      return isVerifiedUser()
+        && request.auth.token.email == "pedrohenriquecardonaperes@gmail.com";
+    }
+
     function isPublisher() {
-      return isSignedIn() && (
+      return isVerifiedUser() && (
         request.auth.token.email == "wazzimagiygg@gmail.com" ||
         request.auth.token.email == "pedrohenriquecardonaperes@gmail.com"
       );
@@ -17,54 +26,69 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
+    function isValidId(val) {
+      return val is string && val.size() >= 1 && val.size() <= 128 && val.matches('^[a-zA-Z0-9_\\-:.]+$');
+    }
+
     function validNonEmptyString(val, minLen, maxLen) {
       return val is string && val.size() >= minLen && val.size() <= maxLen;
     }
 
-    // Public encyclopedic knowledge and articles are freely readable
+    function viewCountIncrementOnly() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['visualizacoes'])
+        && request.resource.data.visualizacoes is number
+        && (
+          (!('visualizacoes' in resource.data) && request.resource.data.visualizacoes == 1) ||
+          (('visualizacoes' in resource.data) && resource.data.visualizacoes is number && request.resource.data.visualizacoes == resource.data.visualizacoes + 1)
+        );
+    }
+
+    // ============================================
+    // PUBLIC ENCYCLOPEDIC COLLECTIONS (READ PUBLIC, WRITE AUTHORIZED PUBLISHER ONLY)
+    // ============================================
     match /articles/{articleId} {
       allow read: if true;
-      allow write: if isPublisher();
+      allow write: if isPublisher() && isValidId(articleId);
     }
 
     match /artigos/{articleId} {
       allow read: if true;
-      allow write: if isPublisher();
+      allow write: if isPublisher() && isValidId(articleId);
     }
 
     match /wikiworldweb/{articleId} {
       allow read: if true;
-      allow update: if request.resource.data.diff(resource.data).affectedKeys().hasOnly(['visualizacoes']);
-      allow create, delete: if isPublisher();
+      allow update: if isPublisher() || viewCountIncrementOnly();
+      allow create, delete: if isPublisher() && isValidId(articleId);
     }
 
     match /academico/{articleId} {
       allow read: if true;
-      allow update: if request.resource.data.diff(resource.data).affectedKeys().hasOnly(['visualizacoes']);
-      allow create, delete: if isPublisher();
+      allow update: if isPublisher() || viewCountIncrementOnly();
+      allow create, delete: if isPublisher() && isValidId(articleId);
     }
 
     match /materiadeensaio/{articleId} {
       allow read: if true;
-      allow update: if request.resource.data.diff(resource.data).affectedKeys().hasOnly(['visualizacoes']);
-      allow create, delete: if isPublisher();
+      allow update: if isPublisher() || viewCountIncrementOnly();
+      allow create, delete: if isPublisher() && isValidId(articleId);
     }
 
     match /materia/{articleId} {
       allow read: if true;
-      allow update: if request.resource.data.diff(resource.data).affectedKeys().hasOnly(['visualizacoes']);
-      allow create, delete: if isPublisher();
+      allow update: if isPublisher() || viewCountIncrementOnly();
+      allow create, delete: if isPublisher() && isValidId(articleId);
     }
 
     match /uwgbooks/{articleId} {
       allow read: if true;
-      allow update: if request.resource.data.diff(resource.data).affectedKeys().hasOnly(['visualizacoes']);
-      allow create, delete: if isPublisher();
+      allow update: if isPublisher() || viewCountIncrementOnly();
+      allow create, delete: if isPublisher() && isValidId(articleId);
     }
 
     match /documentos/{docId} {
       allow read: if true;
-      allow write: if isPublisher();
+      allow write: if isPublisher() && isValidId(docId);
     }
 
     // NotMediaWiki & Extension Security Integrity Collections
@@ -85,12 +109,12 @@ service cloud.firestore {
 
     match /wiki_extensions/{extId} {
       allow read: if true;
-      allow write: if isPublisher();
+      allow write: if isBurocrata();
     }
 
     match /extensions_integrity_registry/{extId} {
       allow read: if true;
-      allow write: if isPublisher();
+      allow write: if isBurocrata();
     }
 
     // ============================================
@@ -101,18 +125,56 @@ service cloud.firestore {
       allow create: if isSignedIn()
         && request.resource.data.authorId == request.auth.uid
         && validNonEmptyString(request.resource.data.content, 1, 127)
-        && request.resource.data.likesCount is number
-        && request.resource.data.commentsCount is number
-        && request.resource.data.sharesCount is number
-        && request.resource.data.savesCount is number;
+        && request.resource.data.likesCount == 0
+        && request.resource.data.commentsCount == 0
+        && request.resource.data.sharesCount == 0
+        && request.resource.data.savesCount == 0
+        && (!('likedBy' in request.resource.data) || (request.resource.data.likedBy is list && request.resource.data.likedBy.size() == 0))
+        && (!('savedBy' in request.resource.data) || (request.resource.data.savedBy is list && request.resource.data.savedBy.size() == 0));
+
       allow update: if isSignedIn() && (
-        resource.data.authorId == request.auth.uid ||
-        isPublisher() ||
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'likesCount', 'likedBy', 'commentsCount', 'sharesCount', 'savesCount', 'savedBy'
-        ])
+        (
+          resource.data.authorId == request.auth.uid
+          && validNonEmptyString(request.resource.data.content, 1, 127)
+          && request.resource.data.authorId == resource.data.authorId
+        ) ||
+        isBurocrata() ||
+        (
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likedBy', 'likesCount'])
+          && request.resource.data.likedBy is list
+          && request.resource.data.likesCount is number
+          && request.resource.data.likesCount == request.resource.data.likedBy.size()
+          && (
+            (request.resource.data.likedBy.toSet().difference(resource.data.likedBy.toSet()).hasOnly([request.auth.uid]) &&
+             resource.data.likedBy.toSet().difference(request.resource.data.likedBy.toSet()).size() == 0) ||
+            (resource.data.likedBy.toSet().difference(request.resource.data.likedBy.toSet()).hasOnly([request.auth.uid]) &&
+             request.resource.data.likedBy.toSet().difference(resource.data.likedBy.toSet()).size() == 0)
+          )
+        ) ||
+        (
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['savedBy', 'savesCount'])
+          && request.resource.data.savedBy is list
+          && request.resource.data.savesCount is number
+          && request.resource.data.savesCount == request.resource.data.savedBy.size()
+          && (
+            (request.resource.data.savedBy.toSet().difference(resource.data.savedBy.toSet()).hasOnly([request.auth.uid]) &&
+             resource.data.savedBy.toSet().difference(request.resource.data.savedBy.toSet()).size() == 0) ||
+            (resource.data.savedBy.toSet().difference(request.resource.data.savedBy.toSet()).hasOnly([request.auth.uid]) &&
+             request.resource.data.savedBy.toSet().difference(resource.data.savedBy.toSet()).size() == 0)
+          )
+        ) ||
+        (
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['commentsCount'])
+          && request.resource.data.commentsCount is number
+          && request.resource.data.commentsCount == resource.data.commentsCount + 1
+        ) ||
+        (
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['sharesCount'])
+          && request.resource.data.sharesCount is number
+          && request.resource.data.sharesCount == resource.data.sharesCount + 1
+        )
       );
-      allow delete: if isSignedIn() && (resource.data.authorId == request.auth.uid || isPublisher());
+      allow delete: if isSignedIn() && (resource.data.authorId == request.auth.uid || isBurocrata());
     }
 
     match /bemtevi_comments/{commentId} {
@@ -121,20 +183,32 @@ service cloud.firestore {
         && request.resource.data.authorId == request.auth.uid
         && validNonEmptyString(request.resource.data.postId, 1, 120)
         && validNonEmptyString(request.resource.data.content, 1, 280);
-      allow update, delete: if isSignedIn() && (resource.data.authorId == request.auth.uid || isPublisher());
+      allow update, delete: if isSignedIn() && (resource.data.authorId == request.auth.uid || isBurocrata());
     }
 
     match /bemtevi_communities/{communityId} {
       allow read: if true;
       allow create: if isSignedIn()
         && request.resource.data.createdBy == request.auth.uid
-        && validNonEmptyString(request.resource.data.name, 3, 60);
+        && validNonEmptyString(request.resource.data.name, 3, 60)
+        && (!('members' in request.resource.data) || (request.resource.data.members is list && request.resource.data.members.hasOnly([request.auth.uid])));
       allow update: if isSignedIn() && (
         resource.data.createdBy == request.auth.uid ||
-        isPublisher() ||
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members', 'membersCount', 'postsCount'])
+        isBurocrata() ||
+        (
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members', 'membersCount'])
+          && request.resource.data.members is list
+          && request.resource.data.membersCount is number
+          && request.resource.data.membersCount == request.resource.data.members.size()
+          && (
+            (request.resource.data.members.toSet().difference(resource.data.members.toSet()).hasOnly([request.auth.uid]) &&
+             resource.data.members.toSet().difference(request.resource.data.members.toSet()).size() == 0) ||
+            (resource.data.members.toSet().difference(request.resource.data.members.toSet()).hasOnly([request.auth.uid]) &&
+             request.resource.data.members.toSet().difference(resource.data.members.toSet()).size() == 0)
+          )
+        )
       );
-      allow delete: if isPublisher();
+      allow delete: if isBurocrata();
     }
 
     match /bemtevi_messages/{messageId} {
@@ -142,28 +216,78 @@ service cloud.firestore {
         resource.data.senderId == request.auth.uid ||
         resource.data.receiverId == request.auth.uid ||
         resource.data.recipientId == request.auth.uid ||
-        isPublisher()
+        isBurocrata()
       );
       allow create: if isSignedIn()
         && request.resource.data.senderId == request.auth.uid
         && validNonEmptyString(request.resource.data.text, 1, 2000);
-      allow update, delete: if isPublisher();
+      allow update, delete: if isBurocrata();
     }
 
-    // User Pages & Profiles (PII protected)
+    // ============================================
+    // USER PAGES & ACCOUNTS (PRIVILEGE-ESCALATION LOCKED + PII PROTECTED)
+    // ============================================
     match /userpage/{userId} {
       allow read: if true;
-      allow write: if isOwner(userId) || isPublisher();
+      allow create: if isBurocrata() || (
+        isOwner(userId)
+        && isValidId(userId)
+        && (!('uid' in request.resource.data) || request.resource.data.uid == request.auth.uid)
+        && (!('ownerUid' in request.resource.data) || request.resource.data.ownerUid == request.auth.uid)
+        && !('email' in request.resource.data)
+        && !('ownerEmail' in request.resource.data)
+        && (!('isAdmin' in request.resource.data) || request.resource.data.isAdmin == false)
+        && (!('isTeacher' in request.resource.data) || request.resource.data.isTeacher == false)
+        && (!('wikitext' in request.resource.data) || (request.resource.data.wikitext is string && request.resource.data.wikitext.size() <= 200000))
+      );
+      allow update: if isBurocrata() || (
+        isOwner(userId)
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['isAdmin', 'isTeacher', 'ownerUid', 'uid', 'email', 'ownerEmail'])
+        && (!('wikitext' in request.resource.data) || (request.resource.data.wikitext is string && request.resource.data.wikitext.size() <= 200000))
+      );
+      allow delete: if isBurocrata();
     }
 
     match /users/{userId} {
-      allow read: if isOwner(userId) || isPublisher();
-      allow write: if isOwner(userId) || isPublisher();
+      allow read: if isOwner(userId) || isBurocrata();
+      allow create: if isBurocrata() || (
+        isOwner(userId)
+        && isValidId(userId)
+        && (!('uid' in request.resource.data) || request.resource.data.uid == request.auth.uid)
+        && (!('isAdmin' in request.resource.data) || request.resource.data.isAdmin == false)
+        && (!('isBanned' in request.resource.data) || request.resource.data.isBanned == false)
+        && (!('isBan' in request.resource.data) || request.resource.data.isBan == false)
+        && (!('isTeacher' in request.resource.data) || request.resource.data.isTeacher == false)
+        && (!('isTeatcher' in request.resource.data) || request.resource.data.isTeatcher == false)
+      );
+      allow update: if isBurocrata() || (
+        isOwner(userId)
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+          'isAdmin', 'isBan', 'isBanned', 'isTeacher', 'isTeatcher', 'banReason', 'bannedAt'
+        ])
+      );
+      allow delete: if isBurocrata();
     }
 
     match /usuários/{userId} {
-      allow read: if isOwner(userId) || isPublisher();
-      allow write: if isOwner(userId) || isPublisher();
+      allow read: if isOwner(userId) || isBurocrata();
+      allow create: if isBurocrata() || (
+        isOwner(userId)
+        && isValidId(userId)
+        && (!('uid' in request.resource.data) || request.resource.data.uid == request.auth.uid)
+        && (!('isAdmin' in request.resource.data) || request.resource.data.isAdmin == false)
+        && (!('isBanned' in request.resource.data) || request.resource.data.isBanned == false)
+        && (!('isBan' in request.resource.data) || request.resource.data.isBan == false)
+        && (!('isTeacher' in request.resource.data) || request.resource.data.isTeacher == false)
+        && (!('isTeatcher' in request.resource.data) || request.resource.data.isTeatcher == false)
+      );
+      allow update: if isBurocrata() || (
+        isOwner(userId)
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+          'isAdmin', 'isBan', 'isBanned', 'isTeacher', 'isTeatcher', 'banReason', 'bannedAt'
+        ])
+      );
+      allow delete: if isBurocrata();
     }
 
     // Notifications
@@ -171,38 +295,52 @@ service cloud.firestore {
       allow read: if isSignedIn() && (
         resource.data.userId == request.auth.uid ||
         resource.data.userId == "all" ||
-        isPublisher()
+        isBurocrata()
       );
       allow update: if isSignedIn()
-        && (resource.data.userId == request.auth.uid || isPublisher())
+        && (resource.data.userId == request.auth.uid || isBurocrata())
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lida']);
-      allow create, delete: if isPublisher();
+      allow create, delete: if isBurocrata();
     }
 
-    // LGPD Tickets, Deletion Requests & Audit Logs
+    // ============================================
+    // LGPD TICKETS, DELETION REQUESTS & IMMUTABLE AUDIT LOGS
+    // ============================================
     match /tickets/{ticketId} {
       allow create: if validNonEmptyString(request.resource.data.email, 3, 200)
-        && validNonEmptyString(request.resource.data.mensagem, 1, 5000);
-      allow read, update, delete: if isPublisher();
+        && validNonEmptyString(request.resource.data.mensagem, 5, 5000)
+        && (!('status' in request.resource.data) || request.resource.data.status in ['Aberto', 'Em Análise']);
+      allow read: if isBurocrata() || (
+        isSignedIn() && (
+          resource.data.requesterUid == request.auth.uid ||
+          (isVerifiedUser() && resource.data.email == request.auth.token.email)
+        )
+      );
+      allow update, delete: if isBurocrata();
     }
 
     match /deletion_requests/{reqId} {
-      allow create: if validNonEmptyString(request.resource.data.email, 3, 200);
-      allow read, update, delete: if isPublisher();
+      allow create: if validNonEmptyString(request.resource.data.email, 3, 200)
+        && (!('status' in request.resource.data) || request.resource.data.status == 'pending')
+        && (!('processedBy' in request.resource.data) || request.resource.data.processedBy == null);
+      allow read, update, delete: if isBurocrata();
     }
 
     match /audit_logs/{logId} {
       allow create: if validNonEmptyString(request.resource.data.action, 1, 200);
-      allow read: if isPublisher();
+      allow read: if isBurocrata();
+      allow update, delete: if false;
     }
 
     match /checkuser/{logId} {
       allow create: if validNonEmptyString(request.resource.data.action, 1, 200);
-      allow read: if isPublisher();
+      allow read: if isBurocrata();
+      allow update, delete: if false;
     }
 
+    // Default-deny all other collections and paths
     match /{document=**} {
-      allow read, write: if isPublisher();
+      allow read, write: if false;
     }
   }
 }

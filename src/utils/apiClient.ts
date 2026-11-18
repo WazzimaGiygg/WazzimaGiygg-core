@@ -6,6 +6,11 @@
 
 let backendApiCache: { available: boolean; checkedAt: number } | null = null;
 let backendProbePromise: Promise<boolean> | null = null;
+let authTokenProvider: (() => Promise<string | null>) | null = null;
+
+export function registerAuthTokenProvider(provider: () => Promise<string | null>): void {
+  authTokenProvider = provider;
+}
 
 export async function isBackendApiAvailable(): Promise<boolean> {
   if (typeof window === "undefined") return false;
@@ -48,8 +53,19 @@ export async function safeApiFetch(url: string, options?: RequestInit): Promise<
   const available = await isBackendApiAvailable();
   if (!available) return null;
   try {
-    return await fetch(url, options);
+    const headers = new Headers(options?.headers || {});
+    if (!headers.has("Authorization") && authTokenProvider) {
+      const token = await authTokenProvider().catch(() => null);
+      if (token) {
+        headers.set("Authorization", `Bearer ${token}`);
+      }
+    }
+    return await fetch(url, {
+      ...options,
+      headers
+    });
   } catch {
     return null;
   }
 }
+

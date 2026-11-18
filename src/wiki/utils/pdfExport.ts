@@ -473,6 +473,36 @@ export async function exportArticleSnapshotToPdf(
     logging: false,
     backgroundColor: '#ffffff',
     windowWidth: 1200,
+    scrollX: 0,
+    scrollY: 0,
+    onclone: (clonedDoc, clonedEl) => {
+      clonedDoc.documentElement.classList.remove('dark', 'theme-dark');
+      clonedDoc.documentElement.classList.add('theme-light');
+      clonedDoc.body.classList.remove('dark', 'theme-dark');
+      clonedEl.style.backgroundColor = '#ffffff';
+      clonedEl.style.color = '#141414';
+      clonedEl.style.display = 'flow-root';
+      clonedEl.querySelectorAll('pre').forEach((pre) => {
+        pre.style.display = 'block';
+        pre.style.overflow = 'visible';
+        pre.style.whiteSpace = 'pre-wrap';
+        pre.style.color = '#141414';
+        pre.style.backgroundColor = '#f4f3ee';
+        pre.querySelectorAll('code').forEach((code) => {
+          code.style.display = 'block';
+          code.style.background = 'transparent';
+          code.style.border = 'none';
+          code.style.padding = '0';
+          code.style.color = '#141414';
+          code.style.whiteSpace = 'pre-wrap';
+          code.style.overflow = 'visible';
+        });
+      });
+      clonedEl.querySelectorAll('figure, figcaption, .wiki-infobox, .wiki-image-thumb').forEach((box) => {
+        (box as HTMLElement).style.overflow = 'visible';
+        (box as HTMLElement).style.maxHeight = 'none';
+      });
+    },
   });
 
   const imgData = canvas.toDataURL('image/jpeg', 0.95);

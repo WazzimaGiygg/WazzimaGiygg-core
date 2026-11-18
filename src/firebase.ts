@@ -39,7 +39,7 @@ import {
 import noticiasSeed from "./data/noticias.json";
 import artigosSeed from "./data/json/artigos.json";
 import cidadesSancionadasSeed from "./data/cidades_sancionadas.json";
-import { isBackendApiAvailable, safeApiFetch } from "./utils/apiClient";
+import { isBackendApiAvailable, registerAuthTokenProvider, safeApiFetch } from "./utils/apiClient";
 import {
   assertValidPortalArticlePayload,
   assertValidWikiArticlePayload,
@@ -68,6 +68,17 @@ const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 export const db = getFirestore(app);
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
+
+// Bind Firebase Auth ID token provider for authenticated API requests
+registerAuthTokenProvider(async () => {
+  const current = auth.currentUser;
+  if (!current) return null;
+  try {
+    return await current.getIdToken();
+  } catch {
+    return null;
+  }
+});
 
 // ============================================
 // FIRESTORE SANITIZATION & OFFLINE/STATIC HELPERS
@@ -278,21 +289,32 @@ export async function registerUser(user: User | { uid: string; displayName?: str
     const existingSnap = await getDoc(userRef);
     const existingData = existingSnap.exists() ? existingSnap.data() : null;
 
-    const userData = sanitizeFirestoreData({
+    const baseProfile: Record<string, any> = {
       uid,
       email: user.email || "",
       name: user.displayName || existingData?.name || "Usuário",
       profilePictureUrl: ("photoURL" in user ? user.photoURL : "") || existingData?.profilePictureUrl || "",
-      isAdmin: isBurocrata || Boolean(existingData?.isAdmin),
-      isBan: Boolean(existingData?.isBan),
-      isBanned: Boolean(existingData?.isBanned),
-      isTeacher: isBurocrata || Boolean(existingData?.isTeacher),
-      isTeatcher: isBurocrata || Boolean(existingData?.isTeatcher),
       ...(existingData?.createdAt ? {} : { createdAt: serverTimestamp() }),
       ...(existingData?.firstLoginAt ? {} : { firstLoginAt: serverTimestamp() }),
       updatedAt: serverTimestamp(),
       lastLoginAt: serverTimestamp()
-    });
+    };
+
+    // Only set initial false privilege defaults on creation, or allow Burocrata to sync own verified flags;
+    // existing regular users must never re-write privilege fields (enforced in firestore.rules).
+    if (!existingData) {
+      baseProfile.isAdmin = isBurocrata;
+      baseProfile.isBan = false;
+      baseProfile.isBanned = false;
+      baseProfile.isTeacher = isBurocrata;
+      baseProfile.isTeatcher = isBurocrata;
+    } else if (isBurocrata) {
+      baseProfile.isAdmin = true;
+      baseProfile.isTeacher = true;
+      baseProfile.isTeatcher = true;
+    }
+
+    const userData = sanitizeFirestoreData(baseProfile);
 
     await setDoc(userRef, userData, { merge: true });
     await setDoc(doc(db, "usuários", uid), userData, { merge: true }).catch(() => {});
@@ -931,12 +953,21 @@ export async function clearReadNotifications(notifs: UserNotification[], userId 
 // AUDIT & LOGGING (COMPATIBLE WITH checkuser)
 // ============================================
 export async function registerAuditLog(userUid: string, action: string, details?: any) {
+  const safeDetails: Record<string, any> = {};
+  if (details && typeof details === "object") {
+    const blocked = new Set(["password", "passkey", "token", "secret", "authorization", "cookie"]);
+    for (const [k, v] of Object.entries(details)) {
+      if (blocked.has(k.toLowerCase())) continue;
+      safeDetails[k] = typeof v === "string" ? v.slice(0, 300) : v;
+    }
+  }
+
   const logData = sanitizeFirestoreData({
     userId: userUid,
-    action,
-    details: details || {},
+    action: String(action || "event").slice(0, 120),
+    details: safeDetails,
     timestamp: new Date().toISOString(),
-    userAgent: typeof navigator !== "undefined" ? navigator.userAgent : "Server"
+    userAgent: typeof navigator !== "undefined" ? navigator.userAgent.slice(0, 250) : "Server"
   });
 
   safeApiFetch("/api/logs", {
@@ -962,8 +993,8 @@ export async function registerAuditLog(userUid: string, action: string, details?
 export async function listAllUsersFromFirestore(): Promise<AppUser[]> {
   const userMap = new Map<string, AppUser>();
 
-  // 1. Publisher accounts may query the full Firestore users directory
-  if (auth.currentUser && isAuthorizedPublisher(auth.currentUser.email)) {
+  // 1. Only verified Burocrata accounts may query the full Firestore users directory
+  if (auth.currentUser && isAuthorizedBurocrata(auth.currentUser.email)) {
     try {
       const snapshot = await getDocs(collection(db, "users"));
       snapshot.forEach((docSnap) => {
@@ -1226,6 +1257,10 @@ export async function updateUserTeacherStatus(uid: string, isTeacher: boolean): 
 // ============================================
 
 export async function listDeletionRequests(): Promise<DeletionRequest[]> {
+  if (!auth.currentUser || !isAuthorizedBurocrata(auth.currentUser.email)) {
+    return [];
+  }
+
   const collected: DeletionRequest[] = [];
 
   try {
@@ -1288,18 +1323,23 @@ export async function listDeletionRequests(): Promise<DeletionRequest[]> {
 }
 
 /**
- * Real-time Firestore listener for LGPD deletion requests (merged with integrated solicitacaodeexlusao mock data)
+ * Real-time Firestore listener for LGPD deletion requests (strictly restricted to authorized Burocrata)
  */
 export function setupDeletionRequestsListener(
   callback: (requests: DeletionRequest[]) => void
 ): () => void {
+  if (!auth.currentUser || !isAuthorizedBurocrata(auth.currentUser.email)) {
+    callback([]);
+    return () => {};
+  }
+
   let latestLiveRequests: DeletionRequest[] = [];
 
   const emitMerged = () => {
     callback(mergeDeletionRequestsWithMock(latestLiveRequests));
   };
 
-  // Immediately emit integrated mock/cached baseline
+  // Immediately emit integrated baseline for authorized Burocrata
   emitMerged();
 
   const handleLocalUpdate = () => emitMerged();
@@ -2497,21 +2537,19 @@ export async function ensureUserNotMediaWikiPersonalPage(
 
   if (alreadyProvisioned) {
     const normalizedExisting = normalizeUserPageRecord(existingRaw, uid);
-    // Sync silently with backend
-    safeApiFetch("/api/v1/userpages/ensure", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        uid,
-        name: displayName,
-        displayName,
-        email,
-        profilePictureUrl: avatarUrl,
-        isAdmin: isBurocrata,
-        isTeacher: isBurocrata || Boolean((user as any).isTeacher),
-        isGuest
-      })
-    }).catch(() => {});
+    if (!isGuest && auth.currentUser && auth.currentUser.uid === uid) {
+      safeApiFetch("/api/v1/userpages/ensure", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          uid,
+          name: displayName,
+          displayName,
+          profilePictureUrl: avatarUrl,
+          isTeacher: isBurocrata || Boolean((user as any).isTeacher)
+        })
+      }).catch(() => {});
+    }
     return { userPage: normalizedExisting, isFirstLogin: false };
   }
 
@@ -2629,23 +2667,19 @@ export async function ensureUserNotMediaWikiPersonalPage(
     } catch {
       // Cache + backend API still guarantee full persistence
     }
-  }
 
-  // Sync with backend Express gateway
-  safeApiFetch("/api/v1/userpages/ensure", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      uid,
-      name: displayName,
-      displayName,
-      email,
-      profilePictureUrl: avatarUrl,
-      isAdmin: isBurocrata,
-      isTeacher: isBurocrata || Boolean((user as any).isTeacher),
-      isGuest
-    })
-  }).catch(() => {});
+    safeApiFetch("/api/v1/userpages/ensure", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        uid,
+        name: displayName,
+        displayName,
+        profilePictureUrl: avatarUrl,
+        isTeacher: isBurocrata || Boolean((user as any).isTeacher)
+      })
+    }).catch(() => {});
+  }
 
   return { userPage: createdPage, isFirstLogin: true };
 }

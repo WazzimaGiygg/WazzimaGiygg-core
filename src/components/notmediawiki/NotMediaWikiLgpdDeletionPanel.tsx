@@ -81,6 +81,11 @@ export default function NotMediaWikiLgpdDeletionPanel({
   const canProcess = isBureaucrat || isAuthorizedBurocrata(currentUser?.email);
 
   useEffect(() => {
+    if (!canProcess) {
+      setRequests([]);
+      setIsLoading(false);
+      return;
+    }
     setIsLoading(true);
     const unsubscribe = setupDeletionRequestsListener((data) => {
       setRequests(data);
@@ -89,9 +94,13 @@ export default function NotMediaWikiLgpdDeletionPanel({
     return () => {
       if (typeof unsubscribe === 'function') unsubscribe();
     };
-  }, []);
+  }, [canProcess]);
 
   const handleRefresh = async () => {
+    if (!canProcess) {
+      showToast(`Acesso restrito ao Encarregado de Dados / Burocrata (${AUTHORIZED_BUROCRATA_EMAIL}).`, true);
+      return;
+    }
     setIsLoading(true);
     try {
       const fresh = await listDeletionRequests();
@@ -277,56 +286,72 @@ export default function NotMediaWikiLgpdDeletionPanel({
         })}
       </div>
 
-      {/* Filter & Search Bar */}
-      <div className="bg-white border-2 border-[#141414] p-3 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-        <div className="relative flex-1">
-          <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-stone-400" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Filtrar por protocolo (LGPD-REQ-...), titular, e-mail ou motivo..."
-            className="w-full pl-8 pr-3 py-1.5 bg-[#FAF9F5] border border-stone-400 focus:border-[#141414] focus:outline-none text-xs"
-          />
+      {/* Privacy Gate Notice when viewer is not Burocrata */}
+      {!canProcess ? (
+        <div className="bg-amber-50 border-2 border-[#141414] p-5 space-y-2">
+          <div className="flex items-center gap-2 font-bold text-red-800 uppercase text-xs">
+            <Scale className="w-4 h-4" />
+            <span>Acesso Restrito aos Dados Pessoais de Titulares (LGPD Art. 6º, X &amp; Art. 46)</span>
+          </div>
+          <p className="font-serif text-xs text-stone-800 leading-relaxed">
+            Para proteger a privacidade dos solicitantes (nomes, e-mails, telefones, endereços IP e justificativas), a visualização da fila nominal de exclusão é restrita à sessão verificada do Encarregado de Dados / Burocrata oficial (<strong>{AUTHORIZED_BUROCRATA_EMAIL}</strong>).
+          </p>
+          <p className="text-[11px] text-stone-600">
+            Caso deseje exercer seus direitos como titular (Art. 18 da LGPD), utilize a aba <strong>Ouvidoria / LGPD</strong> para abrir seu próprio protocolo de atendimento.
+          </p>
         </div>
+      ) : (
+        <>
+          {/* Filter & Search Bar */}
+          <div className="bg-white border-2 border-[#141414] p-3 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+            <div className="relative flex-1">
+              <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-stone-400" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Filtrar por protocolo (LGPD-REQ-...), titular, e-mail ou motivo..."
+                className="w-full pl-8 pr-3 py-1.5 bg-[#FAF9F5] border border-stone-400 focus:border-[#141414] focus:outline-none text-xs"
+              />
+            </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-1.5">
-            <Filter className="w-3.5 h-3.5 text-stone-500" />
-            <select
-              value={dataTypeFilter}
-              onChange={(e) => setDataTypeFilter(e.target.value)}
-              className="px-2.5 py-1.5 bg-[#FAF9F5] border border-stone-400 text-[11px] font-bold focus:outline-none focus:border-[#141414]"
-              aria-label="Filtrar por tipo de dado"
-            >
-              <option value="all">Todos os Tipos de Dados</option>
-              {availableDataTypes.map((dt) => (
-                <option key={dt} value={dt}>
-                  {dt}
-                </option>
-              ))}
-            </select>
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-1.5">
+                <Filter className="w-3.5 h-3.5 text-stone-500" />
+                <select
+                  value={dataTypeFilter}
+                  onChange={(e) => setDataTypeFilter(e.target.value)}
+                  className="px-2.5 py-1.5 bg-[#FAF9F5] border border-stone-400 text-[11px] font-bold focus:outline-none focus:border-[#141414]"
+                  aria-label="Filtrar por tipo de dado"
+                >
+                  <option value="all">Todos os Tipos de Dados</option>
+                  {availableDataTypes.map((dt) => (
+                    <option key={dt} value={dt}>
+                      {dt}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {(statusFilter !== 'all' || dataTypeFilter !== 'all' || searchQuery.trim() !== '') && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setStatusFilter('all');
+                    setDataTypeFilter('all');
+                    setSearchQuery('');
+                  }}
+                  className="px-2.5 py-1.5 bg-stone-200 hover:bg-stone-300 text-stone-900 text-[10px] font-bold uppercase cursor-pointer"
+                >
+                  Limpar Filtros
+                </button>
+              )}
+            </div>
           </div>
 
-          {(statusFilter !== 'all' || dataTypeFilter !== 'all' || searchQuery.trim() !== '') && (
-            <button
-              type="button"
-              onClick={() => {
-                setStatusFilter('all');
-                setDataTypeFilter('all');
-                setSearchQuery('');
-              }}
-              className="px-2.5 py-1.5 bg-stone-200 hover:bg-stone-300 text-stone-900 text-[10px] font-bold uppercase cursor-pointer"
-            >
-              Limpar Filtros
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Simplified Requests List / Table */}
-      <div className="bg-white border-2 border-[#141414] overflow-x-auto">
-        <table className="w-full text-left border-collapse text-xs">
+          {/* Simplified Requests List / Table */}
+          <div className="bg-white border-2 border-[#141414] overflow-x-auto">
+            <table className="w-full text-left border-collapse text-xs">
           <thead>
             <tr className="bg-[#141414] text-white text-[10px] uppercase tracking-wider">
               <th className="p-2.5 border-r border-stone-700">Protocolo</th>
@@ -562,6 +587,8 @@ export default function NotMediaWikiLgpdDeletionPanel({
           </tbody>
         </table>
       </div>
+        </>
+      )}
     </div>
   );
 }

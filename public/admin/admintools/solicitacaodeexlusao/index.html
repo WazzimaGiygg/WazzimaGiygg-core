@@ -441,6 +441,15 @@
 
     let currentFilter = 'all';
 
+    function escapeHtml(unsafe) {
+      return String(unsafe == null ? '' : unsafe)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
     function renderTable() {
       const tbody = document.getElementById('requests-tbody');
       tbody.innerHTML = '';
@@ -452,16 +461,22 @@
 
       filtered.forEach(req => {
         const tr = document.createElement('tr');
+        const safeStatus = escapeHtml(req.status);
+        const safeId = escapeHtml(req.id);
         tr.innerHTML = `
-          <td style="font-family: 'JetBrains Mono', monospace; font-weight: 700; color: #fbbf24;">${req.id}</td>
-          <td><strong>${req.name}</strong></td>
-          <td style="font-family: 'JetBrains Mono', monospace; color: #a1a1aa;">${req.email}</td>
-          <td style="font-family: 'JetBrains Mono', monospace;">${req.requestDate}</td>
-          <td><span class="status-badge status-${req.status}">${getStatusLabel(req.status)}</span></td>
+          <td style="font-family: 'JetBrains Mono', monospace; font-weight: 700; color: #fbbf24;">${safeId}</td>
+          <td><strong>${escapeHtml(req.name)}</strong></td>
+          <td style="font-family: 'JetBrains Mono', monospace; color: #a1a1aa;">${escapeHtml(req.email)}</td>
+          <td style="font-family: 'JetBrains Mono', monospace;">${escapeHtml(req.requestDate)}</td>
+          <td><span class="status-badge status-${safeStatus}">${escapeHtml(getStatusLabel(req.status))}</span></td>
           <td>
-            <button class="action-btn" onclick="openModal('${req.id}')">Examinar & Processar</button>
+            <button class="action-btn" data-open-id="${safeId}">Examinar & Processar</button>
           </td>
         `;
+        const btn = tr.querySelector('[data-open-id]');
+        if (btn) {
+          btn.addEventListener('click', () => openModal(req.id));
+        }
         tbody.appendChild(tr);
       });
 
@@ -477,13 +492,15 @@
       if (s === 'processing') return 'Em Análise';
       if (s === 'completed') return 'Concluído';
       if (s === 'rejected') return 'Rejeitado';
-      return s;
+      return String(s || '');
     }
 
     function filterTable(status) {
       currentFilter = status;
       document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active'));
-      event.target.classList.add('active');
+      if (event && event.target) {
+        event.target.classList.add('active');
+      }
       renderTable();
     }
 
@@ -503,46 +520,52 @@
       const content = document.getElementById('modal-content');
       content.innerHTML = `
         <div style="margin-bottom: 20px;">
-          <div class="info-row"><span class="info-label">Protocolo:</span><span class="info-value" style="color: #fbbf24;">${req.id}</span></div>
-          <div class="info-row"><span class="info-label">Nome do Titular:</span><span class="info-value">${req.name}</span></div>
-          <div class="info-row"><span class="info-label">E-mail:</span><span class="info-value">${req.email}</span></div>
-          <div class="info-row"><span class="info-label">Telefone:</span><span class="info-value">${req.phone || 'Não informado'}</span></div>
-          <div class="info-row"><span class="info-label">IP do Titular:</span><span class="info-value">${req.ipAddress}</span></div>
-          <div class="info-row"><span class="info-label">Data da Solicitação:</span><span class="info-value">${req.requestDate}</span></div>
-          <div class="info-row"><span class="info-label">Status Atual:</span><span class="info-value">${getStatusLabel(req.status)}</span></div>
+          <div class="info-row"><span class="info-label">Protocolo:</span><span class="info-value" style="color: #fbbf24;">${escapeHtml(req.id)}</span></div>
+          <div class="info-row"><span class="info-label">Nome do Titular:</span><span class="info-value">${escapeHtml(req.name)}</span></div>
+          <div class="info-row"><span class="info-label">E-mail:</span><span class="info-value">${escapeHtml(req.email)}</span></div>
+          <div class="info-row"><span class="info-label">Telefone:</span><span class="info-value">${escapeHtml(req.phone || 'Não informado')}</span></div>
+          <div class="info-row"><span class="info-label">IP do Titular:</span><span class="info-value">${escapeHtml(req.ipAddress)}</span></div>
+          <div class="info-row"><span class="info-label">Data da Solicitação:</span><span class="info-value">${escapeHtml(req.requestDate)}</span></div>
+          <div class="info-row"><span class="info-label">Status Atual:</span><span class="info-value">${escapeHtml(getStatusLabel(req.status))}</span></div>
         </div>
 
         <div style="background: #27272a; padding: 14px; border-radius: 6px; margin-bottom: 20px;">
           <span style="font-size: 11px; text-transform: uppercase; color: #a1a1aa; font-family: 'JetBrains Mono', monospace; font-weight: 700; display: block; margin-bottom: 6px;">
             Fundamentação / Justificativa Informada:
           </span>
-          <p style="font-size: 13px; line-height: 1.5; color: #e4e4e7;">${req.reason}</p>
+          <p style="font-size: 13px; line-height: 1.5; color: #e4e4e7;">${escapeHtml(req.reason)}</p>
         </div>
 
         <div style="display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap;">
           ${req.status === 'pending' ? `
-            <button class="action-btn" style="background: #3b82f6; border-color: #2563eb;" onclick="updateStatus('${req.id}', 'processing')">
+            <button class="action-btn" data-status-target="processing" style="background: #3b82f6; border-color: #2563eb;">
               Iniciar Processamento
             </button>
           ` : ''}
 
           ${req.status !== 'completed' ? `
-            <button class="action-btn" style="background: #10b981; border-color: #059669;" onclick="updateStatus('${req.id}', 'completed')">
+            <button class="action-btn" data-status-target="completed" style="background: #10b981; border-color: #059669;">
               ✓ Executar Exclusão Definitiva (LGPD)
             </button>
           ` : `
             <div style="color: #34d399; font-size: 12px; font-family: 'JetBrains Mono', monospace; font-weight: 700;">
-              ✓ Certificado: ${req.certificateId || 'LGPD-CERT-984210'}
+              ✓ Certificado: ${escapeHtml(req.certificateId || 'LGPD-CERT-984210')}
             </div>
           `}
 
           ${req.status !== 'rejected' && req.status !== 'completed' ? `
-            <button class="action-btn" style="background: #ef4444; border-color: #dc2626;" onclick="updateStatus('${req.id}', 'rejected')">
+            <button class="action-btn" data-status-target="rejected" style="background: #ef4444; border-color: #dc2626;">
               Indeferir Pedido
             </button>
           ` : ''}
         </div>
       `;
+
+      content.querySelectorAll('[data-status-target]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          updateStatus(req.id, btn.getAttribute('data-status-target'));
+        });
+      });
 
       document.getElementById('modal').classList.add('active');
     }

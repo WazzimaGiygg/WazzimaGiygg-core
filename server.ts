@@ -1,10 +1,35 @@
-import express, { Request, Response } from 'express';
+import express, { NextFunction, Request, Response } from 'express';
+import net from 'net';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
 import { GoogleGenAI } from '@google/genai';
 import { checkIfWikimediaIp, cleanIpAddress } from './src/wiki/utils/wikimediaIpChecker';
 import { evaluateIpLocally } from './src/wiki/utils/vpnChecker';
+import {
+  AuthenticatedRequest,
+  AUTHORIZED_BUROCRATA_EMAIL,
+  AUTHORIZED_PUBLISHER_EMAILS,
+  clampString,
+  createCorsMiddleware,
+  createRateLimiter,
+  createSecurityHeadersMiddleware,
+  escapeHtml,
+  getSafeClientIp,
+  isSafeHttpUrl,
+  isValidEmail,
+  isValidId,
+  isVerifiedBurocrata,
+  isVerifiedPublisher,
+  maskIpForDisplay,
+  optionalAuth,
+  requireAuth,
+  requireBurocrata,
+  requirePublisher,
+  sanitizePlainObject,
+  VerifiedAuthUser,
+  verifyElevationSecret,
+} from './server/security';
 import {
   resolveCanonicalUrl,
   resolveDynamicSeoMetadata,
@@ -51,6 +76,8 @@ import {
   BemteviPost,
   BemteviComment,
   BemteviCommunity,
+  BemteviCategory,
+  BEMTEVI_CATEGORIES,
   computeTrendingTopicsFromDbPosts,
   extractHashtagsFromText
 } from './src/data/bemteviData';
@@ -58,25 +85,66 @@ import {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const app = express();
+export const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+const IS_DEV = process.env.NODE_ENV !== 'production';
 
-// Middleware for parsing JSON with sane limits
-app.use(express.json({ limit: '2mb' }));
-app.use(express.urlencoded({ extended: true, limit: '2mb' }));
+// Hide stack fingerprint and configure single-hop reverse proxy validation (Vercel/Cloud Run)
+app.disable('x-powered-by');
+app.set('trust proxy', 1);
 
-// Security, SEO Canonical, Wiki-Site Version & CORS Headers
-app.use((req, res, next) => {
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
-  res.setHeader('X-XSS-Protection', '1; mode=block');
+// Middleware for parsing JSON/urlencoded with strict size limits + prototype pollution scrub
+app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ extended: true, limit: '1mb' }));
+app.use((req: Request, _res: Response, next: NextFunction) => {
+  if (req.body && typeof req.body === 'object') {
+    req.body = sanitizePlainObject(req.body);
+  }
+  next();
+});
+
+// Rate Limiters
+const apiGeneralLimiter = createRateLimiter({ windowMs: 60_000, max: 180, keyPrefix: 'api-general' });
+const apiWriteLimiter = createRateLimiter({ windowMs: 60_000, max: 45, keyPrefix: 'api-write' });
+const elevateLimiter = createRateLimiter({
+  windowMs: 15 * 60_000,
+  max: 8,
+  keyPrefix: 'elevate',
+  message: 'Muitas tentativas de elevação administrativa. Tente novamente mais tarde.'
+});
+const ticketSubmitLimiter = createRateLimiter({
+  windowMs: 10 * 60_000,
+  max: 10,
+  keyPrefix: 'ticket-submit',
+  message: 'Limite de abertura de tickets atingido. Aguarde alguns minutos.'
+});
+const logSubmitLimiter = createRateLimiter({ windowMs: 60_000, max: 30, keyPrefix: 'log-submit' });
+const geminiLimiter = createRateLimiter({
+  windowMs: 60_000,
+  max: 20,
+  keyPrefix: 'gemini',
+  message: 'Limite de requisições de IA atingido. Aguarde um minuto.'
+});
+
+// Security Headers (CSP, HSTS, X-Frame-Options, etc.) & Origin-Allowlisted CORS
+app.use(createSecurityHeadersMiddleware(IS_DEV));
+app.use(createCorsMiddleware());
+app.use('/api/', apiGeneralLimiter);
+app.use('/api/', (req: Request, res: Response, next: NextFunction) => {
+  if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') {
+    return next();
+  }
+  return apiWriteLimiter(req, res, next);
+});
+
+// Wiki-Site Version & SEO Canonical Headers
+app.use((req: Request, res: Response, next: NextFunction) => {
   res.setHeader('X-WikiSite-Version', WIKI_SITE_VERSION);
   res.setHeader('X-Powered-By-WikiSite', WIKI_SITE_DISPLAY_ID);
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Master-Key, X-Access-Key');
 
-  if (
+  if (req.path.startsWith('/admin') || req.path.startsWith('/admintools') || req.path.startsWith('/solicitacaodeexlusao')) {
+    res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+  } else if (
     req.method === 'GET' &&
     !req.path.startsWith('/api/') &&
     !req.path.startsWith('/@') &&
@@ -355,8 +423,9 @@ const DATA_CACHE = {
 // API ROUTES
 // ============================================
 
-// Route for ferramentasadministrativas.html
+// Route for ferramentasadministrativas.html (discourage search indexing)
 app.get(['/admin/ferramentasadministrativas.html', '/ferramentasadministrativas.html'], (_req: Request, res: Response) => {
+  res.setHeader('X-Robots-Tag', 'noindex, nofollow');
   const filePath = path.resolve(__dirname, 'public/admin/ferramentasadministrativas.html');
   if (fs.existsSync(filePath)) {
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
@@ -558,43 +627,65 @@ app.get('/api/articles', (req: Request, res: Response) => {
   });
 });
 
-app.post('/api/articles', (req: Request, res: Response) => {
-  const { titulo, descricao, conteudo, setor, criadorEmail, colecao, link } = req.body;
-  if (!titulo || !String(titulo).trim()) {
+app.post('/api/articles', requirePublisher, (req: Request, res: Response) => {
+  const authUser = (req as AuthenticatedRequest).authUser!;
+  const { titulo, descricao, conteudo, setor, colecao, link } = req.body || {};
+  const cleanTitle = clampString(titulo, 300);
+  if (!cleanTitle) {
     res.status(400).json({ error: 'Título do artigo é obrigatório.' });
+    return;
+  }
+  if (link && !isSafeHttpUrl(link)) {
+    res.status(400).json({ error: 'URL de referência inválida (permitido apenas http/https).' });
     return;
   }
 
   const now = new Date().toISOString();
   const article = {
     id: `art_${Date.now().toString(36)}`,
-    titulo: String(titulo).trim(),
-    descricao: String(descricao || conteudo || '').trim(),
-    conteudo: String(conteudo || descricao || '').trim(),
-    setor: setor || 'Geral',
-    criadorEmail: criadorEmail || 'sistema@wazzimagiygg.com',
+    titulo: cleanTitle,
+    descricao: clampString(descricao || conteudo || '', 20000),
+    conteudo: clampString(conteudo || descricao || '', 50000),
+    setor: clampString(setor, 100) || 'Geral',
+    criadorEmail: authUser.email,
     dataCriacao: now,
     ultimaEdicao: now,
     visualizacoes: 1,
-    colecao: colecao || 'wikiworldweb',
-    ...(link ? { link } : {})
+    colecao: clampString(colecao, 60) || 'wikiworldweb',
+    ...(link ? { link: String(link).trim() } : {})
   };
 
   DATA_CACHE.customArticles.unshift(article);
   res.status(201).json({ success: true, article });
 });
 
-app.put('/api/articles/:id', (req: Request, res: Response) => {
+app.put('/api/articles/:id', requirePublisher, (req: Request, res: Response) => {
   const { id } = req.params;
+  if (!isValidId(id)) {
+    res.status(400).json({ error: 'ID de artigo inválido.' });
+    return;
+  }
   const idx = DATA_CACHE.customArticles.findIndex((a) => a.id === id);
   if (idx === -1) {
     res.status(404).json({ error: 'Artigo editável não encontrado no servidor.' });
     return;
   }
 
+  const { titulo, descricao, conteudo, setor, colecao, link } = req.body || {};
+  if (link !== undefined && link !== '' && !isSafeHttpUrl(link)) {
+    res.status(400).json({ error: 'URL de referência inválida (permitido apenas http/https).' });
+    return;
+  }
+
+  const current = DATA_CACHE.customArticles[idx];
   const updated = {
-    ...DATA_CACHE.customArticles[idx],
-    ...req.body,
+    ...current,
+    ...(titulo !== undefined ? { titulo: clampString(titulo, 300) || current.titulo } : {}),
+    ...(descricao !== undefined ? { descricao: clampString(descricao, 20000) } : {}),
+    ...(conteudo !== undefined ? { conteudo: clampString(conteudo, 50000) } : {}),
+    ...(setor !== undefined ? { setor: clampString(setor, 100) || current.setor } : {}),
+    ...(colecao !== undefined ? { colecao: clampString(colecao, 60) || current.colecao } : {}),
+    ...(link !== undefined ? { link: link ? String(link).trim() : undefined } : {}),
     id,
     ultimaEdicao: new Date().toISOString()
   };
@@ -602,8 +693,12 @@ app.put('/api/articles/:id', (req: Request, res: Response) => {
   res.json({ success: true, article: updated });
 });
 
-app.delete('/api/articles/:id', (req: Request, res: Response) => {
+app.delete('/api/articles/:id', requirePublisher, (req: Request, res: Response) => {
   const { id } = req.params;
+  if (!isValidId(id)) {
+    res.status(400).json({ error: 'ID de artigo inválido.' });
+    return;
+  }
   const beforeLen = DATA_CACHE.customArticles.length;
   DATA_CACHE.customArticles = DATA_CACHE.customArticles.filter((a) => a.id !== id);
   if (DATA_CACHE.customArticles.length < beforeLen) {
@@ -632,7 +727,7 @@ app.get('/api/articles/:id', (req: Request, res: Response) => {
   }
 });
 
-// 8. Messages / Chat (Fully compatible with original JSONBin structure)
+// 8. Messages / Chat (Fully compatible with original JSONBin structure, authenticated mutations)
 app.get('/api/jsonbin/messages', (_req: Request, res: Response) => {
   res.json({
     record: DATA_CACHE.messages,
@@ -644,39 +739,83 @@ app.get('/api/jsonbin/messages', (_req: Request, res: Response) => {
   });
 });
 
-app.put('/api/jsonbin/messages', (req: Request, res: Response) => {
+app.put('/api/jsonbin/messages', requireAuth, (req: Request, res: Response) => {
+  const authUser = (req as AuthenticatedRequest).authUser!;
   const body = req.body;
-  const newMessages = Array.isArray(body) ? body : body?.record || [];
-  if (Array.isArray(newMessages)) {
-    DATA_CACHE.messages = newMessages.slice(-200); // keep last 200 messages for memory performance
-    res.json({
-      record: DATA_CACHE.messages,
-      success: true,
-      updatedAt: new Date().toISOString()
-    });
-  } else {
+  const newMessages = Array.isArray(body) ? body : body?.record;
+  if (!Array.isArray(newMessages)) {
     res.status(400).json({ error: 'Formato inválido. Esperado array de mensagens.' });
+    return;
   }
+
+  const sanitizedIncoming = newMessages
+    .filter((m: any) => m && typeof m === 'object' && typeof m.text === 'string' && m.text.trim())
+    .slice(-200)
+    .map((m: any) => ({
+      id: isValidId(m.id) ? String(m.id) : `msg_${Date.now()}`,
+      senderId: isVerifiedBurocrata(authUser) ? clampString(m.senderId || authUser.uid, 128) : authUser.uid,
+      senderName: clampString(m.senderName || authUser.name || 'Usuário', 100) || 'Usuário',
+      text: clampString(m.text, 2000),
+      timestamp: typeof m.timestamp === 'string' ? m.timestamp : new Date().toISOString()
+    }));
+
+  if (isVerifiedBurocrata(authUser)) {
+    DATA_CACHE.messages = sanitizedIncoming;
+  } else {
+    // Non-burocrata users may only append their own new messages without erasing prior history
+    const existingIds = new Set(DATA_CACHE.messages.map((m) => m.id));
+    const additions = sanitizedIncoming.filter((m) => !existingIds.has(m.id));
+    DATA_CACHE.messages = [...DATA_CACHE.messages, ...additions].slice(-200);
+  }
+
+  res.json({
+    record: DATA_CACHE.messages,
+    success: true,
+    updatedAt: new Date().toISOString()
+  });
 });
 
-// 9. Support & Compliance Tickets (LGPD, Marco Civil, Suporte)
-app.get('/api/tickets', (_req: Request, res: Response) => {
-  res.json(DATA_CACHE.tickets);
+// 9. Support & Compliance Tickets (LGPD, Marco Civil, Suporte) — strictly isolated per user / Burocrata
+app.get('/api/tickets', requireAuth, (req: Request, res: Response) => {
+  const authUser = (req as AuthenticatedRequest).authUser!;
+  if (isVerifiedBurocrata(authUser)) {
+    res.json(DATA_CACHE.tickets);
+    return;
+  }
+
+  const ownTickets = DATA_CACHE.tickets.filter((t: any) => {
+    const byUid = t.requesterUid && t.requesterUid === authUser.uid;
+    const byVerifiedEmail =
+      authUser.emailVerified &&
+      authUser.email &&
+      typeof t.email === 'string' &&
+      t.email.toLowerCase().trim() === authUser.email.toLowerCase().trim();
+    return Boolean(byUid || byVerifiedEmail);
+  });
+  res.json(ownTickets);
 });
 
-app.post('/api/tickets', (req: Request, res: Response) => {
-  const { nome, email, tipo, mensagem } = req.body;
-  if (!email || !mensagem) {
-    res.status(400).json({ error: 'E-mail e mensagem são campos obrigatórios.' });
+app.post('/api/tickets', ticketSubmitLimiter, optionalAuth, (req: Request, res: Response) => {
+  const authUser = (req as AuthenticatedRequest).authUser;
+  const { nome, email, tipo, mensagem } = req.body || {};
+  if (!isValidEmail(email) || typeof mensagem !== 'string' || !mensagem.trim()) {
+    res.status(400).json({ error: 'E-mail válido e mensagem são campos obrigatórios.' });
+    return;
+  }
+
+  const cleanMessage = clampString(mensagem, 5000);
+  if (cleanMessage.length < 5) {
+    res.status(400).json({ error: 'A mensagem deve conter pelo menos 5 caracteres.' });
     return;
   }
 
   const newTicket = {
     id: `tkt-${Date.now().toString(36)}`,
-    nome: nome || 'Anônimo',
-    email,
-    tipo: tipo || 'Solicitação Geral',
-    mensagem,
+    requesterUid: authUser?.uid || null,
+    nome: clampString(nome, 150) || 'Anônimo',
+    email: String(email).trim().toLowerCase().slice(0, 200),
+    tipo: clampString(tipo, 120) || 'Solicitação Geral',
+    mensagem: cleanMessage,
     status: 'Em Análise',
     criadoEm: new Date().toISOString()
   };
@@ -689,12 +828,39 @@ app.post('/api/tickets', (req: Request, res: Response) => {
   });
 });
 
-// 10. Audit & Access Logs (Compatible with checkuser / seu-script-de-log.js)
-app.post('/api/logs', (req: Request, res: Response) => {
+// 10. Audit & Access Logs (Marco Civil Art. 15 / LGPD Art. 37 — validated server-side, restricted read)
+app.post('/api/logs', logSubmitLimiter, optionalAuth, (req: Request, res: Response) => {
+  const authUser = (req as AuthenticatedRequest).authUser;
+  const body = req.body || {};
+  const action = clampString(body.action, 120);
+  if (!action) {
+    res.status(400).json({ error: 'Campo action é obrigatório.' });
+    return;
+  }
+
+  const rawDetails = body.details && typeof body.details === 'object' ? sanitizePlainObject(body.details) : {};
+  const safeDetails: Record<string, any> = {};
+  const blockedKeys = new Set(['password', 'passkey', 'token', 'authorization', 'cookie', 'secret']);
+  for (const [k, v] of Object.entries(rawDetails)) {
+    if (blockedKeys.has(k.toLowerCase())) continue;
+    safeDetails[k] = typeof v === 'string' ? v.slice(0, 500) : v;
+  }
+
+  const clientIp = getSafeClientIp(req);
+  const logType = action.includes('login') || action.includes('access') ? 'access_marco_civil' : 'application_event';
+  const retentionDays = logType === 'access_marco_civil' ? 180 : 90;
+
   const logEntry = {
-    ...req.body,
+    id: `log_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    logType,
+    action,
+    userId: authUser ? authUser.uid : clampString(body.userId, 128) || 'anon',
+    authenticated: Boolean(authUser),
+    details: safeDetails,
+    userAgent: clampString(body.userAgent || req.headers['user-agent'], 300),
     receivedAt: new Date().toISOString(),
-    ip: req.headers['x-forwarded-for'] || req.socket.remoteAddress || '127.0.0.1'
+    retentionDays,
+    ip: clientIp
   };
 
   DATA_CACHE.auditLogs.unshift(logEntry);
@@ -702,7 +868,18 @@ app.post('/api/logs', (req: Request, res: Response) => {
     DATA_CACHE.auditLogs.pop();
   }
 
-  res.json({ success: true, logId: `log_${Date.now()}` });
+  res.json({ success: true, logId: logEntry.id });
+});
+
+app.get('/api/admin/logs', requireBurocrata, (_req: Request, res: Response) => {
+  res.json({
+    success: true,
+    total: DATA_CACHE.auditLogs.length,
+    logs: DATA_CACHE.auditLogs.map((entry: any) => ({
+      ...entry,
+      ipMasked: maskIpForDisplay(entry.ip || '')
+    }))
+  });
 });
 
 // 11. Statistics API
@@ -723,11 +900,11 @@ app.get('/api/stats', (_req: Request, res: Response) => {
 });
 
 // ============================================
-// 12. BUROCRATA & ADMIN CORE API (admin/)
+// 12. BUROCRATA & ADMIN CORE API (admin/) — STRICTLY PROTECTED BY requireBurocrata
 // ============================================
 
 // List users for admin dashboard
-app.get('/api/admin/users', (_req: Request, res: Response) => {
+app.get('/api/admin/users', requireBurocrata, (_req: Request, res: Response) => {
   res.json({
     total: DATA_CACHE.users.length,
     users: DATA_CACHE.users
@@ -735,17 +912,17 @@ app.get('/api/admin/users', (_req: Request, res: Response) => {
 });
 
 // Add new user administratively
-app.post('/api/admin/users', (req: Request, res: Response) => {
-  const { name, email, isAdmin, isTeacher, isBanned } = req.body;
-  if (!email) {
-    res.status(400).json({ error: 'E-mail é obrigatório.' });
+app.post('/api/admin/users', requireBurocrata, (req: Request, res: Response) => {
+  const { name, email, isAdmin, isTeacher, isBanned } = req.body || {};
+  if (!isValidEmail(email)) {
+    res.status(400).json({ error: 'E-mail válido é obrigatório.' });
     return;
   }
 
   const newUser = {
     uid: `usr_${Date.now().toString(36)}`,
-    name: name || 'Novo Usuário',
-    email,
+    name: clampString(name, 120) || 'Novo Usuário',
+    email: String(email).trim().toLowerCase().slice(0, 200),
     isAdmin: !!isAdmin,
     isTeacher: !!isTeacher,
     isBanned: !!isBanned,
@@ -758,15 +935,14 @@ app.post('/api/admin/users', (req: Request, res: Response) => {
 });
 
 // Toggle Admin role
-app.put('/api/admin/users/:uid/toggle-admin', (req: Request, res: Response) => {
+app.put('/api/admin/users/:uid/toggle-admin', requireBurocrata, (req: Request, res: Response) => {
   const { uid } = req.params;
-  const { isAdmin } = req.body;
+  const { isAdmin } = req.body || {};
   const user = DATA_CACHE.users.find((u) => u.uid === uid);
   if (user) {
     user.isAdmin = typeof isAdmin === 'boolean' ? isAdmin : !user.isAdmin;
     res.json({ success: true, user });
   } else {
-    // If not found in cache, register into cache
     const newUser = {
       uid,
       name: 'Usuário do Sistema',
@@ -783,14 +959,14 @@ app.put('/api/admin/users/:uid/toggle-admin', (req: Request, res: Response) => {
 });
 
 // Toggle Ban status
-app.put('/api/admin/users/:uid/toggle-ban', (req: Request, res: Response) => {
+app.put('/api/admin/users/:uid/toggle-ban', requireBurocrata, (req: Request, res: Response) => {
   const { uid } = req.params;
-  const { isBanned, banReason } = req.body;
+  const { isBanned, banReason } = req.body || {};
   const user = DATA_CACHE.users.find((u) => u.uid === uid);
   if (user) {
     user.isBanned = typeof isBanned === 'boolean' ? isBanned : !user.isBanned;
     if (user.isBanned) {
-      (user as any).banReason = banReason || 'Violação das Políticas do Portal';
+      (user as any).banReason = clampString(banReason, 300) || 'Violação das Políticas do Portal';
     } else {
       delete (user as any).banReason;
     }
@@ -801,9 +977,9 @@ app.put('/api/admin/users/:uid/toggle-ban', (req: Request, res: Response) => {
 });
 
 // Toggle Teacher / Docente role
-app.put('/api/admin/users/:uid/toggle-teacher', (req: Request, res: Response) => {
+app.put('/api/admin/users/:uid/toggle-teacher', requireBurocrata, (req: Request, res: Response) => {
   const { uid } = req.params;
-  const { isTeacher } = req.body;
+  const { isTeacher } = req.body || {};
   const user = DATA_CACHE.users.find((u) => u.uid === uid);
   if (user) {
     user.isTeacher = typeof isTeacher === 'boolean' ? isTeacher : !user.isTeacher;
@@ -814,7 +990,7 @@ app.put('/api/admin/users/:uid/toggle-teacher', (req: Request, res: Response) =>
 });
 
 // Delete user record
-app.delete('/api/admin/users/:uid', (req: Request, res: Response) => {
+app.delete('/api/admin/users/:uid', requireBurocrata, (req: Request, res: Response) => {
   const { uid } = req.params;
   const index = DATA_CACHE.users.findIndex((u) => u.uid === uid);
   if (index !== -1) {
@@ -826,10 +1002,9 @@ app.delete('/api/admin/users/:uid', (req: Request, res: Response) => {
 });
 
 // Delete article administratively
-app.delete('/api/admin/articles/:id', (req: Request, res: Response) => {
+app.delete('/api/admin/articles/:id', requireBurocrata, (req: Request, res: Response) => {
   const { id } = req.params;
   DATA_CACHE.customArticles = DATA_CACHE.customArticles.filter((a) => a.id !== id);
-  // If it is in noticias
   if (id.startsWith('news_')) {
     const idx = parseInt(id.replace('news_', ''), 10) - 1;
     if (idx >= 0 && idx < DATA_CACHE.noticias.length) {
@@ -839,10 +1014,15 @@ app.delete('/api/admin/articles/:id', (req: Request, res: Response) => {
   res.json({ success: true, message: `Artigo ${id} removido pelo Burocrata.` });
 });
 
-// Update / Delete ticket status
-app.put('/api/tickets/:id', (req: Request, res: Response) => {
+// Update / Delete ticket status (Burocrata only)
+app.put('/api/tickets/:id', requireBurocrata, (req: Request, res: Response) => {
   const { id } = req.params;
-  const { status } = req.body;
+  const { status } = req.body || {};
+  const allowedStatuses = new Set(['Aberto', 'Em Análise', 'Resolvido', 'Concluído', 'Indeferido']);
+  if (status && !allowedStatuses.has(status)) {
+    res.status(400).json({ error: 'Status de ticket inválido.' });
+    return;
+  }
   const ticket = DATA_CACHE.tickets.find((t) => t.id === id);
   if (ticket) {
     ticket.status = status || 'Concluído';
@@ -852,7 +1032,7 @@ app.put('/api/tickets/:id', (req: Request, res: Response) => {
   }
 });
 
-app.delete('/api/tickets/:id', (req: Request, res: Response) => {
+app.delete('/api/tickets/:id', requireBurocrata, (req: Request, res: Response) => {
   const { id } = req.params;
   const initialLen = DATA_CACHE.tickets.length;
   DATA_CACHE.tickets = DATA_CACHE.tickets.filter((t) => t.id !== id);
@@ -864,8 +1044,9 @@ app.delete('/api/tickets/:id', (req: Request, res: Response) => {
 });
 
 // Add / Delete sanctioned city
-app.post('/api/admin/sanctions', (req: Request, res: Response) => {
-  const { cidade, moderador } = req.body;
+app.post('/api/admin/sanctions', requireBurocrata, (req: Request, res: Response) => {
+  const cidade = clampString(req.body?.cidade, 120);
+  const moderador = clampString(req.body?.moderador, 120);
   if (!cidade || !moderador) {
     res.status(400).json({ error: 'Cidade e moderador são obrigatórios.' });
     return;
@@ -874,7 +1055,7 @@ app.post('/api/admin/sanctions', (req: Request, res: Response) => {
   res.status(201).json({ success: true, data: DATA_CACHE.cidadesSancionadas });
 });
 
-app.delete('/api/admin/sanctions/:index', (req: Request, res: Response) => {
+app.delete('/api/admin/sanctions/:index', requireBurocrata, (req: Request, res: Response) => {
   const idx = parseInt(req.params.index, 10);
   if (!isNaN(idx) && idx >= 0 && idx < DATA_CACHE.cidadesSancionadas.cidades_sancionadas.length) {
     DATA_CACHE.cidadesSancionadas.cidades_sancionadas.splice(idx, 1);
@@ -884,132 +1065,161 @@ app.delete('/api/admin/sanctions/:index', (req: Request, res: Response) => {
   }
 });
 
-// Elevate account with Burocrata Master Key / PIN
-app.post('/api/admin/elevate', (req: Request, res: Response) => {
-  const { uid, email, passkey } = req.body;
-  const validKeys = ['wzzm2026', 'burocrata', 'burocrata-wzzm', 'admin123', 'wazzimagiygg'];
-
-  if (validKeys.includes(passkey?.toLowerCase().trim())) {
-    // Elevate in users cache
-    let existing = DATA_CACHE.users.find((u) => u.uid === uid || u.email === email);
-    if (existing) {
-      existing.isAdmin = true;
-    } else {
-      DATA_CACHE.users.unshift({
-        uid: uid || `admin_${Date.now()}`,
-        name: 'Burocrata Autorizado',
-        email: email || 'burocrata@wazzimagiygg.com',
-        isAdmin: true,
-        isTeacher: true,
-        isBanned: false,
-        createdAt: new Date().toISOString(),
-        lastLoginAt: new Date().toISOString()
-      });
-    }
-
-    res.json({
-      success: true,
-      message: 'Acesso de Burocrata concedido com sucesso.',
-      isAdmin: true
+// Elevate account strictly via verified Firebase ID token + optional env-configured secret (NO hardcoded passkeys)
+app.post('/api/admin/elevate', elevateLimiter, requireAuth, (req: Request, res: Response) => {
+  const authUser = (req as AuthenticatedRequest).authUser!;
+  if (!isVerifiedBurocrata(authUser)) {
+    res.status(403).json({
+      error: 'Acesso negado: Somente o Burocrata oficial verificado pode ativar privilégios administrativos.'
     });
-  } else {
-    res.status(401).json({ error: 'Chave de segurança de Burocrata incorreta.' });
+    return;
   }
+
+  const secretCheck = verifyElevationSecret(req.body?.passkey);
+  if (!secretCheck.configured) {
+    res.status(503).json({
+      error:
+        'Chave alternativa não configurada no servidor (BUROCRATA_ELEVATION_SECRET). Utilize o botão oficial "Entrar com Conta Google".'
+    });
+    return;
+  }
+  if (!secretCheck.valid) {
+    res.status(401).json({ error: 'Chave de segurança de Burocrata incorreta.' });
+    return;
+  }
+
+  const existing = DATA_CACHE.users.find((u) => u.uid === authUser.uid || u.email === authUser.email);
+  if (existing) {
+    existing.isAdmin = true;
+    existing.lastLoginAt = new Date().toISOString();
+  } else {
+    DATA_CACHE.users.unshift({
+      uid: authUser.uid,
+      name: authUser.name || 'Burocrata Autorizado',
+      email: authUser.email,
+      isAdmin: true,
+      isTeacher: true,
+      isBanned: false,
+      createdAt: new Date().toISOString(),
+      lastLoginAt: new Date().toISOString()
+    });
+  }
+
+  res.json({
+    success: true,
+    uid: authUser.uid,
+    email: authUser.email,
+    message: 'Acesso de Burocrata concedido com sucesso.',
+    isAdmin: true
+  });
 });
 
 // ============================================
 // ADMIN TOOLS SUITE APIS (24 FERRAMENTAS)
 // ============================================
 
-// 1. Costs API (administrarcustos, listadecustosavancada, listagemdecustos)
-app.get('/api/admin/costs', (_req: Request, res: Response) => {
+// 1. Costs API
+app.get('/api/admin/costs', requireBurocrata, (_req: Request, res: Response) => {
   res.json({ success: true, costs: DATA_CACHE.costs });
 });
 
-app.post('/api/admin/costs', (req: Request, res: Response) => {
-  const { descricao, categoria, valor, data, comprovanteUrl, responsavel, status } = req.body;
-  if (!descricao || valor === undefined) {
-    res.status(400).json({ error: 'Descrição e valor são obrigatórios.' });
+app.post('/api/admin/costs', requireBurocrata, (req: Request, res: Response) => {
+  const { descricao, categoria, valor, data, comprovanteUrl, responsavel, status } = req.body || {};
+  const cleanDesc = clampString(descricao, 250);
+  const numVal = Number(valor);
+  if (!cleanDesc || Number.isNaN(numVal) || numVal < 0) {
+    res.status(400).json({ error: 'Descrição e valor numérico válido são obrigatórios.' });
+    return;
+  }
+  if (comprovanteUrl && !isSafeHttpUrl(comprovanteUrl)) {
+    res.status(400).json({ error: 'URL de comprovante inválida.' });
     return;
   }
   const newCost = {
     id: `cst-${Date.now().toString().slice(-4)}`,
-    descricao,
-    categoria: categoria || 'Infraestrutura',
-    valor: parseFloat(valor) || 0,
-    data: data || new Date().toISOString().split('T')[0],
-    comprovanteUrl: comprovanteUrl || '',
-    responsavel: responsavel || 'Burocrata',
-    status: status || 'Pago'
+    descricao: cleanDesc,
+    categoria: clampString(categoria, 80) || 'Infraestrutura',
+    valor: numVal,
+    data: clampString(data, 30) || new Date().toISOString().split('T')[0],
+    comprovanteUrl: comprovanteUrl ? String(comprovanteUrl).trim() : '',
+    responsavel: clampString(responsavel, 100) || 'Burocrata',
+    status: clampString(status, 40) || 'Pago'
   };
   DATA_CACHE.costs.unshift(newCost);
   res.status(201).json({ success: true, cost: newCost });
 });
 
-app.delete('/api/admin/costs/:id', (req: Request, res: Response) => {
+app.delete('/api/admin/costs/:id', requireBurocrata, (req: Request, res: Response) => {
   const { id } = req.params;
   DATA_CACHE.costs = DATA_CACHE.costs.filter((c) => c.id !== id);
   res.json({ success: true, message: `Custo ${id} removido com sucesso.` });
 });
 
-// 2. Redirects API (redirecionador, admintools/redirecionador)
-app.get('/api/admin/redirects', (_req: Request, res: Response) => {
+// 2. Redirects API (protected + strict http/https URL validation)
+app.get('/api/admin/redirects', requireBurocrata, (_req: Request, res: Response) => {
   res.json({ success: true, redirects: DATA_CACHE.redirects });
 });
 
-app.post('/api/admin/redirects', (req: Request, res: Response) => {
-  const { slug, urlDestino, titulo, comAviso } = req.body;
-  if (!slug || !urlDestino) {
-    res.status(400).json({ error: 'Slug e URL destino são obrigatórios.' });
+app.post('/api/admin/redirects', requireBurocrata, (req: Request, res: Response) => {
+  const authUser = (req as AuthenticatedRequest).authUser!;
+  const { slug, urlDestino, titulo, comAviso } = req.body || {};
+  const cleanSlug = typeof slug === 'string' ? slug.replace(/^\/+/, '').toLowerCase().trim() : '';
+  if (!cleanSlug || !/^[a-z0-9_-]{1,64}$/.test(cleanSlug)) {
+    res.status(400).json({ error: 'Slug inválido (use apenas letras, números, hífen ou underscore, até 64 chars).' });
     return;
   }
-  const cleanSlug = slug.replace(/^\/+/, '').toLowerCase().trim();
+  if (!isSafeHttpUrl(urlDestino)) {
+    res.status(400).json({ error: 'URL de destino inválida (apenas protocolos http:// ou https:// são permitidos).' });
+    return;
+  }
   const newRedirect = {
     id: `red-${Date.now().toString().slice(-4)}`,
     slug: cleanSlug,
-    urlDestino: urlDestino.trim(),
-    titulo: titulo?.trim() || cleanSlug,
+    urlDestino: String(urlDestino).trim(),
+    titulo: clampString(titulo, 150) || cleanSlug,
     comAviso: Boolean(comAviso),
     totalCliques: 0,
     criadoEm: new Date().toISOString().split('T')[0],
-    criadoPor: 'burocrata@wazzimagiygg.com',
+    criadoPor: authUser.email,
     ativo: true
   };
   DATA_CACHE.redirects.unshift(newRedirect);
   res.status(201).json({ success: true, redirect: newRedirect });
 });
 
-app.delete('/api/admin/redirects/:id', (req: Request, res: Response) => {
+app.delete('/api/admin/redirects/:id', requireBurocrata, (req: Request, res: Response) => {
   const { id } = req.params;
   DATA_CACHE.redirects = DATA_CACHE.redirects.filter((r) => r.id !== id);
   res.json({ success: true, message: `Redirecionador ${id} excluído.` });
 });
 
-// Outbound redirect execution route: /r/:slug
+// Outbound redirect execution route: /r/:slug (XSS-safe HTML escaping + strict URL validation)
 app.get('/r/:slug', (req: Request, res: Response) => {
-  const slug = req.params.slug.toLowerCase().trim();
+  const slug = String(req.params.slug || '').toLowerCase().trim();
+  const safeSlugDisplay = escapeHtml(slug.slice(0, 64));
   const redirect = DATA_CACHE.redirects.find((r) => r.slug === slug && r.ativo);
-  if (!redirect) {
+  if (!redirect || !isSafeHttpUrl(redirect.urlDestino)) {
     res.status(404).send(`
-      <!DOCTYPE html><html><body style="font-family: monospace; padding: 2rem; background: #0f0f12; color: #fff;">
+      <!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Redirecionamento não encontrado</title></head><body style="font-family: monospace; padding: 2rem; background: #0f0f12; color: #fff;">
         <h2>[WZZM] Redirecionamento não encontrado</h2>
-        <p>O slug solicitado "/r/${slug}" não está registrado ou foi desativado.</p>
+        <p>O slug solicitado "/r/${safeSlugDisplay}" não está registrado ou foi desativado.</p>
         <a href="/" style="color: #f59e0b;">← Voltar ao Portal</a>
       </body></html>
     `);
     return;
   }
+  const safeDestHtml = escapeHtml(redirect.urlDestino);
   redirect.totalCliques += 1;
   if (redirect.comAviso) {
     res.send(`
-      <!DOCTYPE html><html><head><meta charset="UTF-8"><title>Aviso de Redirecionamento - WZZM</title></head>
+      <!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Aviso de Redirecionamento - WZZM</title></head>
       <body style="font-family: sans-serif; background: #f4f3f0; color: #141414; padding: 2rem; max-width: 600px; margin: 40px auto; border: 4px solid #141414; box-shadow: 8px 8px 0px #b91c1c;">
         <h2 style="font-family: serif; color: #b91c1c; text-transform: uppercase;">Aviso de Segurança — Link Externo</h2>
         <p>Você está prestes a sair do ambiente seguro da WazzimaGiygg para acessar:</p>
-        <div style="background: #e5e5e5; padding: 10px; font-family: monospace; word-break: break-all; margin: 15px 0;">${redirect.urlDestino}</div>
+        <div style="background: #e5e5e5; padding: 10px; font-family: monospace; word-break: break-all; margin: 15px 0;">${safeDestHtml}</div>
         <p style="font-size: 13px; color: #666;">A WZZM não se responsabiliza pelo conteúdo de sites externos.</p>
         <div style="margin-top: 20px;">
-          <a href="${redirect.urlDestino}" style="background: #141414; color: #fff; padding: 10px 20px; text-decoration: none; font-weight: bold; font-family: monospace; display: inline-block;">PROSSEGUIR PARA O SITE ➔</a>
+          <a href="${safeDestHtml}" rel="noopener noreferrer" style="background: #141414; color: #fff; padding: 10px 20px; text-decoration: none; font-weight: bold; font-family: monospace; display: inline-block;">PROSSEGUIR PARA O SITE ➔</a>
           <a href="/" style="margin-left: 15px; color: #666; font-size: 13px;">Cancelar e voltar</a>
         </div>
       </body></html>
@@ -1020,22 +1230,23 @@ app.get('/r/:slug', (req: Request, res: Response) => {
 });
 
 // 3. Forum Topics API (gerenciarforum)
-app.get('/api/admin/forum', (_req: Request, res: Response) => {
+app.get('/api/admin/forum', requireBurocrata, (_req: Request, res: Response) => {
   res.json({ success: true, topics: DATA_CACHE.forumTopics });
 });
 
-app.post('/api/admin/forum', (req: Request, res: Response) => {
-  const { titulo, categoria, autor } = req.body;
+app.post('/api/admin/forum', requireBurocrata, (req: Request, res: Response) => {
+  const authUser = (req as AuthenticatedRequest).authUser!;
+  const titulo = clampString(req.body?.titulo, 200);
   if (!titulo) {
     res.status(400).json({ error: 'Título do tópico é obrigatório.' });
     return;
   }
   const newTopic = {
     id: `top-${Date.now().toString().slice(-4)}`,
-    titulo: titulo.trim(),
-    categoria: categoria || 'Geral',
-    autor: autor || 'Burocrata-Chefe',
-    autorEmail: 'admin@wazzimagiygg.com',
+    titulo,
+    categoria: clampString(req.body?.categoria, 80) || 'Geral',
+    autor: clampString(req.body?.autor, 100) || 'Burocrata-Chefe',
+    autorEmail: authUser.email,
     respostas: 0,
     fixado: false,
     fechado: false,
@@ -1046,9 +1257,9 @@ app.post('/api/admin/forum', (req: Request, res: Response) => {
   res.status(201).json({ success: true, topic: newTopic });
 });
 
-app.put('/api/admin/forum/:id/toggle', (req: Request, res: Response) => {
+app.put('/api/admin/forum/:id/toggle', requireBurocrata, (req: Request, res: Response) => {
   const { id } = req.params;
-  const { action } = req.body;
+  const { action } = req.body || {};
   const topic = DATA_CACHE.forumTopics.find((t) => t.id === id);
   if (!topic) {
     res.status(404).json({ error: 'Tópico não encontrado.' });
@@ -1060,63 +1271,66 @@ app.put('/api/admin/forum/:id/toggle', (req: Request, res: Response) => {
   res.json({ success: true, topic });
 });
 
-app.delete('/api/admin/forum/:id', (req: Request, res: Response) => {
+app.delete('/api/admin/forum/:id', requireBurocrata, (req: Request, res: Response) => {
   const { id } = req.params;
   DATA_CACHE.forumTopics = DATA_CACHE.forumTopics.filter((t) => t.id !== id);
   res.json({ success: true, message: `Tópico ${id} excluído com sucesso.` });
 });
 
 // 4. Surveys and Reports API (pesquisas)
-app.get('/api/admin/surveys', (_req: Request, res: Response) => {
+app.get('/api/admin/surveys', requireBurocrata, (_req: Request, res: Response) => {
   res.json({ success: true, surveys: DATA_CACHE.surveys });
 });
 
-app.post('/api/admin/surveys', (req: Request, res: Response) => {
-  const { titulo, tipo, descricao, prioridade } = req.body;
+app.post('/api/admin/surveys', requireBurocrata, (req: Request, res: Response) => {
+  const titulo = clampString(req.body?.titulo, 200);
   if (!titulo) {
     res.status(400).json({ error: 'Título é obrigatório.' });
     return;
   }
   const newSurvey = {
     id: `surv-${Date.now().toString().slice(-4)}`,
-    titulo: titulo.trim(),
-    tipo: tipo || 'Pesquisa Acadêmica',
-    descricao: descricao?.trim() || '',
+    titulo,
+    tipo: clampString(req.body?.tipo, 80) || 'Pesquisa Acadêmica',
+    descricao: clampString(req.body?.descricao, 2000),
     respostasOuStatus: 'Recém criada • Em andamento',
     data: new Date().toISOString().split('T')[0],
-    prioridade: prioridade || 'Média'
+    prioridade: clampString(req.body?.prioridade, 40) || 'Média'
   };
   DATA_CACHE.surveys.unshift(newSurvey);
   res.status(201).json({ success: true, survey: newSurvey });
 });
 
 // 5. Blog Posts API (blog/admin)
-app.get('/api/admin/blog', (_req: Request, res: Response) => {
+app.get('/api/admin/blog', requireBurocrata, (_req: Request, res: Response) => {
   res.json({ success: true, posts: DATA_CACHE.blogPosts });
 });
 
-app.post('/api/admin/blog', (req: Request, res: Response) => {
-  const { titulo, resumo, conteudo, tags } = req.body;
+app.post('/api/admin/blog', requireBurocrata, (req: Request, res: Response) => {
+  const titulo = clampString(req.body?.titulo, 200);
+  const conteudo = clampString(req.body?.conteudo, 20000);
   if (!titulo || !conteudo) {
     res.status(400).json({ error: 'Título e conteúdo são obrigatórios.' });
     return;
   }
   const newPost = {
     id: `blog-${Date.now().toString().slice(-4)}`,
-    titulo: titulo.trim(),
-    resumo: resumo?.trim() || '',
-    conteudo: conteudo.trim(),
+    titulo,
+    resumo: clampString(req.body?.resumo, 400),
+    conteudo,
     autor: 'Gabinete do Burocrata',
     data: new Date().toISOString().split('T')[0],
     publicado: true,
-    tags: Array.isArray(tags) ? tags : ['Editorial', 'Burocrata']
+    tags: Array.isArray(req.body?.tags)
+      ? req.body.tags.slice(0, 10).map((t: any) => clampString(t, 40)).filter(Boolean)
+      : ['Editorial', 'Burocrata']
   };
   DATA_CACHE.blogPosts.unshift(newPost);
   res.status(201).json({ success: true, post: newPost });
 });
 
 // 6. Pages Directory Sitemap API (buscadelistadepaginas)
-app.get('/api/admin/pages', (_req: Request, res: Response) => {
+app.get('/api/admin/pages', requireBurocrata, (_req: Request, res: Response) => {
   res.json({
     success: true,
     pages: [
@@ -1125,7 +1339,7 @@ app.get('/api/admin/pages', (_req: Request, res: Response) => {
       { url: '/admin/ferramentasadministrativas.html', titulo: 'Menu de 24 Ferramentas Administrativas', setor: 'Administração', tipo: 'Módulo Administrativo', status: 'Restrito Burocrata' },
       { url: '/api/articles', titulo: 'API Catálogo Global de Artigos', setor: 'API', tipo: 'API REST', status: 'Ativo' },
       { url: '/api/news', titulo: 'API Notícias do Diário Oficial', setor: 'API', tipo: 'API REST', status: 'Ativo' },
-      { url: '/api/tickets', titulo: 'API Tickets e Ouvidoria LGPD', setor: 'Ouvidoria', tipo: 'API REST', status: 'Ativo' },
+      { url: '/api/tickets', titulo: 'API Tickets e Ouvidoria LGPD', setor: 'Ouvidoria', tipo: 'API REST', status: 'Restrito Autenticado' },
       { url: '/api/sanctions', titulo: 'API Tabela de Cidades Sancionadas', setor: 'Forense', tipo: 'API REST', status: 'Ativo' },
       { url: '/api/health', titulo: 'API Diagnóstico de Conexão Firestore', setor: 'Infraestrutura', tipo: 'API REST', status: 'Ativo' },
       { url: '/colecoes/wikiworldweb', titulo: 'Coleção WikiWorldWeb', setor: 'Acervo', tipo: 'Página Pública', status: 'Ativo' },
@@ -1138,27 +1352,36 @@ app.get('/api/admin/pages', (_req: Request, res: Response) => {
   });
 });
 
-// 7. LGPD Deletion Requests API (solicitacaodeexlusao)
-app.get('/api/admin/deletion-requests', (_req: Request, res: Response) => {
+// 7. LGPD Deletion Requests API (solicitacaodeexlusao) — strictly Burocrata-only
+app.get('/api/admin/deletion-requests', requireBurocrata, (_req: Request, res: Response) => {
   res.json({ success: true, requests: DATA_CACHE.deletionRequests });
 });
 
-app.put('/api/admin/deletion-requests/:id', (req: Request, res: Response) => {
+app.put('/api/admin/deletion-requests/:id', requireBurocrata, (req: Request, res: Response) => {
+  const authUser = (req as AuthenticatedRequest).authUser!;
   const { id } = req.params;
-  const { status, adminEmail, rejectionReason, certificateId } = req.body;
+  const { status, rejectionReason, certificateId } = req.body || {};
+  const allowed = new Set(['pending', 'processing', 'completed', 'rejected']);
+  if (status && !allowed.has(status)) {
+    res.status(400).json({ error: 'Status de solicitação LGPD inválido.' });
+    return;
+  }
+
   const item = (DATA_CACHE.deletionRequests as ServerDeletionRequest[]).find((r) => r.id === id);
   if (!item) {
     res.status(404).json({ error: 'Solicitação não encontrada.' });
     return;
   }
   item.status = status || item.status;
-  item.processedBy = adminEmail || 'pedrohenriquecardonaperes@gmail.com';
+  item.processedBy = authUser.email;
   if (status === 'completed') {
     item.completedAt = new Date().toISOString();
-    item.certificateId = certificateId || `LGPD-CERT-${Date.now().toString().slice(-6)}`;
+    item.certificateId = clampString(certificateId, 64) || `LGPD-CERT-${Date.now().toString().slice(-6)}`;
   } else if (status === 'rejected') {
     item.rejectedAt = new Date().toISOString();
-    item.rejectionReason = rejectionReason || 'Fundamentação legal da guarda obrigatória (Marco Civil Art. 15).';
+    item.rejectionReason =
+      clampString(rejectionReason, 1000) ||
+      'Fundamentação legal da guarda obrigatória (Marco Civil Art. 15).';
   }
   res.json({ success: true, request: item });
 });
@@ -1170,6 +1393,7 @@ app.get([
   '/admintools/solicitacaodeexlusao*',
   '/solicitacaodeexlusao*'
 ], (_req: Request, res: Response) => {
+  res.setHeader('X-Robots-Tag', 'noindex, nofollow');
   const filePath = path.resolve(__dirname, 'public/admin/admintools/solicitacaodeexlusao/index.html');
   if (fs.existsSync(filePath)) {
     res.sendFile(filePath);
@@ -1230,30 +1454,53 @@ app.get('/api/v1/content/articles', (req: Request, res: Response) => {
   res.json({ articles: filtered });
 });
 
+function sanitizePublicUserPage(page: WikiArticle, authUser?: VerifiedAuthUser): WikiArticle {
+  if (isVerifiedBurocrata(authUser) || (authUser && authUser.uid === page.ownerUid)) {
+    return page;
+  }
+  const { ownerEmail: _omitted, ...safePage } = page;
+  return safePage;
+}
+
 // 1.1 NotMediaWiki Personal User Pages (Namespace 2) & First-Login Provisioning
-app.get('/api/v1/userpages', (_req: Request, res: Response) => {
-  res.json({ userPages: WIKI_STORE.userPages });
+app.get('/api/v1/userpages', optionalAuth, (req: Request, res: Response) => {
+  const authUser = (req as AuthenticatedRequest).authUser;
+  res.json({
+    userPages: WIKI_STORE.userPages.map((p) => sanitizePublicUserPage(p, authUser))
+  });
 });
 
-app.get('/api/v1/userpages/:uid', (req: Request, res: Response) => {
+app.get('/api/v1/userpages/:uid', optionalAuth, (req: Request, res: Response) => {
   const { uid } = req.params;
+  const authUser = (req as AuthenticatedRequest).authUser;
   const found = WIKI_STORE.userPages.find((p) => p.ownerUid === uid);
   if (!found) {
     res.status(404).json({ error: 'Página pessoal de usuário não encontrada' });
     return;
   }
-  res.json({ userPage: found });
+  res.json({ userPage: sanitizePublicUserPage(found, authUser) });
 });
 
-app.post('/api/v1/userpages/ensure', (req: Request, res: Response) => {
-  const { uid, name, displayName, email, profilePictureUrl, photoURL, isAdmin, isTeacher, isGuest } = req.body || {};
-  if (!uid || typeof uid !== 'string') {
-    res.status(400).json({ error: 'UID do usuário é obrigatório' });
+app.post('/api/v1/userpages/ensure', requireAuth, (req: Request, res: Response) => {
+  const authUser = (req as AuthenticatedRequest).authUser!;
+  const { uid, name, displayName, profilePictureUrl, photoURL, isTeacher } = req.body || {};
+  const targetUid = typeof uid === 'string' && uid.trim() ? uid.trim() : authUser.uid;
+  if (!isValidId(targetUid)) {
+    res.status(400).json({ error: 'UID do usuário inválido.' });
+    return;
+  }
+  if (targetUid !== authUser.uid && !isVerifiedBurocrata(authUser)) {
+    res.status(403).json({ error: 'Acesso negado: não é permitido provisionar página para outro usuário.' });
     return;
   }
 
-  const existingIdx = WIKI_STORE.userPages.findIndex((p) => p.ownerUid === uid);
-  const resolvedName = resolveUserDisplayName({ uid, name, displayName, email });
+  const existingIdx = WIKI_STORE.userPages.findIndex((p) => p.ownerUid === targetUid);
+  const resolvedName = resolveUserDisplayName({
+    uid: targetUid,
+    name: clampString(name, 120),
+    displayName: clampString(displayName, 120) || authUser.name,
+    email: authUser.email,
+  });
   const nowIso = new Date().toISOString();
 
   if (existingIdx >= 0) {
@@ -1267,18 +1514,23 @@ app.post('/api/v1/userpages/ensure', (req: Request, res: Response) => {
     return;
   }
 
-  const slug = buildPersonalUserPageSlug(resolvedName, uid);
-  const title = buildPersonalUserPageTitle(resolvedName, uid);
+  const dbUser = DATA_CACHE.users.find((u) => u.uid === targetUid);
+  const verifiedAdminFlag = targetUid === authUser.uid ? isVerifiedBurocrata(authUser) : Boolean(dbUser?.isAdmin);
+  const verifiedTeacherFlag = isVerifiedBurocrata(authUser) ? Boolean(isTeacher || dbUser?.isTeacher) : Boolean(dbUser?.isTeacher);
+  const safeAvatar = isSafeHttpUrl(profilePictureUrl || photoURL) ? String(profilePictureUrl || photoURL).trim() : '';
+
+  const slug = buildPersonalUserPageSlug(resolvedName, targetUid);
+  const title = buildPersonalUserPageTitle(resolvedName, targetUid);
   const wikitext = buildPersonalUserPageWikitext(
     {
-      uid,
+      uid: targetUid,
       name: resolvedName,
       displayName: resolvedName,
-      email: email || '',
-      profilePictureUrl: profilePictureUrl || photoURL || '',
-      isAdmin: Boolean(isAdmin),
-      isTeacher: Boolean(isTeacher),
-      isGuest: Boolean(isGuest),
+      email: '',
+      profilePictureUrl: safeAvatar,
+      isAdmin: verifiedAdminFlag,
+      isTeacher: verifiedTeacherFlag,
+      isGuest: false,
       firstLoginAt: nowIso,
       lastLoginAt: nowIso,
     },
@@ -1287,7 +1539,7 @@ app.post('/api/v1/userpages/ensure', (req: Request, res: Response) => {
 
   const revId = `rev-user-init-${Date.now().toString(36)}`;
   const newPage: WikiArticle = {
-    id: `userpage-${uid}`,
+    id: `userpage-${targetUid}`,
     slug,
     title,
     namespace: 2,
@@ -1298,8 +1550,8 @@ app.post('/api/v1/userpages/ensure', (req: Request, res: Response) => {
     updatedAt: nowIso,
     categories: ['Usuários', 'NotMediaWiki'],
     views: 1,
-    ownerUid: uid,
-    ownerEmail: email || undefined,
+    ownerUid: targetUid,
+    ownerEmail: authUser.uid === targetUid ? authUser.email : undefined,
     isPersonalUserPage: true,
   };
 
@@ -1312,7 +1564,7 @@ app.post('/api/v1/userpages/ensure', (req: Request, res: Response) => {
     wikitext,
     comment: `Criação automática da página pessoal ${title} e Infobox Usuário no primeiro login`,
     author: {
-      id: uid,
+      id: targetUid,
       name: resolvedName,
       isBot: false,
     },
@@ -1350,18 +1602,22 @@ app.post('/api/v1/userpages/ensure', (req: Request, res: Response) => {
   res.status(201).json({ userPage: newPage, revision: initRev, isFirstLogin: true });
 });
 
-app.put('/api/v1/userpages/:uid', (req: Request, res: Response) => {
+app.put('/api/v1/userpages/:uid', requireAuth, (req: Request, res: Response) => {
+  const authUser = (req as AuthenticatedRequest).authUser!;
   const { uid } = req.params;
-  const { title, wikitext, summary, isMinor, authorName, authorId, userEmail } = req.body || {};
-
-  if (!wikitext || typeof wikitext !== 'string') {
-    res.status(400).json({ error: 'Wikitexto é obrigatório para atualizar a página pessoal.' });
+  if (!isValidId(uid)) {
+    res.status(400).json({ error: 'UID de usuário inválido.' });
     return;
   }
 
-  const isBurocrata = (userEmail || '').toLowerCase().trim() === 'pedrohenriquecardonaperes@gmail.com';
-  if (authorId && authorId !== uid && !isBurocrata) {
+  if (authUser.uid !== uid && !isVerifiedBurocrata(authUser)) {
     res.status(403).json({ error: 'Apenas o titular da conta ou o Burocrata podem editar esta página pessoal.' });
+    return;
+  }
+
+  const { title, wikitext, summary, isMinor, authorName } = req.body || {};
+  if (!wikitext || typeof wikitext !== 'string' || wikitext.length > 200_000) {
+    res.status(400).json({ error: 'Wikitexto válido (até 200 KB) é obrigatório para atualizar a página pessoal.' });
     return;
   }
 
@@ -1369,7 +1625,8 @@ app.put('/api/v1/userpages/:uid', (req: Request, res: Response) => {
   const idx = WIKI_STORE.userPages.findIndex((p) => p.ownerUid === uid);
   const revId = `rev-usr-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`;
   const existing = idx >= 0 ? WIKI_STORE.userPages[idx] : null;
-  const resolvedTitle = (title || existing?.title || buildPersonalUserPageTitle(authorName, uid)).trim();
+  const cleanAuthor = clampString(authorName || authUser.name || '', 120);
+  const resolvedTitle = (clampString(title, 200) || existing?.title || buildPersonalUserPageTitle(cleanAuthor, uid)).trim();
   const resolvedSlug = existing?.slug || buildPersonalUserPageSlug(resolvedTitle.replace(/^Usuário:/i, ''), uid);
 
   const savedPage: WikiArticle = {
@@ -1378,14 +1635,14 @@ app.put('/api/v1/userpages/:uid', (req: Request, res: Response) => {
     title: resolvedTitle,
     namespace: 2,
     wikitext,
-    summary: summary || existing?.summary || `Página pessoal de ${authorName || uid}`,
+    summary: clampString(summary, 500) || existing?.summary || `Página pessoal de ${cleanAuthor || uid}`,
     latestRevisionId: revId,
     createdAt: existing?.createdAt || nowIso,
     updatedAt: nowIso,
     categories: existing?.categories || ['Usuários', 'NotMediaWiki'],
     views: (existing?.views || 0) + 1,
     ownerUid: uid,
-    ownerEmail: existing?.ownerEmail || userEmail,
+    ownerEmail: existing?.ownerEmail || (authUser.uid === uid ? authUser.email : undefined),
     isPersonalUserPage: true,
   };
 
@@ -1400,10 +1657,10 @@ app.put('/api/v1/userpages/:uid', (req: Request, res: Response) => {
     articleSlug: resolvedSlug,
     parentRevisionId: existing?.latestRevisionId || null,
     wikitext,
-    comment: summary || 'Atualização da página pessoal e Infobox Usuário',
+    comment: clampString(summary, 500) || 'Atualização da página pessoal e Infobox Usuário',
     author: {
-      id: authorId || uid,
-      name: authorName || resolvedTitle.replace(/^Usuário:/i, ''),
+      id: authUser.uid,
+      name: cleanAuthor || resolvedTitle.replace(/^Usuário:/i, ''),
       isBot: false,
     },
     timestamp: nowIso,
@@ -1454,7 +1711,7 @@ app.get(['/api/v1/content/random', '/api/v1/content/articles/special/random'], (
   res.json({ article: random });
 });
 
-app.delete('/api/v1/content/articles/:slug', (req: Request, res: Response) => {
+app.delete('/api/v1/content/articles/:slug', requirePublisher, (req: Request, res: Response) => {
   const { slug } = req.params;
   const initialLen = WIKI_STORE.articles.length;
   WIKI_STORE.articles = WIKI_STORE.articles.filter((a) => a.slug.toLowerCase() !== slug.toLowerCase());
@@ -1492,25 +1749,19 @@ app.get('/api/v1/content/articles/:slug/rendered', (req: Request, res: Response)
   });
 });
 
-app.post('/api/v1/content/articles', (req: Request, res: Response) => {
-  const { title, wikitext, summary, isMinor, authorName, authorId, userEmail, authorEmail } = req.body;
-  const email = (userEmail || authorEmail || '').toLowerCase().trim();
-  const AUTHORIZED_PUBLISHER_EMAILS = ['wazzimagiygg@gmail.com', 'pedrohenriquecardonaperes@gmail.com'];
-  if (email && !AUTHORIZED_PUBLISHER_EMAILS.includes(email)) {
-    res.status(403).json({
-      error: 'Acesso negado: Qualquer publicação de artigo só deve ser feita pelas contas dos e-mails wazzimagiygg@gmail.com e pedrohenriquecardonaperes@gmail.com'
-    });
+app.post('/api/v1/content/articles', requirePublisher, (req: Request, res: Response) => {
+  const authUser = (req as AuthenticatedRequest).authUser!;
+  const { title, wikitext, summary, isMinor, authorName } = req.body || {};
+  const cleanTitle = clampString(title, 300);
+  if (!cleanTitle || typeof wikitext !== 'string' || !wikitext.trim() || wikitext.length > 250_000) {
+    res.status(400).json({ error: 'Título e wikitexto válidos são obrigatórios' });
     return;
   }
-  if (!title || !wikitext) {
-    res.status(400).json({ error: 'Título e wikitexto são obrigatórios' });
-    return;
-  }
-  const slug = title.trim().replace(/\s+/g, '_');
+  const slug = cleanTitle.replace(/\s+/g, '_');
   const revId = `rev-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`;
   const author = {
-    id: authorId || 'usr_community',
-    name: authorName || 'Editor Comunitário',
+    id: authUser.uid,
+    name: clampString(authorName || authUser.name || '', 100) || 'Publicador Autorizado',
     isBot: false
   };
 
@@ -1519,10 +1770,10 @@ app.post('/api/v1/content/articles', (req: Request, res: Response) => {
     articleSlug: slug,
     parentRevisionId: null,
     wikitext,
-    comment: summary || 'Edição via NotMediaWiki API',
+    comment: clampString(summary, 500) || 'Edição via NotMediaWiki API',
     author,
     timestamp: new Date().toISOString(),
-    sha256: Math.random().toString(36).substring(2, 18),
+    sha256: computeSha256Hex(wikitext),
     byteSize: wikitext.length,
     isMinor: !!isMinor
   };
@@ -1533,7 +1784,7 @@ app.post('/api/v1/content/articles', (req: Request, res: Response) => {
     newRev.parentRevisionId = WIKI_STORE.articles[existingIdx].latestRevisionId;
     WIKI_STORE.articles[existingIdx] = {
       ...WIKI_STORE.articles[existingIdx],
-      title,
+      title: cleanTitle,
       wikitext,
       latestRevisionId: revId,
       updatedAt: new Date().toISOString(),
@@ -1544,7 +1795,7 @@ app.post('/api/v1/content/articles', (req: Request, res: Response) => {
     savedArt = {
       id: `art-${Date.now()}`,
       slug,
-      title,
+      title: cleanTitle,
       namespace: 0,
       wikitext,
       summary: wikitext.substring(0, 150) + '...',
@@ -1571,7 +1822,7 @@ app.post('/api/v1/content/articles', (req: Request, res: Response) => {
       stream: 'mediawiki.recentchange'
     },
     database: 'wzzmwiki',
-    page_title: title,
+    page_title: cleanTitle,
     page_namespace: 0,
     rev_id: revId,
     rev_timestamp: new Date().toISOString(),
@@ -1579,7 +1830,7 @@ app.post('/api/v1/content/articles', (req: Request, res: Response) => {
     rev_minor_edit: !!isMinor,
     rev_len: wikitext.length,
     user_text: author.name,
-    comment: summary || 'Edição no acervo',
+    comment: clampString(summary, 500) || 'Edição no acervo',
     type: existingIdx >= 0 ? 'edit' : 'new'
   });
 
@@ -1633,9 +1884,10 @@ app.get('/api/v1/revisions/diff/:fromRevId/:toRevId', (req: Request, res: Respon
   res.json({ diff });
 });
 
-app.post('/api/v1/revisions/:slug/rollback', (req: Request, res: Response) => {
+app.post('/api/v1/revisions/:slug/rollback', requirePublisher, (req: Request, res: Response) => {
+  const authUser = (req as AuthenticatedRequest).authUser!;
   const { slug } = req.params;
-  const { revIdToRestore, authorName } = req.body;
+  const { revIdToRestore, authorName } = req.body || {};
   const targetRev = WIKI_STORE.revisions.find((r) => r.id === revIdToRestore);
   const article = WIKI_STORE.articles.find((a) => a.slug.toLowerCase() === slug.toLowerCase());
   if (!targetRev || !article) {
@@ -1649,7 +1901,7 @@ app.post('/api/v1/revisions/:slug/rollback', (req: Request, res: Response) => {
     parentRevisionId: article.latestRevisionId,
     wikitext: targetRev.wikitext,
     comment: `Rollback para revisão ${targetRev.id} de ${targetRev.author.name}`,
-    author: { id: 'sysop', name: authorName || 'Burocrata WZZM', isBot: false },
+    author: { id: authUser.uid, name: clampString(authorName || authUser.name || '', 100) || 'Publicador WZZM', isBot: false },
     timestamp: new Date().toISOString(),
     sha256: targetRev.sha256,
     byteSize: targetRev.wikitext.length,
@@ -1676,7 +1928,7 @@ app.get('/api/v1/extensions', (_req: Request, res: Response) => {
       syncDeviceActive: true,
       malwareScannerActive: true,
       quarantineGuardActive: true,
-      governanceBureaucrat: 'pedrohenriquecardonaperes@gmail.com'
+      governanceBureaucrat: AUTHORIZED_BUROCRATA_EMAIL
     }
   });
 });
@@ -1688,16 +1940,16 @@ app.get('/api/v1/domains', (_req: Request, res: Response) => {
 });
 
 // Endpoint 3.05.9.b: Static Analysis & Malicious Information Scan
-app.post('/api/v1/extensions/security/scan', (req: Request, res: Response) => {
+app.post('/api/v1/extensions/security/scan', requireAuth, (req: Request, res: Response) => {
   try {
-    const { extensionId, fileName, code } = req.body;
-    if (!code || typeof code !== 'string') {
-      return res.status(400).json({ error: 'Código da extensão é obrigatório para análise forense.' });
+    const { extensionId, fileName, code } = req.body || {};
+    if (!code || typeof code !== 'string' || code.length > 200_000) {
+      return res.status(400).json({ error: 'Código da extensão válido (até 200 KB) é obrigatório para análise forense.' });
     }
 
     const audit = scanExtensionCodeForMalware(
-      extensionId || 'custom-inspection',
-      fileName || 'payload.ts',
+      clampString(extensionId, 100) || 'custom-inspection',
+      clampString(fileName, 120) || 'payload.ts',
       code
     );
 
@@ -1706,25 +1958,17 @@ app.post('/api/v1/extensions/security/scan', (req: Request, res: Response) => {
       audit,
       sha256: computeSha256Hex(code)
     });
-  } catch (err: any) {
-    res.status(500).json({ error: 'Erro durante execução do analisador estático.', details: err.message });
+  } catch (err) {
+    console.error('[SecurityScan] Error:', err);
+    res.status(500).json({ error: 'Erro durante execução do analisador estático.' });
   }
 });
 
-// Endpoint 3.05.9.a & 3.05.9.b: Security Synchronization Device with Cryptographic Verification
-app.post('/api/v1/extensions/security/sync', (req: Request, res: Response) => {
+// Endpoint 3.05.9.a & 3.05.9.b: Security Synchronization Device with Cryptographic Verification (Burocrata only)
+app.post('/api/v1/extensions/security/sync', requireBurocrata, (req: Request, res: Response) => {
   try {
-    const { extension, extensionId, userEmail } = req.body;
-    const bureaucratEmail = 'pedrohenriquecardonaperes@gmail.com';
-
-    // Emergency rule: only Burocrata can synchronize extensions
-    if (!userEmail || userEmail.toLowerCase() !== bureaucratEmail.toLowerCase()) {
-      return res.status(403).json({
-        success: false,
-        error: 'ACESSO NEGADO: Somente o Burocrata oficial (pedrohenriquecardonaperes@gmail.com) tem permissão para sincronizar extensões no ecossistema NotMediaWiki.',
-        status: 'unverified'
-      });
-    }
+    const authUser = (req as AuthenticatedRequest).authUser!;
+    const { extension, extensionId } = req.body || {};
 
     let targetExt: WikiExtension | undefined;
 
@@ -1741,20 +1985,17 @@ app.post('/api/v1/extensions/security/sync', (req: Request, res: Response) => {
       });
     }
 
-    // Run Security Synchronization Device Verification
-    const verification = verifyExtensionSyncSecurity(targetExt, userEmail);
+    const verification = verifyExtensionSyncSecurity(targetExt, authUser.email);
 
-    // Update in store or upsert
     const existingIndex = WIKI_STORE.extensions.findIndex(e => e.id === targetExt!.id);
     const updatedExt: WikiExtension = {
       ...targetExt,
       signatureStatus: verification.status,
       lastSyncTimestamp: new Date().toISOString(),
-      syncAuthorizedBy: userEmail,
+      syncAuthorizedBy: authUser.email,
       quarantined: verification.status === 'quarantined' || verification.audit.quarantined,
       quarantineReason: verification.audit.quarantineReason,
       securityAudit: verification.audit,
-      // If quarantined, force disabled
       enabled: verification.status === 'quarantined' ? false : targetExt.enabled
     };
 
@@ -1771,29 +2012,22 @@ app.post('/api/v1/extensions/security/sync', (req: Request, res: Response) => {
       reasons: verification.reasons,
       audit: verification.audit
     });
-  } catch (err: any) {
-    res.status(500).json({ error: 'Erro no dispositivo de sincronização de extensões.', details: err.message });
+  } catch (err) {
+    console.error('[ExtensionSync] Error:', err);
+    res.status(500).json({ error: 'Erro no dispositivo de sincronização de extensões.' });
   }
 });
 
-// Endpoint: Toggle Extension (Strict check: Burocrata + Quarantined Guard)
-app.post('/api/v1/extensions/:id/toggle', (req: Request, res: Response) => {
+// Endpoint: Toggle Extension (Strict check: Verified Burocrata + Quarantined Guard)
+app.post('/api/v1/extensions/:id/toggle', requireBurocrata, (req: Request, res: Response) => {
   const { id } = req.params;
-  const { enabled, userEmail } = req.body;
-  const bureaucratEmail = 'pedrohenriquecardonaperes@gmail.com';
-
-  if (!userEmail || userEmail.toLowerCase() !== bureaucratEmail.toLowerCase()) {
-    return res.status(403).json({
-      error: 'ACESSO NEGADO: Somente o Burocrata oficial (pedrohenriquecardonaperes@gmail.com) pode alterar o estado das extensões.'
-    });
-  }
+  const { enabled } = req.body || {};
 
   const ext = WIKI_STORE.extensions.find(e => e.id === id);
   if (!ext) {
     return res.status(404).json({ error: 'Extensão não encontrada.' });
   }
 
-  // Quarantined Extension Guard
   if (ext.quarantined && enabled) {
     return res.status(403).json({
       error: 'BLOQUEIO DE SEGURANÇA: Esta extensão está isolada em QUARENTENA devido a código malicioso detectado e não pode ser ativada.',
@@ -1806,16 +2040,9 @@ app.post('/api/v1/extensions/:id/toggle', (req: Request, res: Response) => {
 });
 
 // Endpoint: Quarantine Management (Burocrata only)
-app.post('/api/v1/extensions/:id/quarantine', (req: Request, res: Response) => {
+app.post('/api/v1/extensions/:id/quarantine', requireBurocrata, (req: Request, res: Response) => {
   const { id } = req.params;
-  const { quarantined, reason, userEmail } = req.body;
-  const bureaucratEmail = 'pedrohenriquecardonaperes@gmail.com';
-
-  if (!userEmail || userEmail.toLowerCase() !== bureaucratEmail.toLowerCase()) {
-    return res.status(403).json({
-      error: 'ACESSO NEGADO: Somente o Burocrata oficial (pedrohenriquecardonaperes@gmail.com) pode gerenciar quarentena de extensões.'
-    });
-  }
+  const { quarantined, reason } = req.body || {};
 
   const ext = WIKI_STORE.extensions.find(e => e.id === id);
   if (!ext) {
@@ -1823,7 +2050,7 @@ app.post('/api/v1/extensions/:id/quarantine', (req: Request, res: Response) => {
   }
 
   ext.quarantined = !!quarantined;
-  ext.quarantineReason = quarantined ? (reason || 'Isolada manualmente pelo Burocrata.') : undefined;
+  ext.quarantineReason = quarantined ? (clampString(reason, 500) || 'Isolada manualmente pelo Burocrata.') : undefined;
   ext.signatureStatus = quarantined ? 'quarantined' : 'verified';
   if (quarantined) {
     ext.enabled = false;
@@ -1841,28 +2068,25 @@ app.get('/api/v1/extensions/catalog', (_req: Request, res: Response) => {
 });
 
 // Endpoint 3.05.3.a, 3.05.3.b, 3.05.3.c, 3.05.3.e: Modificar Configuração da Extensão (Burocrata only)
-app.put('/api/v1/extensions/:id/config', (req: Request, res: Response) => {
+app.put('/api/v1/extensions/:id/config', requireBurocrata, (req: Request, res: Response) => {
+  const authUser = (req as AuthenticatedRequest).authUser!;
   const { id } = req.params;
-  const { config, userEmail } = req.body;
-  const bureaucratEmail = 'pedrohenriquecardonaperes@gmail.com';
-
-  if (!userEmail || userEmail.toLowerCase() !== bureaucratEmail.toLowerCase()) {
-    return res.status(403).json({
-      error: 'ACESSO NEGADO: Somente o Burocrata oficial (pedrohenriquecardonaperes@gmail.com) pode alterar configurações das extensões.'
-    });
-  }
+  const { config } = req.body || {};
 
   const ext = WIKI_STORE.extensions.find((e) => e.id === id);
   if (!ext) {
     return res.status(404).json({ error: 'Extensão não encontrada.' });
   }
 
+  if (config?.supportUrl && !isSafeHttpUrl(config.supportUrl)) {
+    return res.status(400).json({ error: 'supportUrl inválida (permitido apenas http/https).' });
+  }
+
   ext.config = {
     ...(ext.config || {}),
-    ...(config || {})
+    ...(config && typeof config === 'object' ? config : {})
   };
 
-  // Sincronizações específicas de extensões de sistema
   if (id === 'ext-external-redirector' && config?.enabled !== undefined) {
     ext.enabled = !!config.enabled;
   }
@@ -1870,23 +2094,16 @@ app.put('/api/v1/extensions/:id/config', (req: Request, res: Response) => {
     ext.enabled = !!config.isMaintenanceActive;
   }
 
-  // Registra timestamp e burocrata autorizador
   ext.lastSyncTimestamp = new Date().toISOString();
-  ext.syncAuthorizedBy = userEmail;
+  ext.syncAuthorizedBy = authUser.email;
 
   res.json({ success: true, extension: ext, message: 'Configurações da extensão atualizadas com sucesso.' });
 });
 
 // Endpoint 3.05.3.a: Adicionar Extensão Existente do Catálogo ou Criar Personalizada (Burocrata only)
-app.post('/api/v1/extensions/catalog/add', (req: Request, res: Response) => {
-  const { catalogExtensionId, customExtension, userEmail } = req.body;
-  const bureaucratEmail = 'pedrohenriquecardonaperes@gmail.com';
-
-  if (!userEmail || userEmail.toLowerCase() !== bureaucratEmail.toLowerCase()) {
-    return res.status(403).json({
-      error: 'ACESSO NEGADO: Somente o Burocrata oficial (pedrohenriquecardonaperes@gmail.com) pode adicionar extensões.'
-    });
-  }
+app.post('/api/v1/extensions/catalog/add', requireBurocrata, (req: Request, res: Response) => {
+  const authUser = (req as AuthenticatedRequest).authUser!;
+  const { catalogExtensionId, customExtension } = req.body || {};
 
   let extensionToAdd: WikiExtension | undefined;
 
@@ -1895,17 +2112,15 @@ app.post('/api/v1/extensions/catalog/add', (req: Request, res: Response) => {
     if (!foundInCatalog) {
       return res.status(404).json({ error: 'Extensão não encontrada no catálogo oficial.' });
     }
-    // Deep clone
     extensionToAdd = JSON.parse(JSON.stringify(foundInCatalog));
   } else if (customExtension && typeof customExtension === 'object') {
     extensionToAdd = customExtension as WikiExtension;
   }
 
-  if (!extensionToAdd || !extensionToAdd.id || !extensionToAdd.name) {
+  if (!extensionToAdd || !isValidId(extensionToAdd.id) || !extensionToAdd.name) {
     return res.status(400).json({ error: 'Parâmetros da extensão inválidos para adição.' });
   }
 
-  // Verifica se já está instalada
   const existingIdx = WIKI_STORE.extensions.findIndex((e) => e.id === extensionToAdd!.id);
   if (existingIdx >= 0) {
     return res.status(400).json({
@@ -1913,11 +2128,10 @@ app.post('/api/v1/extensions/catalog/add', (req: Request, res: Response) => {
     });
   }
 
-  // Executa validação de sincronia e segurança
-  const verification = verifyExtensionSyncSecurity(extensionToAdd, userEmail);
+  const verification = verifyExtensionSyncSecurity(extensionToAdd, authUser.email);
   extensionToAdd.signatureStatus = verification.status;
   extensionToAdd.lastSyncTimestamp = new Date().toISOString();
-  extensionToAdd.syncAuthorizedBy = userEmail;
+  extensionToAdd.syncAuthorizedBy = authUser.email;
   extensionToAdd.quarantined = verification.status === 'quarantined' || verification.audit.quarantined;
   extensionToAdd.quarantineReason = verification.audit.quarantineReason;
   extensionToAdd.securityAudit = verification.audit;
@@ -1937,44 +2151,37 @@ app.post('/api/v1/extensions/catalog/add', (req: Request, res: Response) => {
 });
 
 // Endpoint 3.05.3.a: Modificar Metadados, Arquivos ou Código de uma Extensão Existente (Burocrata only)
-app.put('/api/v1/extensions/:id', (req: Request, res: Response) => {
+app.put('/api/v1/extensions/:id', requireBurocrata, (req: Request, res: Response) => {
+  const authUser = (req as AuthenticatedRequest).authUser!;
   const { id } = req.params;
-  const { name, namePt, description, version, files, config, userEmail } = req.body;
-  const bureaucratEmail = 'pedrohenriquecardonaperes@gmail.com';
-
-  if (!userEmail || userEmail.toLowerCase() !== bureaucratEmail.toLowerCase()) {
-    return res.status(403).json({
-      error: 'ACESSO NEGADO: Somente o Burocrata oficial (pedrohenriquecardonaperes@gmail.com) pode modificar extensões.'
-    });
-  }
+  const { name, namePt, description, version, files, config } = req.body || {};
 
   const ext = WIKI_STORE.extensions.find((e) => e.id === id);
   if (!ext) {
     return res.status(404).json({ error: 'Extensão não encontrada para modificação.' });
   }
 
-  if (name) ext.name = name;
-  if (namePt) ext.namePt = namePt;
-  if (description) ext.description = description;
-  if (version) ext.version = version;
-  if (config) ext.config = { ...(ext.config || {}), ...config };
+  if (name) ext.name = clampString(name, 120);
+  if (namePt) ext.namePt = clampString(namePt, 120);
+  if (description) ext.description = clampString(description, 1000);
+  if (version) ext.version = clampString(version, 40);
+  if (config && typeof config === 'object') ext.config = { ...(ext.config || {}), ...config };
 
   if (Array.isArray(files) && files.length > 0) {
-    ext.files = files.map((f: any) => ({
-      name: f.name || 'index.ts',
-      content: f.content || '',
-      size: (f.content || '').length,
-      sha256: computeSha256Hex(f.content || ''),
-      mimeType: f.mimeType || 'application/typescript'
+    ext.files = files.slice(0, 20).map((f: any) => ({
+      name: clampString(f.name, 120) || 'index.ts',
+      content: typeof f.content === 'string' ? f.content.slice(0, 200_000) : '',
+      size: typeof f.content === 'string' ? f.content.slice(0, 200_000).length : 0,
+      sha256: computeSha256Hex(typeof f.content === 'string' ? f.content.slice(0, 200_000) : ''),
+      mimeType: clampString(f.mimeType, 80) || 'application/typescript'
     }));
-    ext.sha256 = ext.files[0]?.sha256 || computeSha256Hex(files[0]?.content || '');
+    ext.sha256 = ext.files[0]?.sha256 || computeSha256Hex('');
   }
 
-  // Reanalisa a segurança e integridade
-  const verification = verifyExtensionSyncSecurity(ext, userEmail);
+  const verification = verifyExtensionSyncSecurity(ext, authUser.email);
   ext.signatureStatus = verification.status;
   ext.lastSyncTimestamp = new Date().toISOString();
-  ext.syncAuthorizedBy = userEmail;
+  ext.syncAuthorizedBy = authUser.email;
   ext.quarantined = verification.status === 'quarantined' || verification.audit.quarantined;
   ext.quarantineReason = verification.audit.quarantineReason;
   ext.securityAudit = verification.audit;
@@ -1991,7 +2198,7 @@ app.put('/api/v1/extensions/:id', (req: Request, res: Response) => {
   });
 });
 
-app.delete('/api/v1/extensions/:id', (req: Request, res: Response) => {
+app.delete('/api/v1/extensions/:id', requireBurocrata, (req: Request, res: Response) => {
   const { id } = req.params;
   const idx = WIKI_STORE.extensions.findIndex((e) => e.id === id);
   if (idx === -1) {
@@ -2016,6 +2223,13 @@ const BEMTEVI_STORE = {
   messages: [...SEED_BEMTEVI_MESSAGES]
 };
 
+function normalizeBemteviCategory(raw: unknown): BemteviCategory {
+  const cleaned = clampString(raw, 60);
+  return (BEMTEVI_CATEGORIES as readonly string[]).includes(cleaned)
+    ? (cleaned as BemteviCategory)
+    : 'Geral';
+}
+
 // 1. Get Posts (with query filters)
 app.get('/api/bemtevi/posts', (req: Request, res: Response) => {
   const { category, communityId, authorId, search } = req.query;
@@ -2038,9 +2252,10 @@ app.get('/api/bemtevi/posts', (req: Request, res: Response) => {
   res.json({ posts: list, total: list.length });
 });
 
-// 2. Create Post (strictly enforced max 127 characters, supports syncing remote id & extracted tags)
-app.post('/api/bemtevi/posts', (req: Request, res: Response) => {
-  const { id, content, authorId, authorName, authorHandle, authorAvatar, link, category, communityId, communityName, sharedArticle, tags } = req.body;
+// 2. Create Post (strictly authenticated, max 127 chars)
+app.post('/api/bemtevi/posts', requireAuth, (req: Request, res: Response) => {
+  const authUser = (req as AuthenticatedRequest).authUser!;
+  const { id, content, authorName, authorHandle, authorAvatar, link, category, communityId, communityName, sharedArticle, tags } = req.body || {};
 
   if (!content || typeof content !== 'string' || !content.trim()) {
     res.status(400).json({ error: 'Conteúdo da postagem é obrigatório.' });
@@ -2053,23 +2268,34 @@ app.post('/api/bemtevi/posts', (req: Request, res: Response) => {
     return;
   }
 
-  const mergedTags = Array.from(new Set([...(Array.isArray(tags) ? tags : []), ...extractHashtagsFromText(trimmedContent)]));
+  if (link && !isSafeHttpUrl(link)) {
+    res.status(400).json({ error: 'URL do link inválida (permitido apenas http/https).' });
+    return;
+  }
 
+  const mergedTags = Array.from(
+    new Set([
+      ...(Array.isArray(tags) ? tags.slice(0, 10).map((t: any) => clampString(t, 40)).filter(Boolean) : []),
+      ...extractHashtagsFromText(trimmedContent)
+    ])
+  );
+
+  const safeId = isValidId(id) ? id : `post-${Date.now()}`;
   const newPost: BemteviPost = {
-    id: id || `post-${Date.now()}`,
-    authorId: authorId || 'usr-anon',
-    authorName: authorName || 'Membro Bemtevi',
-    authorHandle: authorHandle || '@membro',
-    ...(authorAvatar ? { authorAvatar } : {}),
+    id: safeId,
+    authorId: authUser.uid,
+    authorName: clampString(authorName || authUser.name || '', 100) || 'Membro Bemtevi',
+    authorHandle: clampString(authorHandle, 60) || '@membro',
+    ...(isSafeHttpUrl(authorAvatar) ? { authorAvatar: String(authorAvatar).trim() } : {}),
     authorBadge: 'Iniciante',
     authorKarma: 10,
     content: trimmedContent,
-    ...(link ? { link } : {}),
+    ...(link ? { link: String(link).trim() } : {}),
     tags: mergedTags,
-    category: category || 'Geral',
-    ...(communityId ? { communityId } : {}),
-    ...(communityName ? { communityName } : {}),
-    ...(sharedArticle ? { sharedArticle } : {}),
+    category: normalizeBemteviCategory(category),
+    ...(communityId ? { communityId: clampString(communityId, 100) } : {}),
+    ...(communityName ? { communityName: clampString(communityName, 100) } : {}),
+    ...(sharedArticle && typeof sharedArticle === 'object' ? { sharedArticle } : {}),
     likesCount: 0,
     commentsCount: 0,
     sharesCount: 0,
@@ -2085,8 +2311,9 @@ app.post('/api/bemtevi/posts', (req: Request, res: Response) => {
   res.status(201).json({ success: true, post: newPost });
 });
 
-// 2b. Update / Edit / Sync Post (content, link, sharesCount, savedBy, savesCount)
-app.put('/api/bemtevi/posts/:id', (req: Request, res: Response) => {
+// 2b. Update / Edit / Interact Post (authenticated; content edits restricted to owner/Burocrata)
+app.put('/api/bemtevi/posts/:id', requireAuth, (req: Request, res: Response) => {
+  const authUser = (req as AuthenticatedRequest).authUser!;
   const { id } = req.params;
   const post = BEMTEVI_STORE.posts.find((p) => p.id === id);
   if (!post) {
@@ -2094,48 +2321,80 @@ app.put('/api/bemtevi/posts/:id', (req: Request, res: Response) => {
     return;
   }
 
-  const { content, link, category, sharesCount, savedBy, savesCount, isEdited } = req.body;
-  if (typeof content === 'string') {
-    const trimmed = content.trim();
-    if (!trimmed) {
-      res.status(400).json({ error: 'Conteúdo da postagem não pode ficar vazio.' });
+  const { content, link, category, savedBy, sharesCount, isEdited } = req.body || {};
+  const isOwnerOrAdmin = post.authorId === authUser.uid || isVerifiedBurocrata(authUser);
+
+  if (typeof content === 'string' || link !== undefined || category !== undefined) {
+    if (!isOwnerOrAdmin) {
+      res.status(403).json({ error: 'Apenas o autor ou o Burocrata podem editar o conteúdo desta postagem.' });
       return;
     }
-    if (trimmed.length > 127) {
-      res.status(400).json({ error: 'O texto deve ter no máximo 127 caracteres!' });
-      return;
+    if (typeof content === 'string') {
+      const trimmed = content.trim();
+      if (!trimmed) {
+        res.status(400).json({ error: 'Conteúdo da postagem não pode ficar vazio.' });
+        return;
+      }
+      if (trimmed.length > 127) {
+        res.status(400).json({ error: 'O texto deve ter no máximo 127 caracteres!' });
+        return;
+      }
+      post.content = trimmed;
+      post.tags = extractHashtagsFromText(trimmed);
+      post.isEdited = isEdited ?? true;
+      post.updatedAt = new Date().toISOString();
     }
-    post.content = trimmed;
-    post.tags = extractHashtagsFromText(trimmed);
-    post.isEdited = isEdited ?? true;
-    post.updatedAt = new Date().toISOString();
+    if (link !== undefined) {
+      if (link && !isSafeHttpUrl(link)) {
+        res.status(400).json({ error: 'URL inválida.' });
+        return;
+      }
+      post.link = link ? String(link).trim() : undefined;
+    }
+    if (category) post.category = normalizeBemteviCategory(category);
   }
-  if (link !== undefined) post.link = link || undefined;
-  if (category) post.category = category;
-  if (typeof sharesCount === 'number') post.sharesCount = sharesCount;
-  if (Array.isArray(savedBy)) post.savedBy = savedBy;
-  if (typeof savesCount === 'number') post.savesCount = savesCount;
+
+  // Allow any authenticated user to toggle only their own UID in savedBy
+  if (Array.isArray(savedBy)) {
+    const currentlySaved = post.savedBy.includes(authUser.uid);
+    const wantsSaved = savedBy.includes(authUser.uid);
+    if (wantsSaved && !currentlySaved) {
+      post.savedBy.push(authUser.uid);
+    } else if (!wantsSaved && currentlySaved) {
+      post.savedBy = post.savedBy.filter((u) => u !== authUser.uid);
+    }
+    post.savesCount = post.savedBy.length;
+  }
+
+  // Increment sharesCount safely (+1 step max per request)
+  if (typeof sharesCount === 'number' && sharesCount > post.sharesCount) {
+    post.sharesCount += 1;
+  }
 
   res.json({ success: true, post });
 });
 
-// 3. Delete Post
-app.delete('/api/bemtevi/posts/:id', (req: Request, res: Response) => {
+// 3. Delete Post (Owner or Burocrata)
+app.delete('/api/bemtevi/posts/:id', requireAuth, (req: Request, res: Response) => {
+  const authUser = (req as AuthenticatedRequest).authUser!;
   const { id } = req.params;
-  const initialLen = BEMTEVI_STORE.posts.length;
-  BEMTEVI_STORE.posts = BEMTEVI_STORE.posts.filter((p) => p.id !== id);
-
-  if (BEMTEVI_STORE.posts.length < initialLen) {
-    res.json({ success: true, message: 'Post excluído com sucesso.' });
-  } else {
+  const post = BEMTEVI_STORE.posts.find((p) => p.id === id);
+  if (!post) {
     res.status(404).json({ error: 'Post não encontrado.' });
+    return;
   }
+  if (post.authorId !== authUser.uid && !isVerifiedBurocrata(authUser)) {
+    res.status(403).json({ error: 'Apenas o autor ou o Burocrata podem excluir esta postagem.' });
+    return;
+  }
+  BEMTEVI_STORE.posts = BEMTEVI_STORE.posts.filter((p) => p.id !== id);
+  res.json({ success: true, message: 'Post excluído com sucesso.' });
 });
 
-// 4. Like / Unlike Post
-app.post('/api/bemtevi/posts/:id/like', (req: Request, res: Response) => {
+// 4. Like / Unlike Post (authenticated user UID)
+app.post('/api/bemtevi/posts/:id/like', requireAuth, (req: Request, res: Response) => {
+  const authUser = (req as AuthenticatedRequest).authUser!;
   const { id } = req.params;
-  const { userId } = req.body;
   const post = BEMTEVI_STORE.posts.find((p) => p.id === id);
 
   if (!post) {
@@ -2143,7 +2402,7 @@ app.post('/api/bemtevi/posts/:id/like', (req: Request, res: Response) => {
     return;
   }
 
-  const uid = userId || 'usr-guest';
+  const uid = authUser.uid;
   const isLiked = post.likedBy.includes(uid);
   if (isLiked) {
     post.likedBy = post.likedBy.filter((u) => u !== uid);
@@ -2161,23 +2420,25 @@ app.get('/api/bemtevi/communities', (_req: Request, res: Response) => {
   res.json({ communities: BEMTEVI_STORE.communities });
 });
 
-app.post('/api/bemtevi/communities', (req: Request, res: Response) => {
-  const { id, name, description, category, createdBy } = req.body;
-  if (!name || name.trim().length < 3) {
+app.post('/api/bemtevi/communities', requireAuth, (req: Request, res: Response) => {
+  const authUser = (req as AuthenticatedRequest).authUser!;
+  const { id, name, description, category } = req.body || {};
+  const cleanName = clampString(name, 60);
+  if (cleanName.length < 3) {
     res.status(400).json({ error: 'Nome da comunidade deve ter pelo menos 3 caracteres.' });
     return;
   }
 
   const newComm: BemteviCommunity = {
-    id: id || `comm-${Date.now()}`,
-    name: name.trim(),
-    description: description || '',
-    category: category || 'Geral',
+    id: isValidId(id) ? id : `comm-${Date.now()}`,
+    name: cleanName,
+    description: clampString(description, 300),
+    category: normalizeBemteviCategory(category),
     membersCount: 1,
     postsCount: 0,
     icon: '🏛️',
-    createdBy: createdBy || 'usr-anon',
-    members: [createdBy || 'usr-anon'],
+    createdBy: authUser.uid,
+    members: [authUser.uid],
     createdAt: new Date().toISOString()
   };
 
@@ -2187,31 +2448,36 @@ app.post('/api/bemtevi/communities', (req: Request, res: Response) => {
   res.status(201).json({ success: true, community: newComm });
 });
 
-app.post('/api/bemtevi/communities/:id/join', (req: Request, res: Response) => {
+app.post('/api/bemtevi/communities/:id/join', requireAuth, (req: Request, res: Response) => {
+  const authUser = (req as AuthenticatedRequest).authUser!;
   const { id } = req.params;
-  const { members, membersCount } = req.body;
   const comm = BEMTEVI_STORE.communities.find((c) => c.id === id);
   if (!comm) {
     res.status(404).json({ error: 'Comunidade não encontrada.' });
     return;
   }
-  if (Array.isArray(members)) comm.members = members;
-  if (typeof membersCount === 'number') comm.membersCount = membersCount;
+  const alreadyMember = comm.members.includes(authUser.uid);
+  if (alreadyMember) {
+    comm.members = comm.members.filter((m) => m !== authUser.uid);
+  } else {
+    comm.members.push(authUser.uid);
+  }
+  comm.membersCount = comm.members.length;
   res.json({ success: true, community: comm });
 });
 
-// 6. Trending Topics (Calculados estritamente a partir das postagens reais salvas no banco de dados)
+// 6. Trending Topics
 app.get('/api/bemtevi/trending', (_req: Request, res: Response) => {
   const dynamicTrending = computeTrendingTopicsFromDbPosts(BEMTEVI_STORE.posts);
   res.json({ trending: dynamicTrending });
 });
 
-// 7. Users (Apenas usuários reais cadastrados no banco de dados)
+// 7. Users (Public display directory — zero e-mail exposure)
 app.get('/api/bemtevi/users', (_req: Request, res: Response) => {
   const realUsers = (DATA_CACHE.users || []).map((u: any) => ({
     uid: u.uid || u.id,
-    name: u.name || u.nome || u.email?.split('@')[0] || 'Usuário WZZM',
-    handle: `@${(u.email?.split('@')[0] || u.name || 'usuario').toLowerCase().replace(/[^a-z0-9_]/g, '')}`,
+    name: u.name || u.nome || 'Usuário WZZM',
+    handle: `@${(u.name || u.uid || 'usuario').toLowerCase().replace(/[^a-z0-9_]/g, '')}`,
     avatar: u.profilePictureUrl || u.avatar || undefined,
     bio: u.bio || (u.isTeacher ? 'Professor verificado no acervo WZZM' : (u.isAdmin ? 'Burocrata administrador oficial' : 'Membro registrado da comunidade')),
     karma: u.karma || (u.isAdmin ? 5000 : 100),
@@ -2231,25 +2497,27 @@ app.get('/api/bemtevi/posts/:postId/comments', (req: Request, res: Response) => 
   res.json({ comments: list });
 });
 
-app.post('/api/bemtevi/posts/:postId/comments', (req: Request, res: Response) => {
+app.post('/api/bemtevi/posts/:postId/comments', requireAuth, (req: Request, res: Response) => {
+  const authUser = (req as AuthenticatedRequest).authUser!;
   const { postId } = req.params;
-  const { content, authorId, authorName, authorHandle, authorAvatar } = req.body;
-  if (!content || typeof content !== 'string') {
+  const { content, authorName, authorHandle, authorAvatar } = req.body || {};
+  if (!content || typeof content !== 'string' || !content.trim()) {
     res.status(400).json({ error: 'Comentário não pode estar vazio.' });
     return;
   }
-  if (content.length > 280) {
+  const cleanContent = content.trim();
+  if (cleanContent.length > 280) {
     res.status(400).json({ error: 'Comentário muito longo! Máximo 280 caracteres.' });
     return;
   }
   const newComment: BemteviComment = {
     id: `comm-${Date.now()}`,
     postId,
-    authorId: authorId || 'usr-anon',
-    authorName: authorName || 'Membro',
-    authorHandle: authorHandle || '@membro',
-    authorAvatar,
-    content: content.trim(),
+    authorId: authUser.uid,
+    authorName: clampString(authorName || authUser.name || '', 100) || 'Membro',
+    authorHandle: clampString(authorHandle, 60) || '@membro',
+    authorAvatar: isSafeHttpUrl(authorAvatar) ? String(authorAvatar).trim() : undefined,
+    content: cleanContent,
     likesCount: 0,
     likedBy: [],
     createdAt: new Date().toISOString()
@@ -2262,31 +2530,38 @@ app.post('/api/bemtevi/posts/:postId/comments', (req: Request, res: Response) =>
   res.status(201).json({ success: true, comment: newComment });
 });
 
-// 8. Direct Messages
-app.get('/api/bemtevi/messages', (req: Request, res: Response) => {
+// 8. Direct Messages (Strictly private to conversation participants & Burocrata)
+app.get('/api/bemtevi/messages', requireAuth, (req: Request, res: Response) => {
+  const authUser = (req as AuthenticatedRequest).authUser!;
   const { conversationId } = req.query;
-  let list = BEMTEVI_STORE.messages;
+  let list = isVerifiedBurocrata(authUser)
+    ? BEMTEVI_STORE.messages
+    : BEMTEVI_STORE.messages.filter(
+        (m: any) => m.senderId === authUser.uid || m.receiverId === authUser.uid || m.recipientId === authUser.uid
+      );
   if (conversationId && typeof conversationId === 'string') {
     list = list.filter((m) => m.conversationId === conversationId);
   }
   res.json({ messages: list });
 });
 
-app.post('/api/bemtevi/messages', (req: Request, res: Response) => {
-  const { conversationId, senderId, senderName, senderAvatar, receiverId, text } = req.body;
-  if (!text || !receiverId) {
-    res.status(400).json({ error: 'Destinatário e mensagem são obrigatórios.' });
+app.post('/api/bemtevi/messages', requireAuth, (req: Request, res: Response) => {
+  const authUser = (req as AuthenticatedRequest).authUser!;
+  const { conversationId, senderName, senderAvatar, receiverId, text } = req.body || {};
+  const cleanText = clampString(text, 2000);
+  if (!cleanText || !isValidId(receiverId)) {
+    res.status(400).json({ error: 'Destinatário válido e mensagem (até 2000 chars) são obrigatórios.' });
     return;
   }
 
   const newMsg = {
     id: `msg-${Date.now()}`,
-    conversationId: conversationId || `conv-${Date.now()}`,
-    senderId: senderId || 'usr-anon',
-    senderName: senderName || 'Anônimo',
-    senderAvatar,
+    conversationId: isValidId(conversationId) ? conversationId : `conv-${Date.now()}`,
+    senderId: authUser.uid,
+    senderName: clampString(senderName || authUser.name || '', 100) || 'Usuário',
+    senderAvatar: isSafeHttpUrl(senderAvatar) ? String(senderAvatar).trim() : undefined,
     receiverId,
-    text: text.trim(),
+    text: cleanText,
     createdAt: new Date().toISOString()
   };
 
@@ -2298,17 +2573,14 @@ app.post('/api/bemtevi/messages', (req: Request, res: Response) => {
 // SECURITY & AUTH IP/VPN CHECK ENDPOINTS
 // ============================================
 function extractRequestClientIp(req: Request): string {
-  const queryIp = typeof req.query.ip === 'string' ? req.query.ip : '';
-  if (queryIp.trim()) {
-    return cleanIpAddress(queryIp);
+  const queryIp = typeof req.query.ip === 'string' ? req.query.ip.trim() : '';
+  if (queryIp) {
+    const cleanedQueryIp = cleanIpAddress(queryIp);
+    if (net.isIP(cleanedQueryIp) !== 0) {
+      return cleanedQueryIp;
+    }
   }
-  const forwarded = req.headers['x-forwarded-for'];
-  const raw = Array.isArray(forwarded)
-    ? forwarded[0]
-    : typeof forwarded === 'string'
-      ? forwarded.split(',')[0]
-      : req.socket?.remoteAddress || '127.0.0.1';
-  return cleanIpAddress(raw || '127.0.0.1');
+  return cleanIpAddress(getSafeClientIp(req));
 }
 
 app.get('/api/auth/check-wikimedia-ip', (req: Request, res: Response) => {
@@ -2383,7 +2655,7 @@ app.get('/api/gemini/status', (_req: Request, res: Response) => {
   });
 });
 
-app.post('/api/gemini/search-grounding', async (req: Request, res: Response) => {
+app.post('/api/gemini/search-grounding', geminiLimiter, async (req: Request, res: Response) => {
   const { query, contextTab } = req.body || {};
   if (!query || typeof query !== 'string' || !query.trim()) {
     return res.status(400).json({ error: 'Termo de pesquisa é obrigatório.' });
@@ -2401,7 +2673,7 @@ app.post('/api/gemini/search-grounding', async (req: Request, res: Response) => 
     const cleanQuery = query.trim().slice(0, 400);
     const response = await ai.models.generateContent({
       model: DEFAULT_GEMINI_MODEL,
-      contents: `Pesquise na Web e responda em português (pt-BR), de forma clara, objetiva e verificável, sobre: "${cleanQuery}". Quando o assunto envolver o ecossistema WazzimaGiygg, WikiWorldWeb, Wiki-alternative ou Dossiê A Verdade, priorize a referência oficial em https://core.wazzimagiygg.com/ (e https://support.wazzimagiygg.com/). Contexto da aba atual: ${contextTab || 'wikiworldweb'}.`,
+      contents: `Pesquise na Web e responda em português (pt-BR), de forma clara, objetiva e verificável, sobre: "${cleanQuery}". Quando o assunto envolver o ecossistema WazzimaGiygg, WikiWorldWeb, Wiki-alternative ou Dossiê A Verdade, priorize a referência oficial em https://core.wazzimagiygg.com/ (e https://support.wazzimagiygg.com/). Contexto da aba atual: ${clampString(contextTab, 60) || 'wikiworldweb'}.`,
       config: {
         tools: [{ googleSearch: {} }],
         systemInstruction:
@@ -2418,14 +2690,15 @@ app.post('/api/gemini/search-grounding', async (req: Request, res: Response) => 
       model: DEFAULT_GEMINI_MODEL,
       canonicalDomain: 'https://core.wazzimagiygg.com/',
     });
-  } catch (err: any) {
-    res.status(500).json({ error: err?.message || 'Erro ao executar Google Search Grounding.' });
+  } catch (err) {
+    console.error('[GeminiSearchGrounding] Error:', err);
+    res.status(500).json({ error: 'Erro ao executar Google Search Grounding.' });
   }
 });
 
-app.post('/api/gemini/chat', async (req: Request, res: Response) => {
+app.post('/api/gemini/chat', geminiLimiter, requireAuth, async (req: Request, res: Response) => {
   const { message, history = [], context, customSystemInstruction, model, image } = req.body || {};
-  if (!message || typeof message !== 'string') {
+  if (!message || typeof message !== 'string' || !message.trim()) {
     return res.status(400).json({ error: 'Mensagem é obrigatória.' });
   }
 
@@ -2439,22 +2712,22 @@ app.post('/api/gemini/chat', async (req: Request, res: Response) => {
 
   try {
     const contextText = context?.currentArticle?.titulo
-      ? `\nContexto atual do artigo: "${context.currentArticle.titulo}" (${context.currentArticle.categoria || 'Geral'}).`
+      ? `\nContexto atual do artigo: "${clampString(context.currentArticle.titulo, 200)}" (${clampString(context.currentArticle.categoria, 60) || 'Geral'}).`
       : context?.currentCollection?.titulo
-        ? `\nContexto atual da coleção: "${context.currentCollection.titulo}".`
+        ? `\nContexto atual da coleção: "${clampString(context.currentCollection.titulo, 200)}".`
         : '';
 
     const contents: any[] = Array.isArray(history)
       ? history.slice(-10).map((h: any) => ({
           role: h.role === 'model' || h.role === 'assistant' ? 'model' : 'user',
-          parts: [{ text: String(h.text || h.content || '') }],
+          parts: [{ text: String(h.text || h.content || '').slice(0, 4000) }],
         }))
       : [];
 
-    const currentParts: any[] = [{ text: message }];
+    const currentParts: any[] = [{ text: message.slice(0, 4000) }];
     if (image?.data && image?.mimeType) {
       currentParts.push({
-        inlineData: { data: image.data, mimeType: image.mimeType },
+        inlineData: { data: String(image.data), mimeType: String(image.mimeType) },
       });
     }
     contents.push({ role: 'user', parts: currentParts });
@@ -2465,7 +2738,7 @@ app.post('/api/gemini/chat', async (req: Request, res: Response) => {
       contents,
       config: {
         tools: [{ googleSearch: {} }],
-        systemInstruction: `${customSystemInstruction || 'Você é o assistente editorial oficial de core.wazzimagiygg.com (WikiZero / WikiWorldWeb). Utilize o Google Search para verificar fatos atualizados e responda com precisão.'}${contextText}`,
+        systemInstruction: `${clampString(customSystemInstruction, 1500) || 'Você é o assistente editorial oficial de core.wazzimagiygg.com (WikiZero / WikiWorldWeb). Utilize o Google Search para verificar fatos atualizados e responda com precisão.'}${contextText}`,
       },
     });
 
@@ -2476,12 +2749,13 @@ app.post('/api/gemini/chat', async (req: Request, res: Response) => {
       webSearchQueries,
       model: activeModel,
     });
-  } catch (err: any) {
-    res.status(500).json({ error: err?.message || 'Erro ao consultar o Gemini.' });
+  } catch (err) {
+    console.error('[GeminiChat] Error:', err);
+    res.status(500).json({ error: 'Erro ao consultar o Gemini.' });
   }
 });
 
-app.post('/api/gemini/generate-article', async (req: Request, res: Response) => {
+app.post('/api/gemini/generate-article', geminiLimiter, requirePublisher, async (req: Request, res: Response) => {
   const { topic, category = 'Geral', keywords = '', language = 'Português', userInstructions = '', chatbotId } = req.body || {};
   if (!topic || typeof topic !== 'string') {
     return res.status(400).json({ error: 'Tópico do artigo é obrigatório.' });
@@ -2493,7 +2767,8 @@ app.post('/api/gemini/generate-article', async (req: Request, res: Response) => 
   }
 
   try {
-    const prompt = `Escreva um artigo enciclopédico neutro, atualizado via pesquisa na Web e estruturado em Wikitext (usando == Seções == e listas quando apropriado), em ${language}, sobre "${topic}" na categoria "${category}". Palavras-chave: ${keywords}. Instruções adicionais: ${userInstructions}.`;
+    const cleanTopic = clampString(topic, 250);
+    const prompt = `Escreva um artigo enciclopédico neutro, atualizado via pesquisa na Web e estruturado em Wikitext (usando == Seções == e listas quando apropriado), em ${clampString(language, 40)}, sobre "${cleanTopic}" na categoria "${clampString(category, 80)}". Palavras-chave: ${clampString(keywords, 300)}. Instruções adicionais: ${clampString(userInstructions, 1000)}.`;
     const response = await ai.models.generateContent({
       model: DEFAULT_GEMINI_MODEL,
       contents: prompt,
@@ -2504,26 +2779,28 @@ app.post('/api/gemini/generate-article', async (req: Request, res: Response) => 
 
     const { groundingChunks, webSearchQueries } = extractGroundingData(response);
     res.json({
-      title: topic.trim(),
+      title: cleanTopic,
       wikitext: response.text || '',
-      category,
+      category: clampString(category, 80),
       chatbotId: chatbotId || DEFAULT_GEMINI_APPLET_ID,
       groundingChunks,
       webSearchQueries,
       model: DEFAULT_GEMINI_MODEL,
     });
-  } catch (err: any) {
-    res.status(500).json({ error: err?.message || 'Erro ao gerar artigo com Gemini.' });
+  } catch (err) {
+    console.error('[GeminiGenerateArticle] Error:', err);
+    res.status(500).json({ error: 'Erro ao gerar artigo com Gemini.' });
   }
 });
 
-app.post('/api/gemini/generate-collection', async (req: Request, res: Response) => {
+app.post('/api/gemini/generate-collection', geminiLimiter, requirePublisher, async (req: Request, res: Response) => {
   const { theme, userInstructions = '', chatbotId } = req.body || {};
   if (!theme || typeof theme !== 'string') {
     return res.status(400).json({ error: 'Tema da coleção é obrigatório.' });
   }
 
-  const slug = theme
+  const cleanTheme = clampString(theme, 200);
+  const slug = cleanTheme
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
@@ -2538,27 +2815,28 @@ app.post('/api/gemini/generate-collection', async (req: Request, res: Response) 
   try {
     const response = await ai.models.generateContent({
       model: DEFAULT_GEMINI_MODEL,
-      contents: `Gere um JSON puro (sem markdown) com as chaves titulo, descricao (máximo 180 caracteres), categoria, icon (um emoji), e tags (array de 3 a 5 strings) para uma coleção enciclopédica sobre "${theme}". ${userInstructions}`,
+      contents: `Gere um JSON puro (sem markdown) com as chaves titulo, descricao (máximo 180 caracteres), categoria, icon (um emoji), e tags (array de 3 a 5 strings) para uma coleção enciclopédica sobre "${cleanTheme}". ${clampString(userInstructions, 800)}`,
       config: { responseMimeType: 'application/json' },
     });
     const parsed = JSON.parse(response.text || '{}');
     res.json({
       collection: {
-        titulo: parsed.titulo || theme.trim(),
+        titulo: parsed.titulo || cleanTheme,
         uid: slug || `col-${Date.now()}`,
-        descricao: parsed.descricao || `Coleção temática dedicada a ${theme.trim()}.`,
+        descricao: parsed.descricao || `Coleção temática dedicada a ${cleanTheme}.`,
         categoria: parsed.categoria || 'Geral',
         icon: parsed.icon || '📚',
-        tags: Array.isArray(parsed.tags) ? parsed.tags : [theme.trim()],
+        tags: Array.isArray(parsed.tags) ? parsed.tags : [cleanTheme],
       },
       chatbotId: chatbotId || DEFAULT_GEMINI_APPLET_ID,
     });
-  } catch (err: any) {
-    res.status(500).json({ error: err?.message || 'Erro ao gerar coleção com Gemini.' });
+  } catch (err) {
+    console.error('[GeminiGenerateCollection] Error:', err);
+    res.status(500).json({ error: 'Erro ao gerar coleção com Gemini.' });
   }
 });
 
-app.post('/api/gemini/notebook-synthesize', async (req: Request, res: Response) => {
+app.post('/api/gemini/notebook-synthesize', geminiLimiter, requirePublisher, async (req: Request, res: Response) => {
   const { sources = [], action = 'full_article', customPrompt = '', targetArticleTitle = '' } = req.body || {};
   if (!Array.isArray(sources) || sources.length === 0) {
     return res.status(400).json({ error: 'Ao menos uma fonte é obrigatória para síntese.' });
@@ -2571,12 +2849,13 @@ app.post('/api/gemini/notebook-synthesize', async (req: Request, res: Response) 
 
   try {
     const sourcesText = sources
-      .map((s: any, idx: number) => `Fonte ${idx + 1} (${s.title || 'Sem título'}):\n${String(s.content || '').slice(0, 6000)}`)
+      .slice(0, 10)
+      .map((s: any, idx: number) => `Fonte ${idx + 1} (${clampString(s.title, 150) || 'Sem título'}):\n${String(s.content || '').slice(0, 6000)}`)
       .join('\n\n---\n\n');
 
     const response = await ai.models.generateContent({
       model: DEFAULT_GEMINI_MODEL,
-      contents: `Ação: ${action}. Título alvo: ${targetArticleTitle || 'Artigo sintetizado'}. Instrução extra: ${customPrompt}.\n\nFontes:\n${sourcesText}\n\nRetorne JSON puro com: { "wikitext": "...", "summary": "...", "suggestedTitle": "...", "suggestedCategory": "..." }`,
+      contents: `Ação: ${clampString(action, 80)}. Título alvo: ${clampString(targetArticleTitle, 200) || 'Artigo sintetizado'}. Instrução extra: ${clampString(customPrompt, 800)}.\n\nFontes:\n${sourcesText}\n\nRetorne JSON puro com: { "wikitext": "...", "summary": "...", "suggestedTitle": "...", "suggestedCategory": "..." }`,
       config: { responseMimeType: 'application/json' },
     });
 
@@ -2584,11 +2863,12 @@ app.post('/api/gemini/notebook-synthesize', async (req: Request, res: Response) 
     res.json({
       wikitext: parsed.wikitext || '',
       summary: parsed.summary || 'Síntese gerada com sucesso.',
-      suggestedTitle: parsed.suggestedTitle || targetArticleTitle || 'Artigo do Notebook',
+      suggestedTitle: parsed.suggestedTitle || clampString(targetArticleTitle, 200) || 'Artigo do Notebook',
       suggestedCategory: parsed.suggestedCategory || 'Geral',
     });
-  } catch (err: any) {
-    res.status(500).json({ error: err?.message || 'Erro ao sintetizar com Gemini Notebook.' });
+  } catch (err) {
+    console.error('[GeminiNotebookSynthesize] Error:', err);
+    res.status(500).json({ error: 'Erro ao sintetizar com Gemini Notebook.' });
   }
 });
 
@@ -2779,8 +3059,20 @@ app.all('/api/*', (req: Request, res: Response) => {
   res.status(404).json({
     error: 'Endpoint de API não encontrado.',
     method: req.method,
-    path: req.originalUrl
+    path: req.path
   });
+});
+
+// Safe global error handler — never leaks stack traces or internal filesystem paths
+app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
+  if (err instanceof SyntaxError && 'body' in err) {
+    res.status(400).json({ error: 'Payload JSON inválido.' });
+    return;
+  }
+  console.error('[ServerError]', err?.message || err);
+  if (!res.headersSent) {
+    res.status(500).json({ error: 'Erro interno ao processar a requisição.' });
+  }
 });
 
 // ============================================
@@ -2856,7 +3148,9 @@ async function startServer() {
   });
 }
 
-startServer().catch((err) => {
-  console.error('[Backend] Fatal error starting server:', err);
-  process.exit(1);
-});
+if (process.env.WZZM_DISABLE_AUTO_LISTEN !== '1') {
+  startServer().catch((err) => {
+    console.error('[Backend] Fatal error starting server:', err);
+    process.exit(1);
+  });
+}

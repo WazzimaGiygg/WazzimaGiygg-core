@@ -1001,8 +1001,8 @@ export default function App() {
         if (backendOk) {
           // Load chat messages
           try {
-            const res = await fetch("/api/jsonbin/messages");
-            if (res.ok) {
+            const res = await safeApiFetch("/api/jsonbin/messages");
+            if (res && res.ok) {
               const data = await res.json();
               setChatMessages(data.record || []);
             }
@@ -1010,21 +1010,30 @@ export default function App() {
             // ignore
           }
 
-          // Load tickets
-          try {
-            const res = await fetch("/api/tickets");
-            if (res.ok) {
-              const data = await res.json();
-              setTicketsList(data);
+          // Load tickets only for signed-in accounts (strict user/burocrata isolation)
+          if (auth.currentUser) {
+            try {
+              const res = await safeApiFetch("/api/tickets");
+              if (res && res.ok) {
+                const data = await res.json();
+                setTicketsList(data || []);
+              }
+            } catch {
+              // ignore
             }
-          } catch {
-            // ignore
+          } else {
+            try {
+              const storedTickets = localStorage.getItem("wzzm_tickets");
+              setTicketsList(storedTickets ? JSON.parse(storedTickets) : []);
+            } catch {
+              setTicketsList([]);
+            }
           }
 
           // Load sanctions
           try {
-            const res = await fetch("/api/sanctions");
-            if (res.ok) {
+            const res = await safeApiFetch("/api/sanctions");
+            if (res && res.ok) {
               const data = await res.json();
               setSanctionsList(data.cidades_sancionadas || []);
             }
@@ -1034,8 +1043,8 @@ export default function App() {
 
           // Health check
           try {
-            const res = await fetch("/api/health");
-            if (res.ok) {
+            const res = await safeApiFetch("/api/health");
+            if (res && res.ok) {
               const data = await res.json();
               setApiHealth(data);
             }
@@ -1065,23 +1074,9 @@ export default function App() {
 
           try {
             const storedTickets = localStorage.getItem("wzzm_tickets");
-            setTicketsList(
-              storedTickets
-                ? JSON.parse(storedTickets)
-                : [
-                    {
-                      id: "tkt-001",
-                      nome: "Leitor Anônimo",
-                      email: "contato@wazzimagiygg.com",
-                      tipo: "Dúvida Geral",
-                      mensagem: "Sistema de consulta bibliográfica e artigos acadêmicos operando via Firestore.",
-                      status: "Resolvido",
-                      criadoEm: new Date().toISOString()
-                    }
-                  ]
-            );
+            setTicketsList(storedTickets ? JSON.parse(storedTickets) : []);
           } catch {
-            //
+            setTicketsList([]);
           }
 
           setSanctionsList(getStaticSanctionsFallback());
