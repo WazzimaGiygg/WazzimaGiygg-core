@@ -74,6 +74,7 @@ import { exportWikiArticleFormattedPdf } from '../../utils/pdfExport';
 import AbntCitationGenerator from '../AbntCitationGenerator';
 import { updateSEO } from '../../wiki/utils/seoManager';
 import NotMediaWikiInfoboxTutorial from './NotMediaWikiInfoboxTutorial';
+import NotMediaWikiLgpdDeletionPanel from './NotMediaWikiLgpdDeletionPanel';
 import {
   buildPersonalUserPageSlug,
   buildUserInfoboxWikitext,
@@ -2472,6 +2473,14 @@ export default function NotMediaWikiPortal({
                   <Shuffle className="w-3.5 h-3.5 text-amber-800" />
                   <span>Artigo Aleatório (Special:Random)</span>
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('governance')}
+                  className="w-full bg-red-700 hover:bg-red-800 text-white p-2 font-bold uppercase text-[10px] cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  <ShieldAlert className="w-3.5 h-3.5 text-amber-300" />
+                  <span>Painel LGPD Art. 18 (Exclusão)</span>
+                </button>
               </div>
             </div>
           </div>
@@ -3330,9 +3339,15 @@ export default function NotMediaWikiPortal({
             <div className="p-4 bg-stone-50 border border-stone-300">
               <span className="font-bold uppercase text-[10px] text-stone-500 block mb-1">Conformidade LGPD</span>
               <div className="text-sm font-bold text-stone-900">Art. 18 Integrado</div>
-              <span className="text-[10px] text-stone-600 mt-1 block">Canal oficial de exclusão ativo</span>
+              <span className="text-[10px] text-stone-600 mt-1 block">Painel simplificado de exclusão ativo abaixo</span>
             </div>
           </div>
+
+          <NotMediaWikiLgpdDeletionPanel
+            currentUser={currentUser}
+            isBureaucrat={isBureaucrat}
+            showToast={showToast}
+          />
         </div>
       )}
 

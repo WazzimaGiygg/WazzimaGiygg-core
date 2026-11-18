@@ -63,6 +63,7 @@ import {
   isAuthorizedBurocrata,
   DeletionRequest,
   listDeletionRequests,
+  setupDeletionRequestsListener,
   updateDeletionRequestStatus,
   safeApiFetch,
   isBackendApiAvailable,
@@ -288,6 +289,16 @@ export default function AdminPanel({
     if (isAdmin) {
       loadAdminData();
     }
+  }, [isAdmin]);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    const unsubscribe = setupDeletionRequestsListener((requests) => {
+      setDeletionRequestsList(requests);
+    });
+    return () => {
+      if (typeof unsubscribe === "function") unsubscribe();
+    };
   }, [isAdmin]);
 
   // Elevation Handler (Chave Mestra de Burocrata)
@@ -1638,10 +1649,11 @@ export default function AdminPanel({
               <ShieldAlert className="w-5 h-5 text-amber-700 shrink-0 mt-0.5" />
               <div className="text-xs font-mono text-stone-900">
                 <span className="font-bold text-amber-900 uppercase block mb-1">
-                  Diretriz de Segurança e Autoria Restrita
+                  Diretriz de Segurança, Integração &amp; Autoria Restrita
                 </span>
-                Conforme instrução técnica emergencial da WZZM, exclusivamente o e-mail oficial{" "}
-                <strong className="text-red-700">{AUTHORIZED_BUROCRATA_EMAIL}</strong> possui permissão jurídica e técnica para deferir, processar e assinar certificados de exclusão nesta base.
+                Exclusivamente o e-mail oficial{" "}
+                <strong className="text-red-700">{AUTHORIZED_BUROCRATA_EMAIL}</strong> possui permissão jurídica e técnica para deferir, processar e assinar certificados de exclusão. Os protocolos de{" "}
+                <code className="bg-amber-100 px-1 font-bold">solicitacaodeexlusao/index.html</code> encontram-se integrados diretamente nesta fila em conjunto com o Firestore.
               </div>
             </div>
 
@@ -2025,7 +2037,8 @@ export default function AdminPanel({
                         selectedDeletionRequest.id,
                         "completed",
                         deletionProcessingNotes || "Exclusão executada com sucesso pelo Burocrata-Chefe.",
-                        currentUser?.email || AUTHORIZED_BUROCRATA_EMAIL
+                        currentUser?.email || AUTHORIZED_BUROCRATA_EMAIL,
+                        certId
                       );
                       setDeletionRequestsList((prev) =>
                         prev.map((r) =>

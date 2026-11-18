@@ -46,6 +46,11 @@ import {
   ArticleValidationError,
   PortalArticleInput
 } from "./utils/articleSchema";
+import {
+  DELETION_REQUESTS_UPDATED_EVENT,
+  mergeDeletionRequestsWithMock,
+  saveLocalDeletionOverride
+} from "./data/lgpdDeletionMockData";
 export { isBackendApiAvailable, safeApiFetch, ArticleValidationError };
 
 // The user's specific Firebase config from the original repository
@@ -1221,14 +1226,15 @@ export async function updateUserTeacherStatus(uid: string, isTeacher: boolean): 
 // ============================================
 
 export async function listDeletionRequests(): Promise<DeletionRequest[]> {
+  const collected: DeletionRequest[] = [];
+
   try {
     const q = query(collection(db, "deletion_requests"), orderBy("requestDate", "desc"));
     const snapshot = await getDocs(q);
-    const requests: DeletionRequest[] = [];
     snapshot.forEach((docSnap) => {
       const d = docSnap.data();
       const reqDate = d.requestDate?.toDate ? d.requestDate.toDate().toISOString() : (d.requestDate || new Date().toISOString());
-      requests.push({
+      collected.push({
         id: docSnap.id,
         name: d.name || d.nomeCompleto || "Titular Anônimo",
         email: d.email || "",
@@ -1244,7 +1250,6 @@ export async function listDeletionRequests(): Promise<DeletionRequest[]> {
         rejectedAt: d.rejectedAt?.toDate ? d.rejectedAt.toDate().toISOString() : d.rejectedAt,
         rejectionReason: d.rejectionReason || d.observacoes,
         certificateId: d.certificateId || d.certificadoExclusao,
-        // Aliases
         protocolo: d.protocolo || docSnap.id,
         nomeCompleto: d.nomeCompleto || d.name || "Titular Anônimo",
         motivo: d.motivo || d.reason || "Exercício de direito LGPD Art. 18",
@@ -1254,17 +1259,16 @@ export async function listDeletionRequests(): Promise<DeletionRequest[]> {
         certificadoExclusao: d.certificadoExclusao || d.certificateId || ""
       });
     });
-    if (requests.length > 0) return requests;
   } catch (err) {
     console.warn("Could not load deletion_requests from Firestore:", err);
   }
 
-  // Fallback to backend API when available
+  // Fallback / merge with backend API when available
   try {
     const res = await safeApiFetch("/api/admin/deletion-requests");
     if (res && res.ok) {
       const data = await res.json();
-      return (data.requests || []).map((r: any) => ({
+      const apiRequests = (data.requests || []).map((r: any) => ({
         ...r,
         protocolo: r.protocolo || r.id,
         nomeCompleto: r.nomeCompleto || r.name || "Titular Anônimo",
@@ -1274,72 +1278,97 @@ export async function listDeletionRequests(): Promise<DeletionRequest[]> {
         observacoes: r.observacoes || r.rejectionReason || "",
         certificadoExclusao: r.certificadoExclusao || r.certificateId || ""
       }));
+      collected.push(...apiRequests);
     }
   } catch (apiErr) {
     console.warn("Backend deletion-requests error:", apiErr);
   }
 
-  return [];
+  return mergeDeletionRequestsWithMock(collected);
 }
 
 /**
- * Real-time Firestore listener for LGPD deletion requests
+ * Real-time Firestore listener for LGPD deletion requests (merged with integrated solicitacaodeexlusao mock data)
  */
 export function setupDeletionRequestsListener(
   callback: (requests: DeletionRequest[]) => void
 ): () => void {
+  let latestLiveRequests: DeletionRequest[] = [];
+
+  const emitMerged = () => {
+    callback(mergeDeletionRequestsWithMock(latestLiveRequests));
+  };
+
+  // Immediately emit integrated mock/cached baseline
+  emitMerged();
+
+  const handleLocalUpdate = () => emitMerged();
+  if (typeof window !== "undefined") {
+    window.addEventListener(DELETION_REQUESTS_UPDATED_EVENT, handleLocalUpdate);
+  }
+
+  // Also hydrate from backend API if available
+  listDeletionRequests().then((merged) => {
+    latestLiveRequests = merged;
+    callback(merged);
+  });
+
+  let unsubscribeFirestore: (() => void) | null = null;
   try {
-    const q = query(collection(db, "deletion_requests"), orderBy("requestDate", "desc"));
-    return onSnapshot(
-      q,
-      (snapshot) => {
-        const requests: DeletionRequest[] = [];
-        snapshot.forEach((docSnap) => {
-          const d = docSnap.data();
-          const reqDate = d.requestDate?.toDate
-            ? d.requestDate.toDate().toISOString()
-            : d.requestDate || new Date().toISOString();
-          requests.push({
-            id: docSnap.id,
-            name: d.name || d.nomeCompleto || "Titular Anônimo",
-            email: d.email || "",
-            phone: d.phone || "",
-            cpf: d.cpf || "",
-            reason: d.reason || d.motivo || "Exercício de direito LGPD Art. 18",
-            dataTypes: d.dataTypes || ["Contas", "Comentários", "Histórico"],
-            status: d.status || "pending",
-            requestDate: reqDate,
-            ipAddress: d.ipAddress || "189.40.xxx.xxx",
-            processedBy: d.processedBy,
-            completedAt: d.completedAt?.toDate ? d.completedAt.toDate().toISOString() : d.completedAt,
-            rejectedAt: d.rejectedAt?.toDate ? d.rejectedAt.toDate().toISOString() : d.rejectedAt,
-            rejectionReason: d.rejectionReason || d.observacoes,
-            certificateId: d.certificateId || d.certificadoExclusao,
-            protocolo: d.protocolo || docSnap.id,
-            nomeCompleto: d.nomeCompleto || d.name || "Titular Anônimo",
-            motivo: d.motivo || d.reason || "Exercício de direito LGPD Art. 18",
-            tipoDado: d.tipoDado || (Array.isArray(d.dataTypes) ? d.dataTypes.join(", ") : "Expurgo Geral"),
-            dataSolicitacao: reqDate,
-            observacoes: d.observacoes || d.rejectionReason || "",
-            certificadoExclusao: d.certificadoExclusao || d.certificateId || ""
+    if (auth.currentUser && isAuthorizedBurocrata(auth.currentUser.email)) {
+      const q = query(collection(db, "deletion_requests"), orderBy("requestDate", "desc"));
+      unsubscribeFirestore = onSnapshot(
+        q,
+        (snapshot) => {
+          const requests: DeletionRequest[] = [];
+          snapshot.forEach((docSnap) => {
+            const d = docSnap.data();
+            const reqDate = d.requestDate?.toDate
+              ? d.requestDate.toDate().toISOString()
+              : d.requestDate || new Date().toISOString();
+            requests.push({
+              id: docSnap.id,
+              name: d.name || d.nomeCompleto || "Titular Anônimo",
+              email: d.email || "",
+              phone: d.phone || "",
+              cpf: d.cpf || "",
+              reason: d.reason || d.motivo || "Exercício de direito LGPD Art. 18",
+              dataTypes: d.dataTypes || ["Contas", "Comentários", "Histórico"],
+              status: d.status || "pending",
+              requestDate: reqDate,
+              ipAddress: d.ipAddress || "189.40.xxx.xxx",
+              processedBy: d.processedBy,
+              completedAt: d.completedAt?.toDate ? d.completedAt.toDate().toISOString() : d.completedAt,
+              rejectedAt: d.rejectedAt?.toDate ? d.rejectedAt.toDate().toISOString() : d.rejectedAt,
+              rejectionReason: d.rejectionReason || d.observacoes,
+              certificateId: d.certificateId || d.certificadoExclusao,
+              protocolo: d.protocolo || docSnap.id,
+              nomeCompleto: d.nomeCompleto || d.name || "Titular Anônimo",
+              motivo: d.motivo || d.reason || "Exercício de direito LGPD Art. 18",
+              tipoDado: d.tipoDado || (Array.isArray(d.dataTypes) ? d.dataTypes.join(", ") : "Expurgo Geral"),
+              dataSolicitacao: reqDate,
+              observacoes: d.observacoes || d.rejectionReason || "",
+              certificadoExclusao: d.certificadoExclusao || d.certificateId || ""
+            });
           });
-        });
-        if (requests.length > 0) {
-          callback(requests);
-        } else {
-          listDeletionRequests().then(callback);
+          latestLiveRequests = requests;
+          emitMerged();
+        },
+        () => {
+          emitMerged();
         }
-      },
-      (err) => {
-        console.warn("Firestore deletion_requests snapshot error, falling back to fetch:", err);
-        listDeletionRequests().then(callback);
-      }
-    );
+      );
+    }
   } catch (err) {
     console.warn("Could not bind deletion_requests snapshot listener:", err);
-    listDeletionRequests().then(callback);
-    return () => {};
   }
+
+  return () => {
+    if (typeof unsubscribeFirestore === "function") unsubscribeFirestore();
+    if (typeof window !== "undefined") {
+      window.removeEventListener(DELETION_REQUESTS_UPDATED_EVENT, handleLocalUpdate);
+    }
+  };
 }
 
 export async function updateDeletionRequestStatus(
@@ -1350,6 +1379,11 @@ export async function updateDeletionRequestStatus(
   certificateId?: string
 ): Promise<boolean> {
   const admin = adminEmail || AUTHORIZED_BUROCRATA_EMAIL;
+  const resolvedCertId =
+    status === 'completed'
+      ? certificateId || `LGPD-CERT-${Date.now().toString().slice(-6)}`
+      : undefined;
+
   const updatePayload: any = {
     status,
     processedBy: admin,
@@ -1357,8 +1391,8 @@ export async function updateDeletionRequestStatus(
   };
   if (status === 'completed') {
     updatePayload.completedAt = serverTimestamp();
-    updatePayload.certificateId = certificateId || `LGPD-CERT-${Date.now().toString().slice(-6)}`;
-    updatePayload.certificadoExclusao = updatePayload.certificateId;
+    updatePayload.certificateId = resolvedCertId;
+    updatePayload.certificadoExclusao = resolvedCertId;
   } else if (status === 'rejected') {
     updatePayload.rejectedAt = serverTimestamp();
     updatePayload.rejectionReason = notesOrReason || "Fundamentação legal da guarda obrigatória (Marco Civil Art. 15).";
@@ -1367,6 +1401,27 @@ export async function updateDeletionRequestStatus(
   if (notesOrReason) {
     updatePayload.observacoes = notesOrReason;
   }
+
+  // Persist locally immediately so integrated/mock requests also stay in sync across panels
+  saveLocalDeletionOverride(id, {
+    status,
+    processedBy: admin,
+    ...(status === 'completed'
+      ? {
+          completedAt: new Date().toISOString(),
+          dataConclusao: new Date().toISOString(),
+          certificateId: resolvedCertId,
+          certificadoExclusao: resolvedCertId
+        }
+      : {}),
+    ...(status === 'rejected'
+      ? {
+          rejectedAt: new Date().toISOString(),
+          rejectionReason: notesOrReason || "Fundamentação legal da guarda obrigatória (Marco Civil Art. 15)."
+        }
+      : {}),
+    ...(notesOrReason ? { observacoes: notesOrReason } : {})
+  });
 
   try {
     await updateDoc(doc(db, "deletion_requests", id), sanitizeFirestoreData(updatePayload));
@@ -1381,7 +1436,7 @@ export async function updateDeletionRequestStatus(
       status,
       adminEmail: admin,
       rejectionReason: notesOrReason,
-      certificateId: updatePayload.certificateId
+      certificateId: resolvedCertId
     })
   });
   return Boolean(res?.ok || auth.currentUser);
