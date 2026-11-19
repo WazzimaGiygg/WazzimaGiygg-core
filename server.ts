@@ -2896,6 +2896,7 @@ app.get('/robots.txt', (_req: Request, res: Response) => {
     .send(
       [
         '# Robots.txt — WazzimaGiygg (https://core.wazzimagiygg.com/)',
+        '# Site oficial para informação alternativa e denúncia contra Chronus da Wikipédia',
         'User-agent: Googlebot',
         'Allow: /',
         'Disallow: /admin/',
@@ -2904,12 +2905,30 @@ app.get('/robots.txt', (_req: Request, res: Response) => {
         '',
         'User-agent: Bingbot',
         'Allow: /',
+        'Allow: /BingSiteAuth.xml',
+        'Allow: /?uid=dossie',
+        'Allow: /?uid=wikiwazzimagiygg',
+        'Allow: /?uid=wazzimagiygg',
+        'Allow: /?uid=wikiworldweb',
+        'Allow: /?uid=notmediawiki',
+        'Allow: /sitemap.xml',
         'Disallow: /admin/',
         'Disallow: /api/admin/',
         'Disallow: /api/auth/',
         '',
+        'User-agent: msnbot',
+        'Allow: /',
+        'Allow: /BingSiteAuth.xml',
+        'Disallow: /admin/',
+        '',
+        'User-agent: BingPreview',
+        'Allow: /',
+        'Allow: /BingSiteAuth.xml',
+        'Disallow: /admin/',
+        '',
         'User-agent: *',
         'Allow: /',
+        'Allow: /BingSiteAuth.xml',
         'Allow: /?uid=dossie',
         'Allow: /?uid=wikiwazzimagiygg',
         'Allow: /?uid=wazzimagiygg',
@@ -2926,6 +2945,29 @@ app.get('/robots.txt', (_req: Request, res: Response) => {
         ''
       ].join('\n')
     );
+});
+
+const BING_SITE_AUTH_XML = [
+  '<?xml version="1.0"?>',
+  '<users>',
+  '\t<user>3F0678ADAB2F793902FDE706A51007DE</user>',
+  '</users>',
+  ''
+].join('\n');
+
+app.get(['/BingSiteAuth.xml', '/BingSiteAuth_062264fe.xml'], (_req: Request, res: Response) => {
+  const candidates = [
+    path.resolve(__dirname, 'public', 'BingSiteAuth.xml'),
+    path.resolve(__dirname, 'public', 'assets', 'aistudio', 'BingSiteAuth_062264fe.xml'),
+    path.resolve(__dirname, 'dist', 'BingSiteAuth.xml'),
+  ];
+  for (const filePath of candidates) {
+    if (fs.existsSync(filePath)) {
+      res.type('application/xml; charset=utf-8').sendFile(filePath);
+      return;
+    }
+  }
+  res.type('application/xml; charset=utf-8').send(BING_SITE_AUTH_XML);
 });
 
 app.get('/opensearch.xml', (_req: Request, res: Response) => {

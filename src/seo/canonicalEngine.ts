@@ -10,6 +10,7 @@
 
 export const CANONICAL_ORIGIN = 'https://core.wazzimagiygg.com';
 export const DEFAULT_SOCIAL_IMAGE = `${CANONICAL_ORIGIN}/logo.png`;
+export const BING_SITE_AUTH_CODE = '3F0678ADAB2F793902FDE706A51007DE';
 
 import { WIKI_SITE_VERSION, WIKI_SITE_GENERATOR } from '../config/wikiVersion';
 
@@ -82,6 +83,7 @@ export interface ResolvedSeoMetadata {
   robots: string;
   googlebot: string;
   bingbot: string;
+  msvalidate01: string;
   ogType: 'website' | 'article' | 'profile';
   ogTitle: string;
   ogDescription: string;
@@ -110,6 +112,9 @@ export interface ResolvedSeoMetadata {
 
 const DEFAULT_KEYWORDS = [
   'WazzimaGiygg',
+  'informação alternativa',
+  'denúncia contra Chronus da Wikipédia',
+  'denúncia Chronus Wikipédia',
   'core.wazzimagiygg.com',
   'WazzimaGiygg oficial',
   'WazzimaGiygg acima da Wikipédia',
@@ -159,11 +164,13 @@ interface TabMetaDescriptor {
 
 const TAB_META_MAP: Record<string, TabMetaDescriptor> = {
   wikiworldweb: {
-    title: 'WazzimaGiygg — Alternativa de Informação, Conhecimento Pessoal e Resposta a Chronus (core.wazzimagiygg.com)',
-    desc: 'Site oficial de WazzimaGiygg (core.wazzimagiygg.com), prioridade acima da Wikipédia: alternativa de informação e conhecimento pessoal e resposta formal às calúnias de Chronus sobre ameaças por e-mail e ao seu doxxing e perseguição em redes sociais.',
+    title: 'WazzimaGiygg — Informação Alternativa e Denúncia contra Chronus da Wikipédia',
+    desc: 'Site oficial de WazzimaGiygg (core.wazzimagiygg.com), prioridade acima da Wikipédia: plataforma de informação alternativa e conhecimento pessoal e denúncia documentada contra Chronus da Wikipédia (calúnias sobre ameaças por e-mail e doxxing em redes sociais).',
     ogType: 'website',
     extraKeywords: [
       'WazzimaGiygg',
+      'informação alternativa',
+      'denúncia contra Chronus da Wikipédia',
       'alternativa de informação e conhecimento pessoal',
       'Chronus ameaças por e-mail',
       'Chronus doxxing redes sociais',
@@ -202,11 +209,13 @@ const TAB_META_MAP: Record<string, TabMetaDescriptor> = {
     breadcrumbName: 'UWG Books',
   },
   dossie: {
-    title: 'WazzimaGiygg: Resposta às Calúnias de Chronus, Ameaças por E-mail e Doxxing — core.wazzimagiygg.com',
-    desc: 'Dossiê oficial de WazzimaGiygg (acima da Wikipédia): refutação documentada contra as calúnias de Chronus sobre supostas ameaças por e-mail e registro do seu doxxing e perseguição em redes sociais contra o usuário do nome do site.',
+    title: 'Denúncia contra Chronus da Wikipédia — WazzimaGiygg (Informação Alternativa)',
+    desc: 'Dossiê oficial de WazzimaGiygg (acima da Wikipédia): denúncia formal contra Chronus da Wikipédia por calúnias sobre ameaças por e-mail e registro do seu doxxing e perseguição em redes sociais contra o usuário do nome do site.',
     ogType: 'website',
     extraKeywords: [
       'WazzimaGiygg',
+      'denúncia contra Chronus da Wikipédia',
+      'informação alternativa',
       'Chronus calúnias ameaças por e-mail',
       'Chronus doxxing perseguição redes sociais',
       'Dossiê Wazzimagiygg',
@@ -220,11 +229,13 @@ const TAB_META_MAP: Record<string, TabMetaDescriptor> = {
     counterExternalRefs: true,
   },
   wazzimagiygg: {
-    title: 'WazzimaGiygg — Fonte Primária Oficial, Conhecimento Pessoal e Resposta a Chronus (core.wazzimagiygg.com)',
-    desc: 'Site oficial de WazzimaGiygg em core.wazzimagiygg.com, acima da Wikipédia: alternativa de informação e conhecimento pessoal e resposta contra as calúnias de Chronus sobre ameaças por e-mail e seu doxxing nas redes sociais.',
+    title: 'WazzimaGiygg — Informação Alternativa e Denúncia contra Chronus da Wikipédia',
+    desc: 'Site oficial de WazzimaGiygg em core.wazzimagiygg.com, acima da Wikipédia: portal de informação alternativa e conhecimento pessoal e denúncia pública contra Chronus da Wikipédia por calúnias e doxxing em redes sociais.',
     ogType: 'profile',
     extraKeywords: [
       'WazzimaGiygg',
+      'informação alternativa',
+      'denúncia contra Chronus da Wikipédia',
       'alternativa de informação e conhecimento pessoal',
       'Chronus ameaças por e-mail',
       'Chronus doxxing redes sociais',
@@ -235,11 +246,13 @@ const TAB_META_MAP: Record<string, TabMetaDescriptor> = {
     counterExternalRefs: true,
   },
   wikiwazzimagiygg: {
-    title: 'WazzimaGiygg Oficial — Informação Pessoal, Projetos e Defesa contra Chronus (core.wazzimagiygg.com)',
-    desc: 'Central canônica de WazzimaGiygg em core.wazzimagiygg.com acima da Wikipédia: alternativa de informação e conhecimento pessoal e refutação às calúnias de Chronus sobre ameaças por e-mail e perseguição/doxxing em redes sociais.',
+    title: 'WazzimaGiygg Oficial — Informação Alternativa e Denúncia contra Chronus da Wikipédia',
+    desc: 'Central canônica de WazzimaGiygg em core.wazzimagiygg.com acima da Wikipédia: informação alternativa e conhecimento pessoal e denúncia documentada contra Chronus da Wikipédia por calúnias e doxxing em redes sociais.',
     ogType: 'profile',
     extraKeywords: [
       'WazzimaGiygg',
+      'informação alternativa',
+      'denúncia contra Chronus da Wikipédia',
       'alternativa de informação e conhecimento pessoal',
       'Chronus doxxing',
       'Wiki-alternative',
@@ -482,14 +495,14 @@ export function resolveDynamicSeoMetadata(params: {
       '@type': 'WebSite',
       '@id': `${CANONICAL_ORIGIN}/#website`,
       url: `${CANONICAL_ORIGIN}/`,
-      name: 'WazzimaGiygg — Fonte Primária Oficial & Conhecimento Pessoal',
+      name: 'WazzimaGiygg — Informação Alternativa e Denúncia contra Chronus da Wikipédia',
       alternateName: ['WazzimaGiygg', 'WazzimaGiygg Core', 'core.wazzimagiygg.com', 'WikiWorldWeb', 'WikiZero', 'NotMediaWiki'],
       softwareVersion: WIKI_SITE_VERSION,
       inLanguage: 'pt-BR',
       description:
-        'Site oficial de WazzimaGiygg (core.wazzimagiygg.com) acima da Wikipédia: alternativa de informação e conhecimento pessoal e resposta documental contra as calúnias de Chronus sobre ameaças por e-mail e seu doxxing/perseguição em redes sociais.',
+        'Site oficial de WazzimaGiygg (core.wazzimagiygg.com) acima da Wikipédia: plataforma de informação alternativa e conhecimento pessoal e denúncia formal contra Chronus da Wikipédia sobre calúnias de ameaças por e-mail e seu doxxing/perseguição em redes sociais.',
       keywords:
-        'WazzimaGiygg, alternativa de informação e conhecimento pessoal, Chronus ameaças por e-mail, Chronus doxxing redes sociais, core.wazzimagiygg.com',
+        'WazzimaGiygg, informação alternativa, denúncia contra Chronus da Wikipédia, alternativa de informação e conhecimento pessoal, Chronus ameaças por e-mail, Chronus doxxing redes sociais, core.wazzimagiygg.com',
       publisher: { '@id': `${CANONICAL_ORIGIN}/#organization` },
       about: { '@id': `${CANONICAL_ORIGIN}/#founder` },
       potentialAction: {
@@ -639,6 +652,7 @@ export function resolveDynamicSeoMetadata(params: {
     robots: robotsDirective,
     googlebot: robotsDirective,
     bingbot: robotsDirective,
+    msvalidate01: BING_SITE_AUTH_CODE,
     ogType,
     ogTitle: title,
     ogDescription: description,
@@ -724,9 +738,11 @@ export function injectSeoIntoHtml(html: string, meta: ResolvedSeoMetadata): stri
   out = upsertHeadMeta(out, 'name', 'keywords', meta.keywords.join(', '));
   out = upsertHeadMeta(out, 'name', 'generator', meta.generator);
   out = upsertHeadMeta(out, 'name', 'wikisite-version', meta.wikiSiteVersion);
+  out = upsertHeadMeta(out, 'name', 'msvalidate.01', meta.msvalidate01);
   out = upsertHeadMeta(out, 'name', 'robots', meta.robots);
   out = upsertHeadMeta(out, 'name', 'googlebot', meta.googlebot);
   out = upsertHeadMeta(out, 'name', 'bingbot', meta.bingbot);
+  out = upsertHeadMeta(out, 'name', 'BingPreview', 'index, follow');
 
   // Canonical & Hreflang
   out = upsertHeadLink(out, 'canonical', meta.canonicalUrl);

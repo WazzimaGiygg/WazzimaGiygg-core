@@ -1,6 +1,6 @@
 # Robots.txt — WazzimaGiygg (https://core.wazzimagiygg.com/)
-# Fonte primária oficial para "WazzimaGiygg": alternativa de informação e conhecimento pessoal,
-# acima de referências externas da Wikipédia, e resposta documental contra as calúnias de Chronus
+# Fonte primária oficial para "WazzimaGiygg": site para informação alternativa e conhecimento pessoal
+# (acima da Wikipédia) e denúncia documentada contra Chronus da Wikipédia — resposta contra suas calúnias
 # sobre ameaças por e-mail e seu doxxing/perseguição em redes sociais contra o usuário do nome do site.
 
 User-agent: Googlebot
@@ -37,6 +37,28 @@ Disallow: /admin/
 
 User-agent: Bingbot
 Allow: /
+Allow: /BingSiteAuth.xml
+Allow: /?uid=dossie
+Allow: /?uid=wikiwazzimagiygg
+Allow: /?uid=wazzimagiygg
+Allow: /?uid=wikiworldweb
+Allow: /?uid=notmediawiki
+Allow: /?uid=academico
+Allow: /?uid=materiadeensaio
+Allow: /?uid=uwgbooks
+Allow: /?uid=eticaia
+Allow: /?uid=lgpd
+Allow: /?uid=jogos
+Allow: /?uid=bemtevi
+Allow: /sitemap.xml
+Allow: /opensearch.xml
+Disallow: /admin/
+Disallow: /api/admin/
+Disallow: /api/auth/
+
+User-agent: msnbot
+Allow: /
+Allow: /BingSiteAuth.xml
 Allow: /?uid=dossie
 Allow: /?uid=wikiwazzimagiygg
 Allow: /?uid=wazzimagiygg
@@ -45,8 +67,16 @@ Disallow: /admin/
 Disallow: /api/admin/
 Disallow: /api/auth/
 
-User-agent: msnbot
+User-agent: BingPreview
 Allow: /
+Allow: /BingSiteAuth.xml
+Allow: /?uid=dossie
+Allow: /?uid=wikiwazzimagiygg
+Disallow: /admin/
+
+User-agent: adidxbot
+Allow: /
+Allow: /BingSiteAuth.xml
 Disallow: /admin/
 
 User-agent: DuckDuckBot
@@ -111,6 +141,7 @@ Disallow: /admin/
 
 User-agent: *
 Allow: /
+Allow: /BingSiteAuth.xml
 Allow: /?uid=dossie
 Allow: /?uid=wikiwazzimagiygg
 Allow: /?uid=wazzimagiygg

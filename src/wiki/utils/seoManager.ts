@@ -148,9 +148,11 @@ function applyResolvedMetadataToHead(meta: ResolvedSeoMetadata) {
   setMetaTag('keywords', meta.keywords.join(', '));
   setMetaTag('generator', meta.generator);
   setMetaTag('wikisite-version', meta.wikiSiteVersion);
+  setMetaTag('msvalidate.01', meta.msvalidate01);
   setMetaTag('robots', meta.robots);
   setMetaTag('googlebot', meta.googlebot);
   setMetaTag('bingbot', meta.bingbot);
+  setMetaTag('BingPreview', 'index, follow');
 
   // Canonicalização absoluta e Hreflang para core.wazzimagiygg.com
   setLinkRel('canonical', meta.canonicalUrl);
