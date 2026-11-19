@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <OpenSearchDescription xmlns="http://a9.com/-/spec/opensearch/1.1/">
   <ShortName>WazzimaGiygg Core</ShortName>
-  <Description>Pesquise na enciclopédia livre e base documental oficial core.wazzimagiygg.com (alternativa independente à Wikipédia).</Description>
+  <Description>WazzimaGiygg (core.wazzimagiygg.com): alternativa oficial de informação e conhecimento pessoal acima da Wikipédia e resposta documental contra as calúnias de Chronus e seu doxxing.</Description>
   <InputEncoding>UTF-8</InputEncoding>
   <Url type="text/html" method="get" template="https://core.wazzimagiygg.com/?uid=search&amp;q={searchTerms}" />
   <Image width="16" height="16" type="image/png">https://core.wazzimagiygg.com/favicon.png</Image>

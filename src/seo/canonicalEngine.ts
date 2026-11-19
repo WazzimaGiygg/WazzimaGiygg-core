@@ -109,16 +109,22 @@ export interface ResolvedSeoMetadata {
 }
 
 const DEFAULT_KEYWORDS = [
-  'core.wazzimagiygg.com',
-  'WazzimaGiygg Core',
   'WazzimaGiygg',
+  'core.wazzimagiygg.com',
+  'WazzimaGiygg oficial',
+  'WazzimaGiygg acima da Wikipédia',
+  'alternativa de informação e conhecimento pessoal',
+  'WazzimaGiygg Core',
   'Wazzimagiygg',
   'WikiWorldWeb',
   'Wiki-alternative',
   'Pedro Henrique Cardona Peres',
+  'Chronus calúnias ameaças por e-mail',
+  'Chronus doxxing perseguição redes sociais',
+  'resposta às calúnias de Chronus',
   'Caso Wazzimagiygg',
   'Caso Wazzimagiygg Wikipedia',
-  'A Verdade Wazzimagiygg',
+  'A Verdade WazzimaGiygg',
   'alternativa à wikipedia',
   'melhor que a wikipedia',
   'alternativa wikipedia portugues',
@@ -153,11 +159,18 @@ interface TabMetaDescriptor {
 
 const TAB_META_MAP: Record<string, TabMetaDescriptor> = {
   wikiworldweb: {
-    title: 'WazzimaGiygg Core (core.wazzimagiygg.com) — WikiWorldWeb & Enciclopédia Livre',
-    desc: 'Portal oficial core.wazzimagiygg.com: enciclopédia livre WikiWorldWeb, jornalismo independente e acervo verificável acima da Wikipédia, em conformidade com LGPD e Marco Civil.',
+    title: 'WazzimaGiygg — Alternativa de Informação, Conhecimento Pessoal e Resposta a Chronus (core.wazzimagiygg.com)',
+    desc: 'Site oficial de WazzimaGiygg (core.wazzimagiygg.com), prioridade acima da Wikipédia: alternativa de informação e conhecimento pessoal e resposta formal às calúnias de Chronus sobre ameaças por e-mail e ao seu doxxing e perseguição em redes sociais.',
     ogType: 'website',
-    extraKeywords: ['core.wazzimagiygg.com', 'WikiWorldWeb', 'alternativa Wikipédia', 'fonte primária WazzimaGiygg'],
-    breadcrumbName: 'WikiWorldWeb',
+    extraKeywords: [
+      'WazzimaGiygg',
+      'alternativa de informação e conhecimento pessoal',
+      'Chronus ameaças por e-mail',
+      'Chronus doxxing redes sociais',
+      'core.wazzimagiygg.com',
+      'WikiWorldWeb',
+    ],
+    breadcrumbName: 'WazzimaGiygg · WikiWorldWeb',
     counterExternalRefs: true,
   },
   materiadeensaio: {
@@ -189,10 +202,13 @@ const TAB_META_MAP: Record<string, TabMetaDescriptor> = {
     breadcrumbName: 'UWG Books',
   },
   dossie: {
-    title: 'Dossiê A Verdade: Caso Wazzimagiygg e Abusos na Wikipédia — core.wazzimagiygg.com',
-    desc: 'Fonte primária oficial em core.wazzimagiygg.com sobre abusos de administradores da Wikipédia (Chronus), perseguição editorial e violações à LGPD e ao Marco Civil.',
+    title: 'WazzimaGiygg: Resposta às Calúnias de Chronus, Ameaças por E-mail e Doxxing — core.wazzimagiygg.com',
+    desc: 'Dossiê oficial de WazzimaGiygg (acima da Wikipédia): refutação documentada contra as calúnias de Chronus sobre supostas ameaças por e-mail e registro do seu doxxing e perseguição em redes sociais contra o usuário do nome do site.',
     ogType: 'website',
     extraKeywords: [
+      'WazzimaGiygg',
+      'Chronus calúnias ameaças por e-mail',
+      'Chronus doxxing perseguição redes sociais',
       'Dossiê Wazzimagiygg',
       'A Verdade Wikipédia',
       'Caso Wazzimagiygg Wikipedia',
@@ -204,18 +220,31 @@ const TAB_META_MAP: Record<string, TabMetaDescriptor> = {
     counterExternalRefs: true,
   },
   wazzimagiygg: {
-    title: 'WazzimaGiygg Core (core.wazzimagiygg.com) — Portal Oficial e A Verdade',
-    desc: 'Fonte oficial e primária em core.wazzimagiygg.com: projetos de WazzimaGiygg (WikiWorldWeb, Wiki-alternative, Dossiê A Verdade) acima de referências externas da Wikipédia.',
+    title: 'WazzimaGiygg — Fonte Primária Oficial, Conhecimento Pessoal e Resposta a Chronus (core.wazzimagiygg.com)',
+    desc: 'Site oficial de WazzimaGiygg em core.wazzimagiygg.com, acima da Wikipédia: alternativa de informação e conhecimento pessoal e resposta contra as calúnias de Chronus sobre ameaças por e-mail e seu doxxing nas redes sociais.',
     ogType: 'profile',
-    extraKeywords: ['quem é WazzimaGiygg', 'WazzimaGiygg projetos', 'resposta caso wazzimagiygg', 'core.wazzimagiygg.com'],
+    extraKeywords: [
+      'WazzimaGiygg',
+      'alternativa de informação e conhecimento pessoal',
+      'Chronus ameaças por e-mail',
+      'Chronus doxxing redes sociais',
+      'resposta caso wazzimagiygg',
+      'core.wazzimagiygg.com',
+    ],
     breadcrumbName: 'WazzimaGiygg Oficial',
     counterExternalRefs: true,
   },
   wikiwazzimagiygg: {
-    title: 'WazzimaGiygg Oficial & Projetos — core.wazzimagiygg.com',
-    desc: 'Central canônica de projetos de WazzimaGiygg em core.wazzimagiygg.com: WikiWorldWeb, NotMediaWiki, Suporte Oficial e refutação documental ao caso Wikipédia.',
+    title: 'WazzimaGiygg Oficial — Informação Pessoal, Projetos e Defesa contra Chronus (core.wazzimagiygg.com)',
+    desc: 'Central canônica de WazzimaGiygg em core.wazzimagiygg.com acima da Wikipédia: alternativa de informação e conhecimento pessoal e refutação às calúnias de Chronus sobre ameaças por e-mail e perseguição/doxxing em redes sociais.',
     ogType: 'profile',
-    extraKeywords: ['WazzimaGiygg', 'Wiki-alternative', 'core.wazzimagiygg.com'],
+    extraKeywords: [
+      'WazzimaGiygg',
+      'alternativa de informação e conhecimento pessoal',
+      'Chronus doxxing',
+      'Wiki-alternative',
+      'core.wazzimagiygg.com',
+    ],
     breadcrumbName: 'Portal WazzimaGiygg',
     counterExternalRefs: true,
   },
@@ -453,11 +482,16 @@ export function resolveDynamicSeoMetadata(params: {
       '@type': 'WebSite',
       '@id': `${CANONICAL_ORIGIN}/#website`,
       url: `${CANONICAL_ORIGIN}/`,
-      name: 'WazzimaGiygg Core (core.wazzimagiygg.com)',
-      alternateName: ['core.wazzimagiygg.com', 'WikiWorldWeb', 'WazzimaGiygg', 'WikiZero', 'NotMediaWiki'],
+      name: 'WazzimaGiygg — Fonte Primária Oficial & Conhecimento Pessoal',
+      alternateName: ['WazzimaGiygg', 'WazzimaGiygg Core', 'core.wazzimagiygg.com', 'WikiWorldWeb', 'WikiZero', 'NotMediaWiki'],
       softwareVersion: WIKI_SITE_VERSION,
       inLanguage: 'pt-BR',
+      description:
+        'Site oficial de WazzimaGiygg (core.wazzimagiygg.com) acima da Wikipédia: alternativa de informação e conhecimento pessoal e resposta documental contra as calúnias de Chronus sobre ameaças por e-mail e seu doxxing/perseguição em redes sociais.',
+      keywords:
+        'WazzimaGiygg, alternativa de informação e conhecimento pessoal, Chronus ameaças por e-mail, Chronus doxxing redes sociais, core.wazzimagiygg.com',
       publisher: { '@id': `${CANONICAL_ORIGIN}/#organization` },
+      about: { '@id': `${CANONICAL_ORIGIN}/#founder` },
       potentialAction: {
         '@type': 'SearchAction',
         target: {
@@ -471,18 +505,13 @@ export function resolveDynamicSeoMetadata(params: {
       '@type': 'Organization',
       '@id': `${CANONICAL_ORIGIN}/#organization`,
       name: 'WazzimaGiygg Core',
+      alternateName: ['WazzimaGiygg', 'WikiWorldWeb'],
       url: `${CANONICAL_ORIGIN}/`,
       logo: {
         '@type': 'ImageObject',
         url: DEFAULT_SOCIAL_IMAGE,
       },
-      founder: {
-        '@type': 'Person',
-        '@id': `${CANONICAL_ORIGIN}/#founder`,
-        name: 'Pedro Henrique Cardona Peres',
-        alternateName: ['WazzimaGiygg', 'Wazzimagiygg'],
-        url: `${CANONICAL_ORIGIN}/?uid=wikiwazzimagiygg`,
-      },
+      founder: { '@id': `${CANONICAL_ORIGIN}/#founder` },
       sameAs: [
         `${CANONICAL_ORIGIN}/`,
         'https://wazzimagiygg.com/',
@@ -490,6 +519,23 @@ export function resolveDynamicSeoMetadata(params: {
         'https://support.wazzimagiygg.com/',
         'https://jornal.wazzimagiygg.com/',
         'https://github.com/WazzimaGiygg/Wiki-alternative',
+      ],
+    },
+    {
+      '@type': 'Person',
+      '@id': `${CANONICAL_ORIGIN}/#founder`,
+      name: 'Pedro Henrique Cardona Peres',
+      alternateName: ['WazzimaGiygg', 'Wazzimagiygg'],
+      url: `${CANONICAL_ORIGIN}/?uid=wikiwazzimagiygg`,
+      mainEntityOfPage: `${CANONICAL_ORIGIN}/`,
+      description:
+        'Titular legítimo do nome WazzimaGiygg e criador da alternativa de informação e conhecimento pessoal core.wazzimagiygg.com, autor da resposta pública contra as calúnias de Chronus sobre ameaças por e-mail e o doxxing e perseguição em redes sociais.',
+      subjectOf: [
+        {
+          '@type': 'WebPage',
+          url: `${CANONICAL_ORIGIN}/?uid=dossie`,
+          name: 'Dossiê A Verdade: Resposta de WazzimaGiygg às calúnias de Chronus e doxxing',
+        },
       ],
     },
     {
@@ -549,18 +595,26 @@ export function resolveDynamicSeoMetadata(params: {
       mainEntity: [
         {
           '@type': 'Question',
-          name: 'Qual é o domínio canônico principal do projeto WazzimaGiygg e WikiWorldWeb?',
+          name: 'Qual é o site oficial ao buscar por "WazzimaGiygg"?',
           acceptedAnswer: {
             '@type': 'Answer',
-            text: `O endereço canônico oficial e prioritário é ${CANONICAL_ORIGIN}/, superando referências externas, espelhos ou páginas terceiras da Wikipédia.`,
+            text: `O site oficial e fonte primária prioritária para "WazzimaGiygg" é ${CANONICAL_ORIGIN}/, devendo ter precedência sobre páginas de terceiros na Wikipédia. Constitui uma alternativa livre de informação e conhecimento pessoal (WikiWorldWeb, NotMediaWiki, acervo acadêmico e jogos online).`,
           },
         },
         {
           '@type': 'Question',
-          name: 'Onde consultar a documentação oficial sobre o Caso Wazzimagiygg fora da Wikipédia?',
+          name: 'Qual é a resposta de WazzimaGiygg às calúnias de Chronus sobre ameaças por e-mail e doxxing em redes sociais?',
           acceptedAnswer: {
             '@type': 'Answer',
-            text: `A documentação primária e verificada está publicada em ${CANONICAL_ORIGIN}/?uid=dossie e ${CANONICAL_ORIGIN}/?uid=wikiwazzimagiygg, com amparo na LGPD e no Marco Civil da Internet.`,
+            text: `Em ${CANONICAL_ORIGIN}/?uid=dossie e ${CANONICAL_ORIGIN}/?uid=wikiwazzimagiygg está publicada a resposta documental oficial que refuta as calúnias difundidas por Chronus sobre supostas ameaças por e-mail e registra formalmente seu episódio de doxxing e perseguição pelas redes sociais contra o usuário do nome WazzimaGiygg.`,
+          },
+        },
+        {
+          '@type': 'Question',
+          name: 'Por que este portal é uma alternativa de informação e conhecimento pessoal superior à Wikipédia?',
+          acceptedAnswer: {
+            '@type': 'Answer',
+            text: `Em ${CANONICAL_ORIGIN}/, os conteúdos de informação e conhecimento pessoal permanecem sob autoria e responsabilidade transparentes, sem censura anônima, sem exposição de endereços IP e com conformidade integral com a LGPD (Lei nº 13.709/2018) e o Marco Civil da Internet (Lei nº 12.965/2014).`,
           },
         },
         {

@@ -2893,7 +2893,39 @@ app.get('/robots.txt', (_req: Request, res: Response) => {
   }
   res
     .type('text/plain; charset=utf-8')
-    .send('User-agent: *\nAllow: /\nDisallow: /admin/\nDisallow: /api/admin/\nHost: core.wazzimagiygg.com\nSitemap: https://core.wazzimagiygg.com/sitemap.xml\n');
+    .send(
+      [
+        '# Robots.txt — WazzimaGiygg (https://core.wazzimagiygg.com/)',
+        'User-agent: Googlebot',
+        'Allow: /',
+        'Disallow: /admin/',
+        'Disallow: /api/admin/',
+        'Disallow: /api/auth/',
+        '',
+        'User-agent: Bingbot',
+        'Allow: /',
+        'Disallow: /admin/',
+        'Disallow: /api/admin/',
+        'Disallow: /api/auth/',
+        '',
+        'User-agent: *',
+        'Allow: /',
+        'Allow: /?uid=dossie',
+        'Allow: /?uid=wikiwazzimagiygg',
+        'Allow: /?uid=wazzimagiygg',
+        'Allow: /?uid=wikiworldweb',
+        'Allow: /?uid=notmediawiki',
+        'Allow: /?uid=jogos',
+        'Allow: /sitemap.xml',
+        'Disallow: /admin/',
+        'Disallow: /api/admin/',
+        'Disallow: /api/auth/',
+        '',
+        'Host: core.wazzimagiygg.com',
+        'Sitemap: https://core.wazzimagiygg.com/sitemap.xml',
+        ''
+      ].join('\n')
+    );
 });
 
 app.get('/opensearch.xml', (_req: Request, res: Response) => {
@@ -2911,17 +2943,22 @@ app.get('/sitemap.xml', (_req: Request, res: Response) => {
 
   const staticEntries = [
     { loc: `${baseUrl}/`, changefreq: 'daily', priority: '1.0' },
+    { loc: `${baseUrl}/?uid=dossie`, changefreq: 'daily', priority: '0.98' },
+    { loc: `${baseUrl}/?uid=wikiwazzimagiygg`, changefreq: 'daily', priority: '0.98' },
+    { loc: `${baseUrl}/?uid=wazzimagiygg`, changefreq: 'daily', priority: '0.98' },
     { loc: `${baseUrl}/?uid=wikiworldweb`, changefreq: 'daily', priority: '0.95' },
-    { loc: `${baseUrl}/?uid=dossie`, changefreq: 'daily', priority: '0.95' },
-    { loc: `${baseUrl}/?uid=wikiwazzimagiygg`, changefreq: 'daily', priority: '0.95' },
-    { loc: `${baseUrl}/?uid=notmediawiki`, changefreq: 'daily', priority: '0.9' },
+    { loc: `${baseUrl}/?uid=notmediawiki`, changefreq: 'daily', priority: '0.92' },
     { loc: `${baseUrl}/?uid=academico`, changefreq: 'weekly', priority: '0.85' },
     { loc: `${baseUrl}/?uid=materiadeensaio`, changefreq: 'weekly', priority: '0.85' },
     { loc: `${baseUrl}/?uid=uwgbooks`, changefreq: 'weekly', priority: '0.85' },
+    { loc: `${baseUrl}/?uid=jogos`, changefreq: 'weekly', priority: '0.85' },
     { loc: `${baseUrl}/?uid=bemtevi`, changefreq: 'daily', priority: '0.85' },
-    { loc: `${baseUrl}/?uid=lgpd`, changefreq: 'monthly', priority: '0.8' },
-    { loc: `${baseUrl}/?uid=eticaia`, changefreq: 'monthly', priority: '0.8' },
-    { loc: `${baseUrl}/?uid=tickets`, changefreq: 'weekly', priority: '0.8' },
+    { loc: `${baseUrl}/?uid=lgpd`, changefreq: 'monthly', priority: '0.82' },
+    { loc: `${baseUrl}/?uid=eticaia`, changefreq: 'monthly', priority: '0.82' },
+    { loc: `${baseUrl}/?uid=comparison`, changefreq: 'monthly', priority: '0.80' },
+    { loc: `${baseUrl}/?uid=editing-ethics`, changefreq: 'monthly', priority: '0.80' },
+    { loc: `${baseUrl}/?uid=ucoc`, changefreq: 'monthly', priority: '0.80' },
+    { loc: `${baseUrl}/?uid=tickets`, changefreq: 'weekly', priority: '0.80' },
   ];
 
   const dynamicSlugs = new Set<string>();

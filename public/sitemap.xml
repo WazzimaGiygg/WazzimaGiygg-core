@@ -4,8 +4,30 @@
   <url>
     <loc>https://core.wazzimagiygg.com/</loc>
     <xhtml:link rel="alternate" hreflang="pt-BR" href="https://core.wazzimagiygg.com/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://core.wazzimagiygg.com/" />
     <changefreq>daily</changefreq>
     <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://core.wazzimagiygg.com/?uid=dossie</loc>
+    <xhtml:link rel="alternate" hreflang="pt-BR" href="https://core.wazzimagiygg.com/?uid=dossie" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://core.wazzimagiygg.com/?uid=dossie" />
+    <changefreq>daily</changefreq>
+    <priority>0.98</priority>
+  </url>
+  <url>
+    <loc>https://core.wazzimagiygg.com/?uid=wikiwazzimagiygg</loc>
+    <xhtml:link rel="alternate" hreflang="pt-BR" href="https://core.wazzimagiygg.com/?uid=wikiwazzimagiygg" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://core.wazzimagiygg.com/?uid=wikiwazzimagiygg" />
+    <changefreq>daily</changefreq>
+    <priority>0.98</priority>
+  </url>
+  <url>
+    <loc>https://core.wazzimagiygg.com/?uid=wazzimagiygg</loc>
+    <xhtml:link rel="alternate" hreflang="pt-BR" href="https://core.wazzimagiygg.com/?uid=wazzimagiygg" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://core.wazzimagiygg.com/?uid=wazzimagiygg" />
+    <changefreq>daily</changefreq>
+    <priority>0.98</priority>
   </url>
   <url>
     <loc>https://core.wazzimagiygg.com/?uid=wikiworldweb</loc>
@@ -13,19 +35,9 @@
     <priority>0.95</priority>
   </url>
   <url>
-    <loc>https://core.wazzimagiygg.com/?uid=dossie</loc>
-    <changefreq>daily</changefreq>
-    <priority>0.95</priority>
-  </url>
-  <url>
-    <loc>https://core.wazzimagiygg.com/?uid=wikiwazzimagiygg</loc>
-    <changefreq>daily</changefreq>
-    <priority>0.95</priority>
-  </url>
-  <url>
     <loc>https://core.wazzimagiygg.com/?uid=notmediawiki</loc>
     <changefreq>daily</changefreq>
-    <priority>0.90</priority>
+    <priority>0.92</priority>
   </url>
   <url>
     <loc>https://core.wazzimagiygg.com/?uid=academico</loc>
@@ -43,23 +55,33 @@
     <priority>0.85</priority>
   </url>
   <url>
+    <loc>https://core.wazzimagiygg.com/?uid=jogos</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.85</priority>
+  </url>
+  <url>
     <loc>https://core.wazzimagiygg.com/?uid=bemtevi</loc>
     <changefreq>daily</changefreq>
-    <priority>0.80</priority>
+    <priority>0.85</priority>
   </url>
   <url>
     <loc>https://core.wazzimagiygg.com/?uid=lgpd</loc>
-    <changefreq>weekly</changefreq>
-    <priority>0.85</priority>
+    <changefreq>monthly</changefreq>
+    <priority>0.82</priority>
   </url>
   <url>
     <loc>https://core.wazzimagiygg.com/?uid=eticaia</loc>
-    <changefreq>weekly</changefreq>
-    <priority>0.85</priority>
+    <changefreq>monthly</changefreq>
+    <priority>0.82</priority>
+  </url>
+  <url>
+    <loc>https://core.wazzimagiygg.com/?uid=comparison</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.80</priority>
   </url>
   <url>
     <loc>https://core.wazzimagiygg.com/?uid=tickets</loc>
-    <changefreq>monthly</changefreq>
-    <priority>0.75</priority>
+    <changefreq>weekly</changefreq>
+    <priority>0.80</priority>
   </url>
 </urlset>
