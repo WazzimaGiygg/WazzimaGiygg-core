@@ -211,6 +211,8 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isPublishingArticle, setIsPublishingArticle] = useState(false);
+  const isPublishingArticleRef = useRef(false);
   const [articleFormErrors, setArticleFormErrors] = useState<Record<string, string>>({});
   const [isDiagnosticsOpen, setIsDiagnosticsOpen] = useState(false);
   const [isVersionModalOpen, setIsVersionModalOpen] = useState(false);
@@ -2686,6 +2688,9 @@ export default function App() {
             onArticlesSynced={(syncedArticles) => {
               setWikiArticlesList(syncedArticles);
             }}
+            onArticlePublishedId={(publishedSlug) => {
+              knownPushedArticleIdsRef.current.add(publishedSlug);
+            }}
           />
         )}
 
@@ -2958,11 +2963,14 @@ export default function App() {
                 Publicar Novo Documento / Artigo
               </h3>
               <button
+                type="button"
+                disabled={isPublishingArticle}
                 onClick={() => {
+                  if (isPublishingArticleRef.current) return;
                   setArticleFormErrors({});
                   setIsCreateModalOpen(false);
                 }}
-                className="text-stone-500 hover:text-black dark:hover:text-white cursor-pointer"
+                className="text-stone-500 hover:text-black dark:hover:text-white cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -3013,6 +3021,9 @@ export default function App() {
               noValidate
               onSubmit={async (e) => {
                 e.preventDefault();
+                if (isPublishingArticleRef.current) {
+                  return;
+                }
                 if (!user || !isAuthorizedPublisher(user.email)) {
                   showToast(
                     "🚨 Permissão negada: Qualquer publicação de artigo só deve ser feita pelas contas dos e-mails wazzimagiygg@gmail.com e pedrohenriquecardonaperes@gmail.com.",
@@ -3043,26 +3054,32 @@ export default function App() {
                 setArticleFormErrors({});
                 const validated = validation.data;
 
-                const newArt: Article = {
-                  id: `art_${Date.now()}`,
-                  titulo: validated.titulo,
-                  descricao: validated.descricao,
-                  setor: validated.setor,
-                  criadorEmail: validated.criadorEmail,
-                  colecao: validated.colecao,
-                  dataCriacao: new Date().toLocaleDateString("pt-BR"),
-                  ultimaEdicao: new Date().toLocaleDateString("pt-BR"),
-                  visualizacoes: validated.visualizacoes
-                };
+                isPublishingArticleRef.current = true;
+                setIsPublishingArticle(true);
 
                 try {
-                  // Save to Firestore collections (schema asserted before write)
-                  const createdId = (await createArticle(validated)) || `art_${Date.now()}`;
+                  // Save to Firestore collections with pre-reserved ID so onSnapshot watcher never duplicates
+                  const createdId = await createArticle(validated, {
+                    onReservedId: (reservedId) => {
+                      knownPushedArticleIdsRef.current.add(reservedId);
+                    }
+                  });
+                  if (!createdId) {
+                    throw new Error("Não foi possível obter o identificador do artigo publicado.");
+                  }
                   knownPushedArticleIdsRef.current.add(createdId);
 
                   const publishedArt: Article = {
-                    ...newArt,
-                    id: createdId
+                    id: createdId,
+                    titulo: validated.titulo,
+                    descricao: validated.descricao,
+                    conteudo: validated.descricao,
+                    setor: validated.setor,
+                    criadorEmail: validated.criadorEmail,
+                    colecao: validated.colecao,
+                    dataCriacao: new Date().toLocaleDateString("pt-BR"),
+                    ultimaEdicao: new Date().toLocaleDateString("pt-BR"),
+                    visualizacoes: validated.visualizacoes
                   };
 
                   // Update local state safely without duplicating
@@ -3121,6 +3138,9 @@ export default function App() {
                     setArticleFormErrors(publishErr.fieldErrors);
                   }
                   showToast(publishErr?.message || "Erro ao publicar artigo.", true);
+                } finally {
+                  isPublishingArticleRef.current = false;
+                  setIsPublishingArticle(false);
                 }
               }}
               className="space-y-4 font-mono text-xs"
@@ -3219,20 +3239,26 @@ export default function App() {
               <div className="flex items-center justify-end gap-3 pt-3 border-t dark:border-[#2E2D28]">
                 <button
                   type="button"
+                  disabled={isPublishingArticle}
                   onClick={() => {
+                    if (isPublishingArticleRef.current) return;
                     setArticleFormErrors({});
                     setIsCreateModalOpen(false);
                   }}
-                  className="paper-button-secondary px-4 py-2 font-mono text-xs font-bold uppercase cursor-pointer"
+                  className="paper-button-secondary px-4 py-2 font-mono text-xs font-bold uppercase cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  disabled={!isAuthorizedPublisherUser}
+                  disabled={!isAuthorizedPublisherUser || isPublishingArticle}
                   className="paper-button px-5 py-2 font-mono text-xs font-bold uppercase tracking-wider cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {isAuthorizedPublisherUser ? "Publicar Artigo" : "Publicação Bloqueada"}
+                  {isPublishingArticle
+                    ? "Publicando..."
+                    : isAuthorizedPublisherUser
+                      ? "Publicar Artigo"
+                      : "Publicação Bloqueada"}
                 </button>
               </div>
             </form>

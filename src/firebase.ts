@@ -514,7 +514,10 @@ export async function loadCollectionContent(collectionName: string): Promise<Art
   return getStaticCollectionArticles(collectionName);
 }
 
-export async function createArticle(articleData: PortalArticleInput): Promise<string | null> {
+export async function createArticle(
+  articleData: PortalArticleInput,
+  options?: { onReservedId?: (id: string) => void }
+): Promise<string | null> {
   // Validação rigorosa de esquema no frontend ANTES de qualquer operação no Firestore
   const validated = assertValidPortalArticlePayload(articleData);
 
@@ -537,14 +540,23 @@ export async function createArticle(articleData: PortalArticleInput): Promise<st
     ultimaEdicao: serverTimestamp()
   });
 
+  // Pré-aloca o ID real do documento antes da gravação para evitar corrida com onSnapshot
+  const primaryDocRef = doc(collection(db, validated.colecao));
+  const preAllocatedId = primaryDocRef.id;
+  options?.onReservedId?.(preAllocatedId);
+
   try {
-    const docRef = await addDoc(collection(db, validated.colecao), payload);
-    // Also save to generic articles collection for global search
-    await addDoc(collection(db, "artigos"), { ...payload, originalId: docRef.id });
+    await setDoc(primaryDocRef, payload);
+
+    // Espelha com o mesmo ID na coleção 'artigos' de forma não-bloqueante para jamais gerar ID alternativo/duplicado
+    setDoc(
+      doc(db, "artigos", preAllocatedId),
+      sanitizeFirestoreData({ ...payload, originalId: preAllocatedId })
+    ).catch(() => {});
 
     // Broadcast global notification when published by Burocrata (matches firestore.rules)
     if (isAuthorizedBurocrata(auth.currentUser?.email)) {
-      await addDoc(collection(db, "notifications"), sanitizeFirestoreData({
+      addDoc(collection(db, "notifications"), sanitizeFirestoreData({
         userId: "all",
         titulo: `Novo Artigo: ${validated.titulo}`,
         mensagem: `Publicado na coleção ${validated.colecao} (${validated.setor || "Geral"}). Clique para ler agora.`,
@@ -557,16 +569,34 @@ export async function createArticle(articleData: PortalArticleInput): Promise<st
         read: false,
         createdAt: serverTimestamp(),
         senderEmail: auth.currentUser?.email || validated.criadorEmail,
-        actionUid: docRef.id,
+        actionUid: preAllocatedId,
         actionTab: validated.colecao,
         actionLabel: "Ler Novo Artigo"
       })).catch(() => {});
     }
 
-    return docRef.id;
-  } catch (error) {
-    console.warn("Failed to save to Firestore directly, returning mock id:", error);
-    return `art_${Date.now()}`;
+    return preAllocatedId;
+  } catch (error: any) {
+    console.warn("Falha ao gravar artigo no Firestore, tentando API do servidor:", error);
+    const res = await safeApiFetch("/api/articles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        titulo: validated.titulo,
+        descricao: validated.descricao,
+        conteudo: validated.descricao,
+        setor: validated.setor,
+        colecao: validated.colecao,
+        ...(validated.link ? { link: validated.link } : {})
+      })
+    });
+    if (res && res.ok) {
+      const apiData = await res.json().catch(() => null);
+      const apiId = String(apiData?.article?.id || preAllocatedId);
+      options?.onReservedId?.(apiId);
+      return apiId;
+    }
+    throw error;
   }
 }
 

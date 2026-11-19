@@ -7,7 +7,7 @@
  * Official domain: https://notmediawiki.wazzimagiygg.com/
  */
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   WIKI_SITE_VERSION,
   WIKI_SITE_SERIES,
@@ -153,6 +153,7 @@ interface NotMediaWikiPortalProps {
   onNavigationConsumed?: () => void;
   onOpenUserInfobox?: (uid: string) => void;
   onArticlesSynced?: (articles: WikiArticle[]) => void;
+  onArticlePublishedId?: (id: string) => void;
 }
 
 export default function NotMediaWikiPortal({
@@ -162,7 +163,8 @@ export default function NotMediaWikiPortal({
   initialInnerTab,
   onNavigationConsumed,
   onOpenUserInfobox,
-  onArticlesSynced
+  onArticlesSynced,
+  onArticlePublishedId
 }: NotMediaWikiPortalProps) {
   // Navigation & View States
   const [activeTab, setActiveTab] = useState<NotMediaWikiInnerTab>(initialInnerTab || 'portal');
@@ -208,6 +210,7 @@ export default function NotMediaWikiPortal({
   const [editorIsMinor, setEditorIsMinor] = useState<boolean>(false);
   const [editorTab, setEditorTab] = useState<'split' | 'code' | 'preview'>('split');
   const [isSavingArticle, setIsSavingArticle] = useState<boolean>(false);
+  const isSavingArticleRef = useRef<boolean>(false);
   const [editorFieldErrors, setEditorFieldErrors] = useState<Record<string, string>>({});
 
   // History / Diff States
@@ -993,6 +996,10 @@ export default function NotMediaWikiPortal({
   // Save or Update Article Revision (supports Namespace 2 Personal User Pages via /userpage/{uid})
   const handleSaveArticle = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSavingArticleRef.current) {
+      return;
+    }
+
     const candidateSlug = editorTitle.trim() ? editorTitle.trim().replace(/\s+/g, '_') : '';
     const existingIndex = candidateSlug
       ? articles.findIndex((a) => a.slug.toLowerCase() === candidateSlug.toLowerCase())
@@ -1028,6 +1035,7 @@ export default function NotMediaWikiPortal({
     setEditorFieldErrors({});
     const validatedWiki = validation.data;
 
+    isSavingArticleRef.current = true;
     setIsSavingArticle(true);
     try {
       const slug = isPersonalPageTarget
@@ -1086,6 +1094,8 @@ export default function NotMediaWikiPortal({
             : {})
         };
       }
+
+      onArticlePublishedId?.(slug);
 
       if (isPersonalPageTarget) {
         await saveNotMediaWikiUserPageToDb(savedArt, newRev);
@@ -1172,6 +1182,7 @@ export default function NotMediaWikiPortal({
         showToast(err?.message || 'Erro ao gravar artigo no banco de dados.', true);
       }
     } finally {
+      isSavingArticleRef.current = false;
       setIsSavingArticle(false);
     }
   };
