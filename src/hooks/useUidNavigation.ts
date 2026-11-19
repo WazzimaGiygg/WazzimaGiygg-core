@@ -21,7 +21,8 @@ export const PORTAL_TAB_METADATA = [
   { id: 'notmediawiki', label: 'NotMediaWiki (Beta)', description: 'Motor Wiki Descentralizado' },
   { id: 'bemtevi', label: 'Bemtevi (Rede Social)', description: 'Rede Social e Microblogging' },
   { id: 'lgpd', label: 'Regras LGPD', description: 'Conformidade Lei 13.709/2018' },
-  { id: 'eticaia', label: 'Ética (IA & Firebase)', description: 'Ética de IA, Firebase e Independência da Wikimedia' }
+  { id: 'eticaia', label: 'Ética (IA & Firebase)', description: 'Ética de IA, Firebase e Independência da Wikimedia' },
+  { id: 'jogos', label: 'Jogos Online', description: 'Jogos Online WZZM · Jogo da Cobrinha' }
 ] as const;
 
 export type PortalTabId = typeof PORTAL_TAB_METADATA[number]['id'];
@@ -64,6 +65,17 @@ export function parseTabFromUid(uid: string | null | undefined): PortalTabId | n
     stripped === 'notpedia'
   ) {
     return 'notmediawiki';
+  }
+  if (
+    stripped === 'jogos' ||
+    stripped === 'jogos-online' ||
+    stripped === 'jogosonline' ||
+    stripped === 'jogos_online' ||
+    stripped === 'games' ||
+    stripped === 'cobrinha' ||
+    stripped === 'snake'
+  ) {
+    return 'jogos';
   }
   const match = PORTAL_TAB_METADATA.find((t) => t.id === stripped);
   if (match) return match.id;

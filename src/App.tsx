@@ -49,7 +49,8 @@ import {
   Sparkles,
   Tag,
   UserCheck,
-  BellRing
+  BellRing,
+  Gamepad2
 } from "lucide-react";
 import jsPDF from "jspdf";
 
@@ -150,6 +151,7 @@ import { PWAInstallButton } from "./components/PWAInstallButton";
 import { OfflineIndicator } from "./components/OfflineIndicator";
 import { MobileAppBottomNav } from "./components/MobileAppBottomNav";
 import { loadOfflineArticlesSnapshot, saveOfflineArticlesSnapshot } from "./hooks/useOnlineStatus";
+import OnlineGamesView from "./components/games/OnlineGamesView";
 
 export default function App() {
   // Persistent Theme State (Light / Dark)
@@ -1845,6 +1847,7 @@ export default function App() {
               { id: "chat", label: "Chat & Mensagens", icon: MessageSquare },
               { id: "notmediawiki", label: "NotMediaWiki (Beta)", icon: Database },
               { id: "bemtevi", label: "Bemtevi (Rede Social)", icon: MessageCircle },
+              { id: "jogos", label: "Jogos Online", icon: Gamepad2 },
               { id: "lgpd", label: "Regras LGPD (Lei 13.709)", icon: Scale },
               { id: "eticaia", label: "Ética (IA & Firebase)", icon: ShieldCheck }
             ].map((tab) => {
@@ -2764,6 +2767,9 @@ export default function App() {
             }}
           />
         )}
+
+        {/* VIEW 10: JOGOS ONLINE */}
+        {currentTab === "jogos" && <OnlineGamesView />}
       </main>
 
       {/* ============================================ */}
@@ -3457,6 +3463,10 @@ export default function App() {
             <span className="text-stone-700">•</span>
             <button onClick={() => switchTab("notmediawiki")} className="hover:text-amber-400">
               NotMediaWiki
+            </button>
+            <span className="text-stone-700">•</span>
+            <button onClick={() => switchTab("jogos")} className="hover:text-amber-400">
+              Jogos Online
             </button>
             <span className="text-stone-700">•</span>
             <button onClick={() => switchTab("dossie")} className="hover:text-amber-400">

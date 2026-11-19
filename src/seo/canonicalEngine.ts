@@ -249,6 +249,13 @@ const TAB_META_MAP: Record<string, TabMetaDescriptor> = {
     breadcrumbName: 'Ética Tecnológica',
     counterExternalRefs: true,
   },
+  jogos: {
+    title: 'Jogos Online — Jogo da Cobrinha e Clássicos em core.wazzimagiygg.com',
+    desc: 'Página de Jogos Online do portal WazzimaGiygg em core.wazzimagiygg.com. Jogue o Jogo da Cobrinha com teclas WASD, cursores e dificuldade ajustável sem anúncios.',
+    ogType: 'website',
+    extraKeywords: ['Jogos Online WazzimaGiygg', 'Jogo da Cobrinha', 'Snake WASD', 'core.wazzimagiygg.com'],
+    breadcrumbName: 'Jogos Online',
+  },
   tickets: {
     title: 'Ouvidoria, Suporte & Remoção de Dados — core.wazzimagiygg.com',
     desc: 'Canal oficial de tickets, ouvidoria e suporte (support.wazzimagiygg.com) com atendimento direto do DPO Pedro Henrique Cardona Peres.',
