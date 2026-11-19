@@ -36,6 +36,11 @@ import {
   Printer
 } from 'lucide-react';
 import jsPDF from 'jspdf';
+import WmfLgpdCounterPropagandaView from './WmfLgpdCounterPropagandaView';
+import {
+  WMF_LGPD_AUDIT_FINDINGS,
+  WMF_LGPD_PDF_URL
+} from '../data/wmfLgpdInvestigationData';
 
 interface DossieAbusosViewProps {
   sanctionsList: Array<{ cidade: string; moderador: string; status?: string; detalhes?: string }>;
@@ -140,7 +145,7 @@ export default function DossieAbusosView({
   onOpenTicketForm,
   showToast
 }: DossieAbusosViewProps) {
-  const [activeTab, setActiveTab] = useState<'averdade' | 'relacionados' | 'casos' | 'sancoes'>('averdade');
+  const [activeTab, setActiveTab] = useState<'averdade' | 'lgpd_wmf' | 'relacionados' | 'casos' | 'sancoes'>('lgpd_wmf');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCase, setSelectedCase] = useState<any | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
@@ -225,6 +230,36 @@ export default function DossieAbusosView({
         const desc = doc.splitTextToSize(c.resumo, 175);
         doc.text(desc, 18, yPos);
         yPos += desc.length * 4 + 3;
+      });
+
+      // Section: LGPD & Marco Civil Investigation against WMF / Wikipedia
+      if (yPos > 235) {
+        doc.addPage();
+        yPos = 20;
+      }
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(10.5);
+      doc.setTextColor(185, 28, 28);
+      doc.text("INVESTIGAÇÃO LGPD & MARCO CIVIL CONTRA A WMF / WIKIPÉDIA (PDF 41p):", 14, yPos);
+      yPos += 6;
+
+      WMF_LGPD_AUDIT_FINDINGS.forEach((f) => {
+        if (yPos > 255) {
+          doc.addPage();
+          yPos = 20;
+        }
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(8.5);
+        doc.setTextColor(20, 20, 20);
+        doc.text(`• [${f.codigoMatriz} | RISCO ${f.risco}] ${f.titulo}`, 14, yPos);
+        yPos += 4.5;
+
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(8);
+        doc.setTextColor(70, 70, 70);
+        const fDesc = doc.splitTextToSize(`${f.fatoIrregularidade} | Wiki-Site WZZM: ${f.respostaWikiSite}`, 175);
+        doc.text(fDesc, 18, yPos);
+        yPos += fDesc.length * 4 + 3;
       });
 
       // Footer
@@ -326,6 +361,16 @@ export default function DossieAbusosView({
               <span>📑 wazzimagiygg.wikidot.com/relacionados-a-wikipedia</span>
               <ExternalLink className="w-3 h-3 text-indigo-700" />
             </a>
+
+            <a
+              href={WMF_LGPD_PDF_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1.5 bg-red-50 hover:bg-red-100 text-red-900 border border-red-400 px-2.5 py-1 font-bold text-[11px] shadow-sm transition-colors"
+            >
+              <span>📄 Investigação LGPD &amp; Marco Civil WMF/Wikipédia (.pdf • 41p)</span>
+              <ExternalLink className="w-3 h-3 text-red-700" />
+            </a>
           </div>
         </div>
 
@@ -358,10 +403,11 @@ export default function DossieAbusosView({
         <div className="border-b-2 border-[#141414] pb-2 flex flex-wrap items-center justify-between gap-2 font-mono text-xs">
           <div className="flex items-center gap-1 sm:gap-2 overflow-x-auto no-scrollbar">
             {[
-              { id: 'averdade', label: '1. "A Verdade" (Investigação Principal)' },
-              { id: 'casos', label: '2. Casos Documentados & Incidentes' },
-              { id: 'relacionados', label: '3. Repositório Wikidot & Análises' },
-              { id: 'sancoes', label: '4. Tabela de Cidades & Moderadores' }
+              { id: 'lgpd_wmf', label: '1. Investigação LGPD & Marco Civil (WMF)' },
+              { id: 'averdade', label: '2. "A Verdade" (Investigação Principal)' },
+              { id: 'casos', label: '3. Casos Documentados & Incidentes' },
+              { id: 'relacionados', label: '4. Repositório Wikidot & Análises' },
+              { id: 'sancoes', label: '5. Tabela de Cidades & Moderadores' }
             ].map((tab) => (
               <button
                 key={tab.id}
@@ -395,7 +441,15 @@ export default function DossieAbusosView({
         {/* ======================================================== */}
         <div className="pt-6">
 
-          {/* TAB 1: A VERDADE (wazzimagiygg.com/averdade/) */}
+          {/* TAB 0/1: INVESTIGAÇÃO LGPD & MARCO CIVIL (WMF / WIKIPÉDIA) */}
+          {activeTab === 'lgpd_wmf' && (
+            <WmfLgpdCounterPropagandaView
+              showToast={showToast}
+              onOpenTicketForm={onOpenTicketForm}
+            />
+          )}
+
+          {/* TAB 2: A VERDADE (wazzimagiygg.com/averdade/) */}
           {activeTab === 'averdade' && (
             <div className="space-y-6">
               <div className="bg-amber-50/50 border border-amber-300 p-4">

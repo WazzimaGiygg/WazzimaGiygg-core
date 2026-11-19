@@ -1,4 +1,5 @@
 import express, { NextFunction, Request, Response } from 'express';
+import http from 'http';
 import net from 'net';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -3080,12 +3081,37 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
 // ============================================
 async function startServer() {
   const isDev = process.env.NODE_ENV !== 'production';
+  const httpServer = http.createServer(app);
 
   if (isDev) {
-    // Mount Vite middleware in development
+    // Mount Vite middleware in development and bind HMR WebSocket to httpServer (port 3000)
     const { createServer } = await import('vite');
+    const hmrDisabled = process.env.DISABLE_HMR === 'true';
     const vite = await createServer({
-      server: { middlewareMode: true }
+      plugins: hmrDisabled
+        ? [
+            {
+              name: 'wzzm-disable-hmr-ws',
+              enforce: 'post',
+              transform(code, id) {
+                if (id.replace(/\\/g, '/').endsWith('/vite/dist/client/client.mjs')) {
+                  return {
+                    code: code.replace(
+                      /const transport = normalizeModuleRunnerTransport\(\(\(\) => \{[\s\S]*?\}\)\(\)\);/,
+                      'const transport = normalizeModuleRunnerTransport({ async connect() {}, async disconnect() {}, send() {} });'
+                    ),
+                    map: null,
+                  };
+                }
+              },
+            },
+          ]
+        : undefined,
+      server: {
+        middlewareMode: true,
+        hmr: hmrDisabled ? false : { server: httpServer },
+        ws: { server: httpServer },
+      },
     });
 
     // Dynamic SSR meta-tag & canonical injection before Vite static HTML fallthrough
@@ -3143,7 +3169,7 @@ async function startServer() {
     }
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  httpServer.listen(PORT, '0.0.0.0', () => {
     console.log(`[WazzimaGiygg Server] Listening on http://0.0.0.0:${PORT}`);
   });
 }

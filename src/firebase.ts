@@ -1744,11 +1744,21 @@ export async function listBemteviPostsFromDb(): Promise<any[]> {
   return merged;
 }
 
+function requireAuthenticatedBemteviUser(actionLabel = "publicar na rede social Bem-Te-Vi"): string {
+  const current = auth.currentUser;
+  if (!current || current.isAnonymous) {
+    throw new Error(`AUTH_REQUIRED: Você precisa estar logado com sua conta para ${actionLabel}.`);
+  }
+  return current.uid;
+}
+
 export async function createBemteviPostInDb(postData: any): Promise<any> {
+  const authenticatedUid = requireAuthenticatedBemteviUser("postar na rede social Bem-Te-Vi");
   const nowIso = new Date().toISOString();
   const extractedTags = extractHashtagsFromText(postData?.content || "");
   const cleanData = sanitizeFirestoreData({
     ...postData,
+    authorId: authenticatedUid,
     content: (postData?.content || "").trim(),
     tags: Array.from(new Set([...(Array.isArray(postData?.tags) ? postData.tags : []), ...extractedTags])),
     likesCount: postData?.likesCount ?? 0,
@@ -1818,6 +1828,7 @@ export async function createBemteviPostInDb(postData: any): Promise<any> {
 }
 
 export async function updateBemteviPostInDb(postId: string, updates: Record<string, any>): Promise<any> {
+  requireAuthenticatedBemteviUser("editar publicações no Bem-Te-Vi");
   const nowIso = new Date().toISOString();
   const nextTags =
     typeof updates.content === "string"
@@ -1866,6 +1877,7 @@ export async function toggleBemteviPostLikeInDb(
   nextLikedBy: string[],
   nextLikesCount: number
 ): Promise<void> {
+  requireAuthenticatedBemteviUser("curtir publicações no Bem-Te-Vi");
   const cached = readLocalJson<any[]>(BEMTEVI_POSTS_CACHE_KEY, []);
   writeLocalJson(
     BEMTEVI_POSTS_CACHE_KEY,
@@ -1944,6 +1956,7 @@ export async function toggleBemteviPostSaveInDb(
 }
 
 export async function deleteBemteviPostInDb(postId: string): Promise<boolean> {
+  requireAuthenticatedBemteviUser("excluir publicações no Bem-Te-Vi");
   const deleted = readLocalJson<string[]>(BEMTEVI_DELETED_POSTS_KEY, []);
   if (!deleted.includes(postId)) {
     writeLocalJson(BEMTEVI_DELETED_POSTS_KEY, [...deleted, postId]);
@@ -2001,7 +2014,11 @@ export async function listBemteviCommunitiesFromDb(): Promise<any[]> {
 }
 
 export async function createBemteviCommunityInDb(commData: any): Promise<any> {
-  const cleanData = sanitizeFirestoreData(commData);
+  const authenticatedUid = requireAuthenticatedBemteviUser("criar comunidades no Bem-Te-Vi");
+  const cleanData = sanitizeFirestoreData({
+    ...commData,
+    createdBy: authenticatedUid
+  });
   const nowIso = new Date().toISOString();
 
   if (auth.currentUser && auth.currentUser.uid === cleanData.createdBy) {
@@ -2057,6 +2074,7 @@ export async function toggleBemteviCommunityMemberInDb(
   nextMembers: string[],
   nextMembersCount: number
 ): Promise<void> {
+  requireAuthenticatedBemteviUser("participar de comunidades no Bem-Te-Vi");
   const cached = readLocalJson<any[]>(BEMTEVI_COMMUNITIES_CACHE_KEY, []);
   writeLocalJson(
     BEMTEVI_COMMUNITIES_CACHE_KEY,
@@ -2124,9 +2142,11 @@ export async function listBemteviCommentsFromDb(postId: string): Promise<any[]> 
 }
 
 export async function createBemteviCommentInDb(postId: string, commentData: any): Promise<any> {
+  const authenticatedUid = requireAuthenticatedBemteviUser("comentar no Bem-Te-Vi");
   const cleanData = sanitizeFirestoreData({
     postId,
     ...commentData,
+    authorId: authenticatedUid,
     content: (commentData?.content || "").trim()
   });
   const nowIso = new Date().toISOString();
@@ -2240,8 +2260,10 @@ export async function listBemteviMessagesFromDb(): Promise<any[]> {
 }
 
 export async function createBemteviMessageInDb(msgData: any): Promise<any> {
+  const authenticatedUid = requireAuthenticatedBemteviUser("enviar mensagens no Bem-Te-Vi");
   const cleanData = sanitizeFirestoreData({
     ...msgData,
+    senderId: authenticatedUid,
     text: (msgData?.text || "").trim()
   });
   const nowIso = new Date().toISOString();

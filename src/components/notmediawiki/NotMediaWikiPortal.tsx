@@ -65,7 +65,8 @@ import {
   Puzzle,
   UserCheck,
   History,
-  Info
+  Info,
+  Scale
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import ExtensionConfigModal from '../ExtensionConfigModal';
@@ -75,6 +76,8 @@ import AbntCitationGenerator from '../AbntCitationGenerator';
 import { updateSEO } from '../../wiki/utils/seoManager';
 import NotMediaWikiInfoboxTutorial from './NotMediaWikiInfoboxTutorial';
 import NotMediaWikiLgpdDeletionPanel from './NotMediaWikiLgpdDeletionPanel';
+import WmfLgpdCounterPropagandaView from '../WmfLgpdCounterPropagandaView';
+import { WMF_LGPD_PDF_URL } from '../../data/wmfLgpdInvestigationData';
 import {
   buildPersonalUserPageSlug,
   buildUserInfoboxWikitext,
@@ -139,7 +142,8 @@ type NotMediaWikiInnerTab =
   | 'special'
   | 'extensions'
   | 'governance'
-  | 'tutorial';
+  | 'tutorial'
+  | 'contrapropaganda';
 
 interface NotMediaWikiPortalProps {
   currentUser?: any;
@@ -1377,7 +1381,8 @@ export default function NotMediaWikiPortal({
             { id: 'events', label: 'EventStreams ao Vivo', icon: Zap },
             { id: 'special', label: 'Páginas Especiais', icon: List },
             { id: 'extensions', label: `Extensões & Segurança (${extensions.length})`, icon: ShieldCheck },
-            { id: 'governance', label: 'Governança & ArbCom', icon: Shield }
+            { id: 'governance', label: 'Governança & ArbCom', icon: Shield },
+            { id: 'contrapropaganda', label: 'WMF vs Wiki-Site (LGPD/MCI)', icon: Scale }
           ].map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
@@ -1466,6 +1471,48 @@ export default function NotMediaWikiPortal({
               <div className="bg-[#FAF9F5] p-3 border border-stone-300">
                 <span className="text-[10px] text-stone-500 uppercase font-bold">Parser Parsoid</span>
                 <div className="text-sm font-bold text-emerald-700 mt-1">✓ AST &amp; Infobox Ativos</div>
+              </div>
+            </div>
+
+            {/* Contra-Propaganda Wikipédia: Investigação LGPD & Marco Civil no Wiki-Site */}
+            <div className="my-5 bg-[#141414] text-white border-2 border-black p-4 shadow-[4px_4px_0px_0px_rgba(185,28,28,1)]">
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                <div className="space-y-1">
+                  <div className="flex flex-wrap items-center gap-2 font-mono text-[10px]">
+                    <span className="bg-[#B91C1C] text-white font-bold uppercase px-2 py-0.5">
+                      CONTRA-PROPAGANDA DA WIKIPÉDIA
+                    </span>
+                    <span className="bg-amber-400 text-[#141414] font-bold uppercase px-2 py-0.5">
+                      INVESTIGAÇÃO LGPD &amp; MARCO CIVIL (41 PÁGINAS)
+                    </span>
+                  </div>
+                  <h4 className="font-editorial text-lg sm:text-xl font-bold text-white">
+                    Auditoria WMF &amp; Wikipédia: Passivo Crítico de IPs (AUD-01), Expurgo em 90d e Ilusão do &ldquo;Vanishing&rdquo;
+                  </h4>
+                  <p className="text-xs font-serif text-stone-300 leading-relaxed">
+                    Enquanto a Wikimedia Foundation descumpre o Art. 15 do Marco Civil (90 dias vs. 180 dias), omite DPO no Brasil (Art. 41 LGPD) e expõe IPs históricos de cidadãos e menores a <em>data scraping</em>, o Wiki-Site NotMediaWiki garante sigilo telemático integral e exclusão real pelo Art. 18.
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 shrink-0 font-mono text-[11px]">
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('contrapropaganda')}
+                    className="bg-amber-400 hover:bg-amber-300 text-[#141414] font-bold uppercase px-3 py-2 border border-black cursor-pointer"
+                  >
+                    Ver Auditoria no Wiki-Site →
+                  </button>
+                  <a
+                    href={WMF_LGPD_PDF_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="bg-red-700 hover:bg-red-600 text-white font-bold uppercase px-3 py-2 border border-red-400 flex items-center gap-1.5"
+                  >
+                    <FileText className="w-3.5 h-3.5 text-amber-300" />
+                    <span>PDF Oficial (41p)</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
               </div>
             </div>
 
@@ -3378,12 +3425,51 @@ export default function NotMediaWikiPortal({
             </div>
           </div>
 
+          <div className="bg-amber-50 border-2 border-amber-500 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <span className="font-bold text-amber-950 uppercase block text-[11px]">
+                Diferencial vs. Wikipédia (&ldquo;Ilusão do Vanishing&rdquo; — AUD-04)
+              </span>
+              <p className="text-stone-800 font-serif text-xs mt-0.5 leading-relaxed">
+                Ao contrário da Wikipédia (onde o <em>Vanishing</em> apenas renomeia a conta mantendo discussões e metadados), aqui o titular exerce o Art. 18 da LGPD de forma real com DPO no Brasil.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => setActiveTab('contrapropaganda')}
+                className="px-3 py-1.5 bg-[#141414] hover:bg-stone-800 text-amber-300 font-bold uppercase text-[10px] cursor-pointer"
+              >
+                Auditoria WMF vs Wiki-Site →
+              </button>
+              <a
+                href={WMF_LGPD_PDF_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-3 py-1.5 bg-red-700 hover:bg-red-800 text-white font-bold uppercase text-[10px] flex items-center gap-1"
+              >
+                <span>PDF (41p)</span>
+                <ExternalLink className="w-3 h-3" />
+              </a>
+            </div>
+          </div>
+
           <NotMediaWikiLgpdDeletionPanel
             currentUser={currentUser}
             isBureaucrat={isBureaucrat}
             showToast={showToast}
           />
         </div>
+      )}
+
+      {/* ===================================================================== */}
+      {/* TAB 9: CONTRA-PROPAGANDA WMF & WIKIPÉDIA (LGPD & MARCO CIVIL)        */}
+      {/* ===================================================================== */}
+      {activeTab === 'contrapropaganda' && (
+        <WmfLgpdCounterPropagandaView
+          showToast={showToast}
+          onOpenLgpdPanel={() => setActiveTab('governance')}
+        />
       )}
 
       {/* Extension Configuration & Modification Modal (3.05.3.a, 3.05.3.b, 3.05.3.c, 3.05.3.e) */}

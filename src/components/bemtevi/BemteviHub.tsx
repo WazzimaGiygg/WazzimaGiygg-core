@@ -42,7 +42,9 @@ import {
   BookOpen,
   FileText,
   Edit3,
-  Check
+  Check,
+  Lock,
+  LogIn
 } from 'lucide-react';
 import {
   BemteviPost,
@@ -83,6 +85,7 @@ import {
 interface BemteviHubProps {
   currentUser?: any;
   showToast: (msg: string, isError?: boolean) => void;
+  onRequestLogin?: () => void;
   onOpenArticleByUrl?: (url: string) => void;
   onOpenArticle?: (article: any) => void;
   initialSharedArticle?: BemteviSharedArticle | null;
@@ -100,6 +103,7 @@ interface BemteviHubProps {
 export default function BemteviHub({
   currentUser,
   showToast,
+  onRequestLogin,
   onOpenArticle,
   initialSharedArticle,
   onClearInitialSharedArticle,
@@ -389,9 +393,26 @@ export default function BemteviHub({
     };
   }, [currentUser, usersList, followingIds]);
 
+  const isGuestSession = Boolean(
+    currentUser?.isGuest || String(currentUser?.uid || '').startsWith('guest_')
+  );
+  const isAuthenticated = Boolean(
+    currentUser?.uid && !isGuestSession && !currentUser?.isAnonymous
+  );
+
+  const ensureLoggedInToPost = (actionLabel = 'postar na rede social Bem-Te-Vi'): boolean => {
+    if (isAuthenticated) return true;
+    showToast(`Você precisa estar logado com sua conta para ${actionLabel}.`, true);
+    if (onRequestLogin) {
+      onRequestLogin();
+    }
+    return false;
+  };
+
   // Handle Post Creation (max 127 characters, precise sanitization & validation)
   const handleCreatePost = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!ensureLoggedInToPost('postar no Bem-Te-Vi')) return;
     if (isSubmittingPost) return;
 
     const trimmedText = composerText.trim();
@@ -490,12 +511,14 @@ export default function BemteviHub({
 
   // Start / Save Inline Post Editing
   const handleStartEditPost = (post: BemteviPost) => {
+    if (!ensureLoggedInToPost('editar publicações')) return;
     setEditingPostId(post.id);
     setEditingPostText(post.content);
     setEditingPostLink(post.link || '');
   };
 
   const handleSaveEditPost = async (post: BemteviPost) => {
+    if (!ensureLoggedInToPost('editar publicações')) return;
     const trimmed = editingPostText.trim();
     if (!trimmed) {
       showToast('O texto da postagem não pode ficar vazio.', true);
@@ -550,6 +573,7 @@ export default function BemteviHub({
 
   // Toggle Like on Post (persisted)
   const handleToggleLike = async (post: BemteviPost) => {
+    if (!ensureLoggedInToPost('curtir publicações')) return;
     const isLiked = post.likedBy.includes(myUser.uid);
     const updatedLikedBy = isLiked
       ? post.likedBy.filter((id) => id !== myUser.uid)
@@ -563,7 +587,11 @@ export default function BemteviHub({
       )
     );
 
-    await toggleBemteviPostLikeInDb(post.id, myUser.uid, updatedLikedBy, updatedLikesCount);
+    try {
+      await toggleBemteviPostLikeInDb(post.id, myUser.uid, updatedLikedBy, updatedLikesCount);
+    } catch (err: any) {
+      showToast(err?.message || 'Erro ao curtir publicação.', true);
+    }
   };
 
   // Toggle Save on Post (persisted in localStorage + Firestore/API)
@@ -596,6 +624,7 @@ export default function BemteviHub({
 
   // Delete Post
   const handleDeletePost = async (postId: string) => {
+    if (!ensureLoggedInToPost('excluir publicações')) return;
     try {
       await deleteBemteviPostInDb(postId);
       const updatedList = posts.filter((p) => p.id !== postId);
@@ -609,6 +638,13 @@ export default function BemteviHub({
 
   // Share / Repost inside Bemtevi (persists sharesCount cleanly)
   const handleSharePost = async (post: BemteviPost) => {
+    if (!isAuthenticated) {
+      const shareUrl = `${window.location.origin}/?uid=bemtevi&post=${encodeURIComponent(post.id)}`;
+      navigator.clipboard?.writeText(shareUrl).catch(() => {});
+      showToast('Link copiado! Faça login com sua conta para repostar no Bem-Te-Vi.');
+      return;
+    }
+
     const nextSharesCount = (post.sharesCount || 0) + 1;
 
     setPosts((prev) =>
@@ -633,6 +669,7 @@ export default function BemteviHub({
 
   // Follow / Unfollow User (persisted locally)
   const handleToggleFollow = (targetUser: BemteviUser) => {
+    if (!ensureLoggedInToPost('seguir usuários')) return;
     const isFollowing = myUser.following.includes(targetUser.uid);
     const updatedFollowing = isFollowing
       ? myUser.following.filter((id) => id !== targetUser.uid)
@@ -666,6 +703,7 @@ export default function BemteviHub({
 
   // Join / Leave Community (persisted)
   const handleToggleJoinCommunity = async (comm: BemteviCommunity) => {
+    if (!ensureLoggedInToPost('participar de comunidades')) return;
     const isMember = comm.members.includes(myUser.uid);
     const updatedMembers = isMember
       ? comm.members.filter((id) => id !== myUser.uid)
@@ -698,6 +736,7 @@ export default function BemteviHub({
   // Create Community
   const handleCreateCommunitySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!ensureLoggedInToPost('criar uma comunidade')) return;
     if (!newCommunityName.trim() || newCommunityName.trim().length < 3) {
       showToast('O nome da comunidade deve ter pelo menos 3 caracteres!', true);
       return;
@@ -740,6 +779,7 @@ export default function BemteviHub({
   // Submit Comment
   const handleSendComment = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!ensureLoggedInToPost('comentar no Bem-Te-Vi')) return;
     if (!selectedPostForComments || !newCommentText.trim() || isSubmittingComment) return;
 
     const trimmedComment = newCommentText.trim();
@@ -785,6 +825,7 @@ export default function BemteviHub({
   // Direct Message Send
   const handleSendDirectMessage = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!ensureLoggedInToPost('enviar mensagens diretas')) return;
     if (!activeDmUser || !dmInputText.trim()) return;
 
     const convId = [myUser.uid, activeDmUser.uid].sort().join('_');
@@ -1093,7 +1134,10 @@ export default function BemteviHub({
             {/* Quick Action: New Community */}
             <div className="pt-3 border-t border-stone-800">
               <button
-                onClick={() => setIsCreateCommunityModalOpen(true)}
+                onClick={() => {
+                  if (!ensureLoggedInToPost('criar uma comunidade')) return;
+                  setIsCreateCommunityModalOpen(true);
+                }}
                 className="w-full flex items-center justify-center gap-2 bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 px-3 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer"
               >
                 <Plus className="w-4 h-4 text-emerald-400" />
@@ -1157,154 +1201,215 @@ export default function BemteviHub({
           {/* VIEW 1: FEED & COMPOSER */}
           {activeTab === 'feed' && (
             <>
-              {/* MICROBLOGGING COMPOSER (Strict 127 Chars) */}
-              <div className="bg-[#16161B] border border-stone-800 rounded-2xl p-4 shadow-xl">
-                <form onSubmit={handleCreatePost} className="space-y-3">
-                  <div className="flex gap-3">
-                    <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-amber-500 to-red-600 flex items-center justify-center text-white font-bold text-sm shrink-0 overflow-hidden">
-                      {myUser.avatar ? (
-                        <img src={myUser.avatar} alt={myUser.name} className="w-full h-full object-cover" />
-                      ) : (
-                        myUser.name.charAt(0)
-                      )}
-                    </div>
-
-                    <div className="flex-1">
-                      <textarea
-                        rows={2}
-                        maxLength={127}
-                        value={composerText}
-                        onChange={(e) => setComposerText(e.target.value)}
-                        placeholder={t.placeholderPost}
-                        className="w-full bg-transparent text-stone-100 placeholder-stone-500 text-sm focus:outline-none resize-none"
-                      />
-
-                      {/* Attached Article Preview */}
-                      {attachedArticle && (
-                        <div className="bg-[#121217] border border-amber-500/60 rounded-xl p-2.5 my-2 text-xs relative flex items-start justify-between gap-3 shadow-md">
-                          <div className="space-y-0.5 overflow-hidden text-left">
-                            <div className="flex items-center gap-2">
-                              <span className="bg-amber-400 text-black font-mono font-bold px-1.5 py-0.2 text-[9px] uppercase tracking-wider">
-                                Artigo Vinculado
-                              </span>
-                              <span className="text-stone-400 font-mono text-[9px]">
-                                UID: {attachedArticle.id}
-                              </span>
-                            </div>
-                            <h5 className="font-editorial font-bold text-stone-100 text-xs truncate">
-                              {attachedArticle.titulo}
-                            </h5>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setAttachedArticle(null);
-                              if (onClearInitialSharedArticle) onClearInitialSharedArticle();
-                            }}
-                            className="text-stone-400 hover:text-red-400 p-1 cursor-pointer shrink-0"
-                            title="Remover anexo do artigo"
-                          >
-                            <X className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      )}
-
-                      {/* Optional Link Input (accepts domains, https://, or ?uid=...) */}
-                      <div className="mt-2 pt-2 border-t border-stone-800/60">
-                        <div className="flex items-center gap-2">
-                          <LinkIcon className="w-3.5 h-3.5 text-stone-500 shrink-0" />
-                          <input
-                            type="text"
-                            placeholder={t.linkPlaceholder}
-                            value={composerLink}
-                            onChange={(e) => {
-                              setComposerLink(e.target.value);
-                              if (composerLinkError) setComposerLinkError(null);
-                            }}
-                            className="w-full bg-transparent text-xs text-stone-300 placeholder-stone-600 focus:outline-none"
-                          />
-                        </div>
-                        {composerLinkError && (
-                          <p className="text-[11px] font-mono text-red-400 mt-1 flex items-center gap-1">
-                            <AlertCircle className="w-3 h-3 shrink-0" />
-                            <span>{composerLinkError}</span>
-                          </p>
-                        )}
+              {/* MICROBLOGGING COMPOSER (Requires Logged-In Account) */}
+              {!isAuthenticated ? (
+                <div className="bg-[#16161B] border border-stone-700/80 rounded-2xl p-5 shadow-xl space-y-3 text-left">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="flex items-start gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/40 flex items-center justify-center text-amber-400 shrink-0">
+                        <Lock className="w-5 h-5" />
+                      </div>
+                      <div className="space-y-1">
+                        <h3 className="font-editorial text-base font-bold text-white">
+                          Login necessário para postar no Bem-Te-Vi
+                        </h3>
+                        <p className="text-xs text-stone-300 leading-relaxed">
+                          {isGuestSession
+                            ? 'Você está navegando no modo Convidado (somente leitura). Entre com sua conta Google para publicar postagens, comentar ou criar comunidades.'
+                            : 'Visitantes podem explorar e ler todo o feed livremente, mas apenas usuários autenticados podem publicar no Bem-Te-Vi.'}
+                        </p>
                       </div>
                     </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (onRequestLogin) {
+                          onRequestLogin();
+                        } else {
+                          showToast('Use o botão Entrar no cabeçalho do portal para acessar com sua conta.', true);
+                        }
+                      }}
+                      className="shrink-0 bg-gradient-to-r from-[#667eea] to-[#764ba2] hover:opacity-90 text-white px-4 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all shadow-md cursor-pointer flex items-center justify-center gap-2"
+                    >
+                      <LogIn className="w-4 h-4" />
+                      <span>Entrar para Postar</span>
+                    </button>
                   </div>
 
-                  {/* Composer Footer: Category, Community, Article Picker, Character Counter, Submit */}
-                  <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-stone-800">
-                    <div className="flex items-center gap-2 text-xs flex-wrap">
-                      {/* Anexar Artigo Button */}
+                  {attachedArticle && (
+                    <div className="bg-[#121217] border border-amber-500/50 rounded-xl p-3 text-xs flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <span className="text-[10px] font-mono font-bold uppercase text-amber-400 block">
+                          Artigo pronto para compartilhar após o login
+                        </span>
+                        <p className="font-editorial font-bold text-stone-100 truncate">
+                          {attachedArticle.titulo}
+                        </p>
+                      </div>
                       <button
                         type="button"
-                        onClick={() => setIsArticlePickerOpen(true)}
-                        className={`flex items-center gap-1.5 text-[11px] rounded-lg px-2.5 py-1 border transition-colors cursor-pointer ${
-                          attachedArticle
-                            ? 'bg-amber-400/20 text-amber-300 border-amber-500/50 font-bold'
-                            : 'bg-stone-800 hover:bg-stone-700 text-stone-300 border-stone-700 hover:text-amber-300'
-                        }`}
-                        title="Anexar um artigo do site para compartilhar no Bemtevi"
+                        onClick={() => {
+                          setAttachedArticle(null);
+                          if (onClearInitialSharedArticle) onClearInitialSharedArticle();
+                        }}
+                        className="text-stone-400 hover:text-red-400 p-1 cursor-pointer shrink-0"
+                        title="Remover artigo pendente"
                       >
-                        <BookOpen className="w-3.5 h-3.5 text-amber-400" />
-                        <span>{attachedArticle ? 'Trocar Artigo' : 'Anexar Artigo'}</span>
-                      </button>
-
-                      {/* Category select */}
-                      <select
-                        value={composerCategory}
-                        onChange={(e) => setComposerCategory(e.target.value as BemteviCategory)}
-                        className="bg-stone-800 border border-stone-700 text-stone-300 text-[11px] rounded-lg px-2 py-1 focus:outline-none"
-                      >
-                        {BEMTEVI_CATEGORIES.map((cat) => (
-                          <option key={cat} value={cat}>
-                            {cat}
-                          </option>
-                        ))}
-                      </select>
-
-                      {/* Community selector */}
-                      <select
-                        value={composerCommunityId}
-                        onChange={(e) => setComposerCommunityId(e.target.value)}
-                        className="bg-stone-800 border border-stone-700 text-stone-300 text-[11px] rounded-lg px-2 py-1 focus:outline-none max-w-[130px] truncate"
-                      >
-                        <option value="">Feed Geral</option>
-                        {communities.map((c) => (
-                          <option key={c.id} value={c.id}>
-                            {c.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="flex items-center gap-3">
-                      {/* Character Counter (Max 127) */}
-                      <span
-                        className={`text-xs font-mono font-bold ${
-                          composerText.length >= 120
-                            ? 'text-red-400 animate-pulse'
-                            : composerText.length >= 100
-                            ? 'text-amber-400'
-                            : 'text-stone-500'
-                        }`}
-                      >
-                        {composerText.length}/127
-                      </span>
-
-                      <button
-                        type="submit"
-                        disabled={isSubmittingPost || !composerText.trim() || composerText.length > 127}
-                        className="bg-gradient-to-r from-[#667eea] to-[#764ba2] hover:opacity-90 disabled:opacity-50 text-white px-4 py-1.5 rounded-full font-bold text-xs uppercase tracking-wider transition-all shadow-md cursor-pointer flex items-center gap-1.5"
-                      >
-                        <span>{isSubmittingPost ? 'Publicando...' : t.postButton}</span>
+                        <X className="w-3.5 h-3.5" />
                       </button>
                     </div>
-                  </div>
-                </form>
-              </div>
+                  )}
+                </div>
+              ) : (
+                <div className="bg-[#16161B] border border-stone-800 rounded-2xl p-4 shadow-xl">
+                  <form onSubmit={handleCreatePost} className="space-y-3">
+                    <div className="flex gap-3">
+                      <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-amber-500 to-red-600 flex items-center justify-center text-white font-bold text-sm shrink-0 overflow-hidden">
+                        {myUser.avatar ? (
+                          <img src={myUser.avatar} alt={myUser.name} className="w-full h-full object-cover" />
+                        ) : (
+                          myUser.name.charAt(0)
+                        )}
+                      </div>
+
+                      <div className="flex-1">
+                        <textarea
+                          rows={2}
+                          maxLength={127}
+                          value={composerText}
+                          onChange={(e) => setComposerText(e.target.value)}
+                          placeholder={t.placeholderPost}
+                          className="w-full bg-transparent text-stone-100 placeholder-stone-500 text-sm focus:outline-none resize-none"
+                        />
+
+                        {/* Attached Article Preview */}
+                        {attachedArticle && (
+                          <div className="bg-[#121217] border border-amber-500/60 rounded-xl p-2.5 my-2 text-xs relative flex items-start justify-between gap-3 shadow-md">
+                            <div className="space-y-0.5 overflow-hidden text-left">
+                              <div className="flex items-center gap-2">
+                                <span className="bg-amber-400 text-black font-mono font-bold px-1.5 py-0.2 text-[9px] uppercase tracking-wider">
+                                  Artigo Vinculado
+                                </span>
+                                <span className="text-stone-400 font-mono text-[9px]">
+                                  UID: {attachedArticle.id}
+                                </span>
+                              </div>
+                              <h5 className="font-editorial font-bold text-stone-100 text-xs truncate">
+                                {attachedArticle.titulo}
+                              </h5>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setAttachedArticle(null);
+                                if (onClearInitialSharedArticle) onClearInitialSharedArticle();
+                              }}
+                              className="text-stone-400 hover:text-red-400 p-1 cursor-pointer shrink-0"
+                              title="Remover anexo do artigo"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        )}
+
+                        {/* Optional Link Input (accepts domains, https://, or ?uid=...) */}
+                        <div className="mt-2 pt-2 border-t border-stone-800/60">
+                          <div className="flex items-center gap-2">
+                            <LinkIcon className="w-3.5 h-3.5 text-stone-500 shrink-0" />
+                            <input
+                              type="text"
+                              placeholder={t.linkPlaceholder}
+                              value={composerLink}
+                              onChange={(e) => {
+                                setComposerLink(e.target.value);
+                                if (composerLinkError) setComposerLinkError(null);
+                              }}
+                              className="w-full bg-transparent text-xs text-stone-300 placeholder-stone-600 focus:outline-none"
+                            />
+                          </div>
+                          {composerLinkError && (
+                            <p className="text-[11px] font-mono text-red-400 mt-1 flex items-center gap-1">
+                              <AlertCircle className="w-3 h-3 shrink-0" />
+                              <span>{composerLinkError}</span>
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Composer Footer: Category, Community, Article Picker, Character Counter, Submit */}
+                    <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-stone-800">
+                      <div className="flex items-center gap-2 text-xs flex-wrap">
+                        {/* Anexar Artigo Button */}
+                        <button
+                          type="button"
+                          onClick={() => setIsArticlePickerOpen(true)}
+                          className={`flex items-center gap-1.5 text-[11px] rounded-lg px-2.5 py-1 border transition-colors cursor-pointer ${
+                            attachedArticle
+                              ? 'bg-amber-400/20 text-amber-300 border-amber-500/50 font-bold'
+                              : 'bg-stone-800 hover:bg-stone-700 text-stone-300 border-stone-700 hover:text-amber-300'
+                          }`}
+                          title="Anexar um artigo do site para compartilhar no Bemtevi"
+                        >
+                          <BookOpen className="w-3.5 h-3.5 text-amber-400" />
+                          <span>{attachedArticle ? 'Trocar Artigo' : 'Anexar Artigo'}</span>
+                        </button>
+
+                        {/* Category select */}
+                        <select
+                          value={composerCategory}
+                          onChange={(e) => setComposerCategory(e.target.value as BemteviCategory)}
+                          className="bg-stone-800 border border-stone-700 text-stone-300 text-[11px] rounded-lg px-2 py-1 focus:outline-none"
+                        >
+                          {BEMTEVI_CATEGORIES.map((cat) => (
+                            <option key={cat} value={cat}>
+                              {cat}
+                            </option>
+                          ))}
+                        </select>
+
+                        {/* Community selector */}
+                        <select
+                          value={composerCommunityId}
+                          onChange={(e) => setComposerCommunityId(e.target.value)}
+                          className="bg-stone-800 border border-stone-700 text-stone-300 text-[11px] rounded-lg px-2 py-1 focus:outline-none max-w-[130px] truncate"
+                        >
+                          <option value="">Feed Geral</option>
+                          {communities.map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="flex items-center gap-3">
+                        {/* Character Counter (Max 127) */}
+                        <span
+                          className={`text-xs font-mono font-bold ${
+                            composerText.length >= 120
+                              ? 'text-red-400 animate-pulse'
+                              : composerText.length >= 100
+                              ? 'text-amber-400'
+                              : 'text-stone-500'
+                          }`}
+                        >
+                          {composerText.length}/127
+                        </span>
+
+                        <button
+                          type="submit"
+                          disabled={isSubmittingPost || !composerText.trim() || composerText.length > 127}
+                          className="bg-gradient-to-r from-[#667eea] to-[#764ba2] hover:opacity-90 disabled:opacity-50 text-white px-4 py-1.5 rounded-full font-bold text-xs uppercase tracking-wider transition-all shadow-md cursor-pointer flex items-center gap-1.5"
+                        >
+                          <span>{isSubmittingPost ? 'Publicando...' : t.postButton}</span>
+                        </button>
+                      </div>
+                    </div>
+                  </form>
+                </div>
+              )}
 
               {/* FEED TABS (Para Você / Últimas / Minhas) & CATEGORY / ARTICLE / HASHTAG FILTERS */}
               <div className="bg-[#16161B] border border-stone-800 rounded-2xl p-3 shadow-md space-y-3">
@@ -1822,7 +1927,10 @@ export default function BemteviHub({
                   </p>
                 </div>
                 <button
-                  onClick={() => setIsCreateCommunityModalOpen(true)}
+                  onClick={() => {
+                    if (!ensureLoggedInToPost('criar uma comunidade')) return;
+                    setIsCreateCommunityModalOpen(true);
+                  }}
                   className="bg-[#667eea] hover:bg-[#5a6fd6] text-white text-xs font-bold uppercase tracking-wider px-4 py-2 rounded-xl transition-all shadow-md flex items-center gap-1.5 cursor-pointer"
                 >
                   <Plus className="w-4 h-4" />
@@ -1897,7 +2005,29 @@ export default function BemteviHub({
           )}
 
           {/* VIEW 4: MENSAGENS DIRETAS (CHATS) */}
-          {activeTab === 'messages' && (
+          {activeTab === 'messages' && !isAuthenticated && (
+            <div className="bg-[#16161B] border border-stone-800 rounded-2xl p-8 shadow-2xl text-center space-y-4">
+              <div className="w-12 h-12 rounded-2xl bg-amber-500/15 border border-amber-500/40 flex items-center justify-center text-amber-400 mx-auto">
+                <Lock className="w-6 h-6" />
+              </div>
+              <h3 className="font-editorial text-xl font-bold text-white">
+                Mensagens Diretas restritas a usuários logados
+              </h3>
+              <p className="text-xs text-stone-400 max-w-md mx-auto leading-relaxed">
+                Para proteger sua privacidade (LGPD), faça login com sua conta Google para enviar ou visualizar conversas diretas no Bem-Te-Vi.
+              </p>
+              <button
+                type="button"
+                onClick={() => onRequestLogin?.()}
+                className="inline-flex items-center gap-2 bg-gradient-to-r from-[#667eea] to-[#764ba2] hover:opacity-90 text-white px-5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider cursor-pointer"
+              >
+                <LogIn className="w-4 h-4" />
+                <span>Entrar com Conta</span>
+              </button>
+            </div>
+          )}
+
+          {activeTab === 'messages' && isAuthenticated && (
             <div className="bg-[#16161B] border border-stone-800 rounded-2xl overflow-hidden shadow-2xl grid grid-cols-1 sm:grid-cols-12 min-h-[500px]">
               {/* Left Chats List */}
               <div className="sm:col-span-5 border-r border-stone-800 p-4 space-y-3">
@@ -2374,30 +2504,50 @@ export default function BemteviHub({
               )}
             </div>
 
-            {/* Comment Form (Max 280 chars) */}
-            <form onSubmit={handleSendComment} className="p-4 border-t border-stone-800 bg-[#121216] space-y-2">
-              <textarea
-                rows={2}
-                maxLength={280}
-                required
-                value={newCommentText}
-                onChange={(e) => setNewCommentText(e.target.value)}
-                placeholder="Escreva um comentário público... (máx. 280 caracteres)"
-                className="w-full bg-stone-900 border border-stone-700 rounded-xl p-2.5 text-xs text-white placeholder-stone-500 focus:outline-none"
-              />
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-mono text-stone-500">
-                  {newCommentText.length}/280
+            {/* Comment Form (Max 280 chars - Authenticated Users Only) */}
+            {!isAuthenticated ? (
+              <div className="p-4 border-t border-stone-800 bg-[#121216] flex flex-wrap items-center justify-between gap-3">
+                <span className="text-xs font-mono text-stone-300 flex items-center gap-2">
+                  <Lock className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                  <span>Faça login para comentar nesta publicação.</span>
                 </span>
                 <button
-                  type="submit"
-                  disabled={isSubmittingComment || !newCommentText.trim()}
-                  className="bg-[#667eea] hover:bg-[#5a6fd6] disabled:opacity-50 text-white font-bold text-xs px-4 py-1.5 rounded-full cursor-pointer uppercase tracking-wider"
+                  type="button"
+                  onClick={() => {
+                    setSelectedPostForComments(null);
+                    onRequestLogin?.();
+                  }}
+                  className="bg-[#667eea] hover:bg-[#5a6fd6] text-white font-bold text-xs px-4 py-1.5 rounded-full cursor-pointer uppercase tracking-wider flex items-center gap-1.5"
                 >
-                  Enviar Comentário
+                  <LogIn className="w-3.5 h-3.5" />
+                  <span>Entrar para Comentar</span>
                 </button>
               </div>
-            </form>
+            ) : (
+              <form onSubmit={handleSendComment} className="p-4 border-t border-stone-800 bg-[#121216] space-y-2">
+                <textarea
+                  rows={2}
+                  maxLength={280}
+                  required
+                  value={newCommentText}
+                  onChange={(e) => setNewCommentText(e.target.value)}
+                  placeholder="Escreva um comentário público... (máx. 280 caracteres)"
+                  className="w-full bg-stone-900 border border-stone-700 rounded-xl p-2.5 text-xs text-white placeholder-stone-500 focus:outline-none"
+                />
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-mono text-stone-500">
+                    {newCommentText.length}/280
+                  </span>
+                  <button
+                    type="submit"
+                    disabled={isSubmittingComment || !newCommentText.trim()}
+                    className="bg-[#667eea] hover:bg-[#5a6fd6] disabled:opacity-50 text-white font-bold text-xs px-4 py-1.5 rounded-full cursor-pointer uppercase tracking-wider"
+                  >
+                    Enviar Comentário
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}

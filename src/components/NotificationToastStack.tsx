@@ -74,9 +74,11 @@ function ToastCard({
   const [remainingMs, setRemainingMs] = useState(toast.durationMs);
   const lastTickRef = useRef<number>(Date.now());
 
+  const isExpired = remainingMs <= 0;
+
   useEffect(() => {
     lastTickRef.current = Date.now();
-    if (isPaused) return;
+    if (isPaused || isExpired) return;
 
     const interval = window.setInterval(() => {
       const now = Date.now();
@@ -86,7 +88,6 @@ function ToastCard({
         const next = prev - delta;
         if (next <= 0) {
           window.clearInterval(interval);
-          onDismiss(toast.id);
           return 0;
         }
         return next;
@@ -94,7 +95,13 @@ function ToastCard({
     }, 80);
 
     return () => window.clearInterval(interval);
-  }, [isPaused, onDismiss, toast.id]);
+  }, [isPaused, isExpired]);
+
+  useEffect(() => {
+    if (remainingMs <= 0) {
+      onDismiss(toast.id);
+    }
+  }, [remainingMs, onDismiss, toast.id]);
 
   const cfg = VARIANT_CONFIG[toast.variant] || VARIANT_CONFIG.info;
   const Icon = cfg.Icon;

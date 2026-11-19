@@ -27,6 +27,7 @@ import {
   ExternalLink
 } from 'lucide-react';
 import { registerAuditLog } from '../firebase';
+import { WMF_LGPD_PDF_URL } from '../data/wmfLgpdInvestigationData';
 
 export interface AiEthicsShowcaseProps {
   onClose?: () => void;
@@ -737,21 +738,33 @@ export default function AiEthicsShowcase({
 
                 <div className="pt-3 border-t border-red-200 dark:border-red-900/60 flex flex-wrap items-center justify-between gap-3">
                   <span className="text-xs font-serif text-stone-700 dark:text-stone-300">
-                    Consulte o registro integral, demais operadores envolvidos (Edmond Dantès, Johannnes89) e sanções municipais no Dossiê oficial.
+                    Consulte o registro integral, demais operadores envolvidos (Edmond Dantès, Johannnes89) e a auditoria LGPD &amp; Marco Civil (41p) no Dossiê oficial.
                   </span>
-                  {onOpenDossie && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onOpenDossie();
-                        if (isModal && onClose) onClose();
-                      }}
-                      className="px-4 py-2 bg-[#141414] hover:bg-stone-800 dark:bg-stone-100 dark:hover:bg-stone-200 text-white dark:text-stone-950 rounded text-xs font-mono font-bold whitespace-nowrap flex items-center gap-1.5 cursor-pointer transition-colors"
+                  <div className="flex flex-wrap items-center gap-2">
+                    <a
+                      href={WMF_LGPD_PDF_URL}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-3.5 py-2 bg-[#B91C1C] hover:bg-red-800 text-white rounded text-xs font-mono font-bold whitespace-nowrap flex items-center gap-1.5 transition-colors"
                     >
-                      <span>Abrir Dossiê &amp; Abusos Wikipédia</span>
-                      <ExternalLink className="w-3.5 h-3.5" />
-                    </button>
-                  )}
+                      <FileText className="w-3.5 h-3.5" />
+                      <span>Investigação LGPD &amp; Marco Civil (.pdf)</span>
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                    {onOpenDossie && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onOpenDossie();
+                          if (isModal && onClose) onClose();
+                        }}
+                        className="px-4 py-2 bg-[#141414] hover:bg-stone-800 dark:bg-stone-100 dark:hover:bg-stone-200 text-white dark:text-stone-950 rounded text-xs font-mono font-bold whitespace-nowrap flex items-center gap-1.5 cursor-pointer transition-colors"
+                      >
+                        <span>Abrir Dossiê &amp; Abusos Wikipédia</span>
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
                 </div>
               </article>
             </section>

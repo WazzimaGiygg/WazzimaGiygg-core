@@ -235,6 +235,7 @@ export default function App() {
     | "extensions"
     | "governance"
     | "tutorial"
+    | "contrapropaganda"
     | undefined
   >(undefined);
 
@@ -2693,6 +2694,7 @@ export default function App() {
           <BemteviHub
             currentUser={user}
             showToast={showToast}
+            onRequestLogin={() => setIsLoginModalOpen(true)}
             activeUid={uidNav.currentUid}
             onNavigateUid={uidNav.navigateToUid}
             canGoBack={uidNav.canGoBack}
